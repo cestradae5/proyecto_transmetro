@@ -1,3 +1,5 @@
+import { jest } from "@jest/globals";
+import type { EntityManager } from "typeorm";
 import { getMetadataArgsStorage } from "typeorm";
 
 import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
@@ -5,6 +7,9 @@ import { EmployeeEntity } from "./entities/employee.entity.js";
 import { PermissionEntity } from "./entities/permission.entity.js";
 import { RoleEntity } from "./entities/role.entity.js";
 import { SessionEntity } from "./entities/session.entity.js";
+import { AuditRepository } from "./infrastructure/audit.repository.js";
+import { EmployeeRepository } from "./infrastructure/employee.repository.js";
+import { SessionRepository } from "./infrastructure/session.repository.js";
 
 function tableName(target: Function): string | undefined {
   return getMetadataArgsStorage().tables.find((table) => table.target === target)
@@ -80,5 +85,93 @@ describe("Google authentication foundation", () => {
           joinTable.target === RoleEntity && joinTable.propertyName === "permissions",
       )?.name,
     ).toBe("tbl_rol_permiso");
+  });
+
+  it("finds an eligible employee through the supplied transaction manager", async () => {
+    const employee = { id: "7" } as EmployeeEntity;
+    const queryBuilder = {
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(employee),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+    };
+    const manager = {
+      getRepository: jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      }),
+    } as unknown as EntityManager;
+
+    await expect(
+      new EmployeeRepository().findEligibleByEmail(
+        manager,
+        " Admin@Transmetro.GT ",
+      ),
+    ).resolves.toBe(employee);
+    expect(queryBuilder.setLock).toHaveBeenCalledWith(
+      "pessimistic_write",
+      undefined,
+      ["employee"],
+    );
+    expect(queryBuilder.where).toHaveBeenCalledWith(
+      "LOWER(employee.email) = :email",
+      { email: "admin@transmetro.gt" },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      "employee.status = :employeeStatus",
+      { employeeStatus: "ACTIVO" },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith("role.active = :roleActive", {
+      roleActive: true,
+    });
+  });
+
+  it("does not manufacture eligibility when the repository query has no match", async () => {
+    const queryBuilder = {
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(null),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+    };
+    const manager = {
+      getRepository: jest.fn().mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      }),
+    } as unknown as EntityManager;
+
+    await expect(
+      new EmployeeRepository().findEligibleByEmail(manager, "inactive@transmetro.gt"),
+    ).resolves.toBeNull();
+    expect(queryBuilder.getOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps session and audit persistence inside the supplied transaction manager", async () => {
+    const create = jest.fn((value: object) => value);
+    const save = jest.fn(async (value: object) => value);
+    const manager = {
+      getRepository: jest.fn().mockReturnValue({ create, save }),
+    } as unknown as EntityManager;
+    const employee = { id: "7" } as EmployeeEntity;
+
+    await new SessionRepository().create(manager, {
+      employee,
+      expiresAt: new Date("2026-09-15T12:00:00.000Z"),
+      tokenHash: "a".repeat(64),
+    });
+    await new AuditRepository().create(manager, {
+      action: "LOGIN",
+      employee,
+      entityId: "1",
+      entityType: "session",
+      module: "authentication",
+      result: AUDIT_RESULTS.SUCCESS,
+    });
+
+    expect(manager.getRepository).toHaveBeenNthCalledWith(1, SessionEntity);
+    expect(manager.getRepository).toHaveBeenNthCalledWith(2, AuditLogEntity);
+    expect(save).toHaveBeenCalledTimes(2);
   });
 });
