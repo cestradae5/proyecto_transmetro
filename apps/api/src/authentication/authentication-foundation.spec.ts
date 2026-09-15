@@ -9,6 +9,14 @@ import { RoleEntity } from "./entities/role.entity.js";
 import { SessionEntity } from "./entities/session.entity.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
+import {
+  GoogleAuthLibraryAdapter,
+  type GoogleIdTokenClient,
+} from "./infrastructure/google-auth-library.adapter.js";
+import {
+  AUTHENTICATION_DENIAL_MESSAGE,
+  GoogleCredentialVerificationError,
+} from "./infrastructure/google-credential-verifier.port.js";
 import { SessionRepository } from "./infrastructure/session.repository.js";
 
 function tableName(target: Function): string | undefined {
@@ -30,6 +38,60 @@ function relation(target: Function, propertyName: string) {
 }
 
 describe("Google authentication foundation", () => {
+  it("normalizes a verified Google identity after audience verification", async () => {
+    const client: GoogleIdTokenClient = {
+      verifyIdToken: jest.fn().mockResolvedValue({
+        getPayload: () => ({
+          email: " Admin@Transmetro.GT ",
+          email_verified: true,
+          name: "Admin User",
+        }),
+      }),
+    };
+    const verifier = new GoogleAuthLibraryAdapter("client-id", client);
+
+    await expect(verifier.verify("credential")).resolves.toEqual({
+      email: "admin@transmetro.gt",
+      name: "Admin User",
+    });
+    expect(client.verifyIdToken).toHaveBeenCalledWith({
+      audience: "client-id",
+      idToken: "credential",
+    });
+  });
+
+  it.each([
+    ["an unverified email", { email: "admin@transmetro.gt", email_verified: false }],
+    ["a missing email", { email_verified: true }],
+  ])("uses the same generic denial for %s", async (_caseName, payload) => {
+    const client: GoogleIdTokenClient = {
+      verifyIdToken: jest.fn().mockResolvedValue({
+        getPayload: () => payload,
+      }),
+    };
+    const verifier = new GoogleAuthLibraryAdapter("client-id", client);
+
+    await expect(verifier.verify("credential")).rejects.toEqual(
+      new GoogleCredentialVerificationError(),
+    );
+    await expect(verifier.verify("credential")).rejects.toMatchObject({
+      message: AUTHENTICATION_DENIAL_MESSAGE,
+      name: "GoogleCredentialVerificationError",
+    });
+  });
+
+  it("uses the generic denial when Google rejects a malformed credential", async () => {
+    const client: GoogleIdTokenClient = {
+      verifyIdToken: jest.fn().mockRejectedValue(new Error("expired token")),
+    };
+    const verifier = new GoogleAuthLibraryAdapter("client-id", client);
+
+    await expect(verifier.verify("credential")).rejects.toMatchObject({
+      message: AUTHENTICATION_DENIAL_MESSAGE,
+      name: "GoogleCredentialVerificationError",
+    });
+  });
+
   it("maps authentication entities to the existing RBAC, session, and audit tables", () => {
     expect(tableName(EmployeeEntity)).toBe("tbl_empleado");
     expect(tableName(RoleEntity)).toBe("tbl_rol");
