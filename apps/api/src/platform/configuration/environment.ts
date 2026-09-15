@@ -1,5 +1,12 @@
 const DEFAULT_DATABASE_PORT = 5432;
 
+export class IntegrationDatabaseConfigurationError extends Error {
+  constructor() {
+    super("Integration database configuration is invalid.");
+    this.name = "IntegrationDatabaseConfigurationError";
+  }
+}
+
 function parsePort(value: string | undefined): number {
   if (value === undefined) {
     return DEFAULT_DATABASE_PORT;
@@ -26,16 +33,45 @@ export interface DatabaseEnvironment {
   ssl: boolean;
   username: string;
 }
-
-export function readDatabaseEnvironment(
-  environment: NodeJS.ProcessEnv = process.env,
+function createDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv,
+  database: string,
 ): DatabaseEnvironment {
   return {
-    database: environment.DATABASE_NAME ?? "transmetro",
+    database,
     host: environment.DATABASE_HOST ?? "localhost",
     password: environment.DATABASE_PASSWORD,
     port: parsePort(environment.DATABASE_PORT),
     ssl: parseBoolean(environment.DATABASE_SSL),
     username: environment.DATABASE_USER ?? "transmetro",
   };
+}
+
+export function readDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): DatabaseEnvironment {
+  return createDatabaseEnvironment(
+    environment,
+    environment.DATABASE_NAME ?? "transmetro",
+  );
+}
+
+export function readIntegrationDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): DatabaseEnvironment {
+  const developmentDatabase = environment.DATABASE_NAME?.trim();
+  const testDatabase = environment.TEST_DATABASE_NAME?.trim();
+
+  if (
+    developmentDatabase === undefined ||
+    developmentDatabase.length === 0 ||
+    testDatabase === undefined ||
+    testDatabase.length === 0 ||
+    testDatabase === developmentDatabase ||
+    !testDatabase.endsWith("_test")
+  ) {
+    throw new IntegrationDatabaseConfigurationError();
+  }
+
+  return createDatabaseEnvironment(environment, testDatabase);
 }
