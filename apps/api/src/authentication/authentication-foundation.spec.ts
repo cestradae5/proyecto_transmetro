@@ -2,6 +2,12 @@ import { jest } from "@jest/globals";
 import type { EntityManager } from "typeorm";
 import { getMetadataArgsStorage } from "typeorm";
 
+import {
+  AuthenticationConfigurationError,
+  IntegrationDatabaseConfigurationError,
+  readAuthenticationEnvironment,
+  readIntegrationDatabaseEnvironment,
+} from "../platform/configuration/environment.js";
 import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
 import { EmployeeEntity } from "./entities/employee.entity.js";
 import { PermissionEntity } from "./entities/permission.entity.js";
@@ -235,5 +241,59 @@ describe("Google authentication foundation", () => {
     expect(manager.getRepository).toHaveBeenNthCalledWith(1, SessionEntity);
     expect(manager.getRepository).toHaveBeenNthCalledWith(2, AuditLogEntity);
     expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the required Google client ID and exact administrative origins", () => {
+    expect(
+      readAuthenticationEnvironment({
+        ADMIN_WEB_ORIGINS: "https://admin.transmetro.gt, http://localhost:5173",
+        GOOGLE_WEB_CLIENT_ID: "client-id",
+      }),
+    ).toEqual({
+      adminWebOrigins: ["https://admin.transmetro.gt", "http://localhost:5173"],
+      googleWebClientId: "client-id",
+    });
+  });
+
+  it.each([
+    { ADMIN_WEB_ORIGINS: "https://admin.transmetro.gt" },
+    { ADMIN_WEB_ORIGINS: "not-an-origin", GOOGLE_WEB_CLIENT_ID: "client-id" },
+    { ADMIN_WEB_ORIGINS: "ftp://admin.transmetro.gt", GOOGLE_WEB_CLIENT_ID: "client-id" },
+  ])("rejects an incomplete or malformed authentication configuration", (environment) => {
+    expect(() => readAuthenticationEnvironment(environment)).toThrow(
+      AuthenticationConfigurationError,
+    );
+  });
+
+  it("uses only a distinct test database for integration scenarios", () => {
+    expect(
+      readIntegrationDatabaseEnvironment({
+        DATABASE_NAME: "development_database",
+        TEST_DATABASE_NAME: "integration_test",
+      }),
+    ).toEqual({
+      database: "integration_test",
+      host: "localhost",
+      password: undefined,
+      port: 5432,
+      ssl: false,
+      username: "transmetro",
+    });
+  });
+
+  it.each([
+    { DATABASE_NAME: "development_database" },
+    {
+      DATABASE_NAME: "development_database",
+      TEST_DATABASE_NAME: "development_database",
+    },
+    {
+      DATABASE_NAME: "development_database",
+      TEST_DATABASE_NAME: "integration_database",
+    },
+  ])("rejects an unsafe integration database configuration", (environment) => {
+    expect(() => readIntegrationDatabaseEnvironment(environment)).toThrow(
+      IntegrationDatabaseConfigurationError,
+    );
   });
 });

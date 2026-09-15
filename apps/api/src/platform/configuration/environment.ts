@@ -1,5 +1,12 @@
 const DEFAULT_DATABASE_PORT = 5432;
 
+export class AuthenticationConfigurationError extends Error {
+  constructor() {
+    super("Authentication configuration is invalid.");
+    this.name = "AuthenticationConfigurationError";
+  }
+}
+
 export class IntegrationDatabaseConfigurationError extends Error {
   constructor() {
     super("Integration database configuration is invalid.");
@@ -33,6 +40,59 @@ export interface DatabaseEnvironment {
   ssl: boolean;
   username: string;
 }
+
+export interface AuthenticationEnvironment {
+  adminWebOrigins: string[];
+  googleWebClientId: string;
+}
+
+function readOrigins(value: string | undefined): string[] {
+  const origins = value
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+  if (origins === undefined || origins.length === 0) {
+    throw new AuthenticationConfigurationError();
+  }
+
+  return origins.map((origin) => {
+    try {
+      const url = new URL(origin);
+
+      if (
+        (url.protocol !== "http:" && url.protocol !== "https:") ||
+        url.origin !== origin
+      ) {
+        throw new AuthenticationConfigurationError();
+      }
+    } catch (error: unknown) {
+      if (error instanceof AuthenticationConfigurationError) {
+        throw error;
+      }
+
+      throw new AuthenticationConfigurationError();
+    }
+
+    return origin;
+  });
+}
+
+export function readAuthenticationEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): AuthenticationEnvironment {
+  const googleWebClientId = environment.GOOGLE_WEB_CLIENT_ID?.trim();
+
+  if (googleWebClientId === undefined || googleWebClientId.length === 0) {
+    throw new AuthenticationConfigurationError();
+  }
+
+  return {
+    adminWebOrigins: readOrigins(environment.ADMIN_WEB_ORIGINS),
+    googleWebClientId,
+  };
+}
+
 function createDatabaseEnvironment(
   environment: NodeJS.ProcessEnv,
   database: string,
