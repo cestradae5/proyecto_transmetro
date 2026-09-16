@@ -12,7 +12,7 @@ import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
 import { SessionRepository } from "./infrastructure/session.repository.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
-import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-credential-verifier.port.js";
+import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE, type GoogleCredentialVerifier } from "./infrastructure/google-credential-verifier.port.js";
 import { InvalidCredentials, EmployeeNotEligible, SessionConflict, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
 
 // Configuración inmutable del ciclo de vida de sesión

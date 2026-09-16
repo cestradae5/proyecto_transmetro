@@ -9,7 +9,7 @@ async function bootstrap(): Promise<void> {
   // CORS para el admin-web: origen exacto, credenciales, methods y headers restringidos
   const adminWebOrigins = process.env.ADMIN_WEB_ORIGINS?.split(",").map((o) => o.trim()) ?? [];
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       // Permitir requests sin origin (como curl o postman directo)
       if (!origin) {
         return callback(null, true);
