@@ -2,6 +2,7 @@
 // Reglas de negocio puras — sin HTTP, cookies, CORS, ni wiring de Nest.
 // Inyecta repositorios y verifier Google vía puertos (inversión de dependencias).
 
+import { Inject } from "@nestjs/common";
 import { createHash, randomBytes } from "node:crypto";
 import { DataSource, type EntityManager } from "typeorm";
 
@@ -11,7 +12,7 @@ import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
 import { SessionRepository } from "./infrastructure/session.repository.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
-import type { GoogleCredentialVerifier } from "./infrastructure/google-credential-verifier.port.js";
+import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-credential-verifier.port.js";
 import { InvalidCredentials, EmployeeNotEligible, SessionConflict, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
 
 // Configuración inmutable del ciclo de vida de sesión
@@ -30,10 +31,12 @@ function generateRawToken(): string {
 
 export class AuthenticationService {
   constructor(
+    @Inject(DATASOURCE)
     private readonly dataSource: DataSource,           // para transacciones TypeORM
     private readonly employeeRepo: EmployeeRepository, // busca empleado elegible con lock
     private readonly sessionRepo: SessionRepository,   // crea/borra/busca sesiones
     private readonly auditRepo: AuditRepository,       // registra LOGIN/LOGOUT
+    @Inject(GOOGLE_CREDENTIAL_VERIFIER)
     private readonly googleVerifier: GoogleCredentialVerifier, // valida ID token Google
   ) {}
 

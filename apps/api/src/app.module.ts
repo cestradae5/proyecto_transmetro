@@ -6,6 +6,7 @@ import { ConfigModule } from "@nestjs/config";
 
 import { HealthModule } from "./health/health.module.js";
 import { DatabaseModule } from "./platform/database/database.module.js";
+import { AuthenticationModule } from "./authentication/authentication.module.js";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 
@@ -16,6 +17,7 @@ const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
       isGlobal: true,
     }),
     HealthModule,
+    AuthenticationModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })
