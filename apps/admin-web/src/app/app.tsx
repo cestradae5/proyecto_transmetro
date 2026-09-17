@@ -1,39 +1,22 @@
-import {
-  AppBar,
-  Box,
-  Container,
-  CssBaseline,
-  Paper,
-  Toolbar,
-  Typography,
-} from "@mui/material";
-import { ThemeProvider } from "@mui/material/styles";
-
-import { appTheme } from "./theme/app-theme";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { LoginPage } from "../features/authentication/login-page";
+import { LandingPage } from "../features/authentication/landing-page";
+import { GISPage } from "../features/authentication/gis-page";
+import { AdministrativeLanding } from "../features/administration/administrative-landing";
+import { AuthProvider, useAuth } from "../features/authentication/auth-context";
 
 export function App() {
   return (
-    <ThemeProvider theme={appTheme}>
-      <CssBaseline />
-      <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-        <AppBar position="static">
-          <Toolbar>
-            <Typography component="span" variant="h6">
-              Transmetro
-            </Typography>
-          </Toolbar>
-        </AppBar>
-        <Container component="main" maxWidth="lg" sx={{ py: 6 }}>
-          <Paper sx={{ p: 4 }}>
-            <Typography component="h1" gutterBottom variant="h4">
-              Transmetro Administration
-            </Typography>
-            <Typography color="text.secondary">
-              Platform scaffold is ready.
-            </Typography>
-          </Paper>
-        </Container>
-      </Box>
-    </ThemeProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/landing" element={<LandingPage />} />
+          <Route path="/gis" element={<GISPage />} />
+          <Route path="/admin" element={<AdministrativeLanding />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
