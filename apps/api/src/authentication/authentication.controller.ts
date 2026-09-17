@@ -9,6 +9,14 @@ import { AuthenticationService } from "./authentication.service.js";
 import { InvalidCredentials, EmployeeNotEligible } from "./authentication.contracts.js";
 import { readAuthenticationEnvironment } from "../platform/configuration/environment.js";
 
+// ============================================================================
+// Cookie configuration contract — exposed for security testing
+// ============================================================================
+
+export const SESSION_COOKIE_FLAGS = "__Host-transmetro_admin_session=${sessionHash}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=43200";
+
+export const SESSION_COOKIE_CLEAR_FLAGS = "__Host-transmetro_admin_session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0";
+
 @Controller("authentication")
 export class AuthenticationController {
   constructor(private readonly authenticationService: AuthenticationService) {}
@@ -142,14 +150,14 @@ export class AuthenticationController {
   private setSessionCookie(response: Record<string, any>, sessionHash: string): void {
     response.setHeader(
       "Set-Cookie",
-      `__Host-transmetro_admin_session=${sessionHash}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=43200`,
+      SESSION_COOKIE_FLAGS.replace("${sessionHash}", sessionHash),
     );
   }
 
   private clearSessionCookie(response: Record<string, any>): void {
     response.setHeader(
       "Set-Cookie",
-      `__Host-transmetro_admin_session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`,
+      SESSION_COOKIE_CLEAR_FLAGS,
     );
   }
 
