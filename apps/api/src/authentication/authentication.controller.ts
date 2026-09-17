@@ -109,8 +109,8 @@ export class AuthenticationController {
     }
   }
 
-  @Post("logout")
-  async logout(
+   @Post("logout")
+   async logout(
     @Req() request: Record<string, any>,
     @Res() response: Record<string, any>,
   ): Promise<void> {
@@ -118,6 +118,7 @@ export class AuthenticationController {
     const xTransmetroRequest = request.headers["x-transmetro-request"] as string | undefined;
 
     if (!this.isOriginAllowed(origin) || xTransmetroRequest !== "admin-web") {
+      response.status(HttpStatus.FORBIDDEN).json({ error: "REQUEST_ORIGIN_DENIED" });
       return;
     }
 

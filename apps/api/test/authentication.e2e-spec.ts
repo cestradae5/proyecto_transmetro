@@ -282,11 +282,52 @@ describe("Authentication HTTP endpoints (RED)", () => {
     expect(cookieHeader).toContain("Secure");
   });
 
-  it("POST /authentication/logout without cookie returns 204 (idempotent)", async () => {
-    await request(app.getHttpServer())
-      .post("/authentication/logout")
-      .set("Origin", ADMIN_ORIGIN)
-      .set("X-Transmetro-Request", "admin-web")
-      .expect(204);
-  });
-});
+   it("POST /authentication/logout without cookie returns 204 (idempotent)", async () => {
+     await request(app.getHttpServer())
+       .post("/authentication/logout")
+       .set("Origin", ADMIN_ORIGIN)
+       .set("X-Transmetro-Request", "admin-web")
+       .expect(204);
+   });
+
+   // --------------------------------------------------------------------------
+   // Task 3.1 — RED: Guard-protected access, POST-only enforcement, permission denial
+   // These tests FAIL until AuthenticationGuard is wired to the controller
+   // and @Permissions decorator is enforced.
+   // --------------------------------------------------------------------------
+
+    it("GET /authentication/logout returns 404 (POST-only enforced by controller)", async () => {
+     await request(app.getHttpServer())
+       .get("/authentication/logout")
+       .set("Origin", ADMIN_ORIGIN)
+       .set("X-Transmetro-Request", "admin-web")
+       .set("Cookie", `__Host-transmetro_admin_session=${TEST_SESSION_HASH}`)
+       .expect(404);
+   });
+
+   it("GET /authentication/me without cookie returns 401 (AuthenticationGuard protects route)", async () => {
+     await request(app.getHttpServer())
+       .get("/authentication/me")
+       .set("Origin", ADMIN_ORIGIN)
+       .expect(401)
+       .expect({ error: "AUTHENTICATION_REQUIRED" });
+   });
+
+   it("GET /authentication/me with invalid session returns 401 (AuthenticationGuard validates session)", async () => {
+     await request(app.getHttpServer())
+       .get("/authentication/me")
+       .set("Origin", ADMIN_ORIGIN)
+       .set("Cookie", `__Host-transmetro_admin_session=invalid`)
+       .expect(401)
+       .expect({ error: "AUTHENTICATION_REQUIRED" });
+   });
+
+   it("POST /authentication/logout without X-Transmetro-Request header returns 403", async () => {
+     await request(app.getHttpServer())
+       .post("/authentication/logout")
+       .set("Origin", ADMIN_ORIGIN)
+       .set("Cookie", `__Host-transmetro_admin_session=${TEST_SESSION_HASH}`)
+       .expect(403)
+       .expect({ error: "REQUEST_ORIGIN_DENIED" });
+   });
+ });
