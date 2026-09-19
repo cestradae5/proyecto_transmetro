@@ -1,6 +1,6 @@
 export function GISPage() {
   return (
-    <div className="min-h-screen bg-[#fafbfc] pt-20 px-4 sm:px-8 py-8 lg:py-12 max-w-6xl mx-auto">
+    <div className="min-h-screen bg-[#fafbfc] pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-6xl mx-auto">
       <div className="bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04)] p-6 sm:p-11">
         <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight mb-4">GIS Map</h1>
         <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200">

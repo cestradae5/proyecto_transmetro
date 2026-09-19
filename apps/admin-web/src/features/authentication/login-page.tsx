@@ -1,27 +1,58 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
+import { API_BASE_URL } from "../../platform/configuration/environment";
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [showToast, setShowToast] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Handle OAuth callback: /login?error=... or /login?code=...
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorParam = params.get("error");
+
+    if (errorParam === "denied") {
+      setError("Acceso denegado. Tu cuenta no está autorizada.");
+      window.history.replaceState({}, "", "/login");
+    } else if (errorParam === "unavailable") {
+      setError("Servicio de autenticación no disponible.");
+      window.history.replaceState({}, "", "/login");
+    }
+
+    // If we landed here from callback (no error), check session
+    const checkSession = async () => {
+      try {
+        const meResponse = await fetch(`${API_BASE_URL}/authentication/me`, {
+          credentials: "include",
+        });
+        if (meResponse.ok) {
+          const userData = await meResponse.json();
+          login({
+            email: userData.email,
+            employeeId: userData.employeeId,
+            roles: userData.roles,
+            permissions: userData.permissions,
+          });
+          navigate("/landing");
+        }
+      } catch {
+        // No session yet, stay on login
+      }
+    };
+    checkSession();
+  }, []);
 
   const handleGoogleLogin = () => {
-    // Set session cookie for demo purposes
-    const hash = "a".repeat(64);
-    document.cookie = `__Host-transmetro_admin_session=${hash}; Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=None`;
-    login(hash, "admin@transmetro.gt");
-    setShowToast(true);
-    setTimeout(() => {
-      setShowToast(false);
-      navigate("/landing");
-    }, 3500);
+    setError(null);
+    // Redirect to backend → Google OAuth full page
+    window.location.href = `${API_BASE_URL}/authentication/google`;
   };
 
   return (
-    <div className="h-full bg-white text-slate-900 font-sans antialiased overflow-x-hidden flex">
-      <header className="w-full lg:w-[72%] xl:w-[68%] h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 absolute top-0 left-0">
+    <div className="w-full h-screen bg-white text-slate-900 font-sans antialiased flex overflow-hidden">
+      {/* <header className="w-full h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 fixed top-0 left-0">
         <div className="flex items-center gap-2.5">
           <a href="#" className="flex items-center focus:outline-none">
             <span className="font-display font-bold text-xl text-primary">Transmetro</span>
@@ -33,10 +64,13 @@ export function LoginPage() {
             <span className="hidden sm:inline">Ayuda 1551</span>
           </button>
         </div>
-      </header>
+      </header> */}
 
-      <div className="flex-1 flex flex-col lg:flex-row w-full overflow-y-auto lg:overflow-hidden h-full">
-        <main className="flex-1 flex flex-col justify-between items-center px-4 sm:px-8 py-8 lg:py-12 bg-[#fafbfc] relative pt-20 lg:overflow-y-auto min-h-screen lg:min-h-0">
+      <div className="flex-1 flex flex-col lg:flex-row w-full h-full overflow-y-auto lg:overflow-hidden">
+        <main className="flex-1 flex flex-col items-center px-4 sm:px-8 py-8 lg:py-12 bg-[#fafbfc] relative min-h-screen lg:min-h-0">
+          <div className="absolute top-0 left-0 w-full h-16 flex items-center px-6 lg:px-12 z-30">
+          <span className="font-display font-bold text-xl text-primary"><img src="/public/images/Transmetro_Logo.png" alt="Transmetro Logo" width="350" height="40" /></span>
+          </div>
           <div className="w-full max-w-[480px] my-auto flex flex-col items-center py-4">
             <div className="w-full bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04),0_20px_25px_-5px_rgba(15,23,42,0.02)] p-6 sm:p-11">
               <div className="text-center mb-8">
@@ -44,6 +78,12 @@ export function LoginPage() {
                 <p className="text-slate-500 text-sm mt-2 font-normal leading-relaxed">Ingresa con tu cuenta institucional para continuar al Sistema Transmetro</p>
               </div>
               <div className="space-y-4">
+                {error && (
+                  <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-800">
+                    <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0">error</span>
+                    <p className="text-xs font-medium leading-snug">{error}</p>
+                  </div>
+                )}
                 <button
                   onClick={handleGoogleLogin}
                   className="group relative w-full flex items-center justify-between p-4 sm:py-4.5 sm:px-5 rounded-2xl bg-white hover:bg-slate-50/90 text-slate-800 border-2 border-slate-200/90 hover:border-[#0a257a] shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.99] cursor-pointer"
@@ -60,34 +100,30 @@ export function LoginPage() {
                     </div>
                     <div className="flex flex-col text-left">
                       <span className="font-display font-bold text-[15px] sm:text-base text-slate-900 group-hover:text-[#0a257a] transition-colors leading-tight">Continuar con Google</span>
-                      <span className="text-xs text-slate-500 font-normal mt-0.5">Cuenta institucional @muniguate</span>
+                      <span className="text-xs text-slate-500 font-normal mt-0.5">Cuenta institucional</span>
                     </div>
                   </div>
                   <span className="material-symbols-outlined text-slate-400 group-hover:text-[#0a257a] text-[22px] transition-all duration-200 group-hover:translate-x-1 shrink-0">arrow_forward</span>
                 </button>
                 <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-lime-50/80 border border-lime-200/70 text-lime-900">
                   <span className="material-symbols-outlined text-lime-700 text-[18px] shrink-0">lock</span>
-                  <p className="text-xs font-medium leading-snug">Acceso exclusivo mediante credenciales autorizadas de Workspace.</p>
+                  <p className="text-xs font-medium leading-snug">Acceso exclusivo mediante credenciales autorizadas.</p>
                 </div>
               </div>
             </div>
-            <div className="mt-5 text-center">
-              <p className="text-[11px] text-slate-400 leading-relaxed max-w-sm mx-auto">Al iniciar sesión aceptas las políticas de uso y seguridad de información de la Municipalidad de Guatemala.</p>
-            </div>
           </div>
           <footer className="w-full max-w-xl text-center pt-6 pb-2 shrink-0">
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-400 mb-1.5">
-              <a className="hover:text-slate-600 transition-colors" href="#terminos">Términos</a>
-              <span>·</span>
-              <a className="hover:text-slate-600 transition-colors" href="#privacidad">Políticas de Privacidad</a>
-              <span>·</span>
-              <a className="hover:text-slate-600 transition-colors" href="#mesa-ayuda">Mesa de Ayuda 1551</a>
-            </div>
             <p className="text-[11px] text-slate-400">© 2026 Municipalidad de Guatemala · Dirección de Movilidad Urbana</p>
           </footer>
         </main>
 
-        <aside className="flex flex-col justify-end w-full lg:w-[28%] xl:w-[32%] hero-ribbon-bg relative p-6 sm:p-8 xl:p-10 select-none shrink-0 lg:h-full">
+        <aside className="flex flex-col justify-end w-full lg:w-[35%] xl:w-[30%] hero-ribbon-bg relative p-6 sm:p-8 xl:p-12 select-none shrink-0 min-h-[400px] lg:h-full self-stretch">
+          {/* <div className="absolute top-6 right-6 z-30">
+            <button className="px-3 py-1.5 rounded-full text-xs font-medium text-white hover:bg-white/20 transition-colors flex items-center gap-1.5 border border-white/30 backdrop-blur-sm">
+              <span className="material-symbols-outlined text-[16px]">support_agent</span>
+              <span className="hidden sm:inline">Ayuda 1551</span>
+            </button>
+          </div> */}
           <div className="wave-ribbon-1"></div>
           <div className="wave-ribbon-2"></div>
           <div className="ribbon-texture-lines"></div>
@@ -97,27 +133,17 @@ export function LoginPage() {
                 <span className="material-symbols-outlined text-[20px]">directions_bus</span>
               </div>
               <div>
-                <div className="text-[11px] sm:text-xs uppercase tracking-wider font-semibold text-lime-300">Red de Movilidad</div>
+                <div className="text-[11px] sm:text-xs uppercase tracking-wider font-semibold text-lime-300">Plataforma Web</div>
                 <div className="font-display font-bold text-sm sm:text-[15px] text-white leading-tight">Transmetro Ciudad de Guatemala</div>
               </div>
             </div>
             <p className="text-xs text-white/80 leading-relaxed">Plataforma centralizada de gestión de flota, supervisión de lineas y estaciones.</p>
             <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-white/70">
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-[#a6f875]"></span>Sistema Activo</span>
-              <span>v4.8 Municipalidad</span>
+              <span>v1 Municipalidad</span>
             </div>
           </div>
         </aside>
-      </div>
-
-      <div className="fixed bottom-6 right-6 max-w-sm bg-[#001251] text-white p-4 rounded-2xl shadow-2xl transform translate-y-28 opacity-0 transition-all duration-300 pointer-events-none z-50 flex items-center gap-3.5 border border-white/10" id="auth-status-toast">
-        <div className="w-9 h-9 rounded-xl bg-[#a6f875] text-[#001251] flex items-center justify-center shrink-0">
-          <span className="material-symbols-outlined text-[20px] animate-spin">sync</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="font-display text-sm font-bold text-white">Redirigiendo a Google Workspace</span>
-          <span className="text-xs text-slate-300">Conectando con @muniguate...</span>
-        </div>
       </div>
     </div>
   );

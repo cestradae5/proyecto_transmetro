@@ -25,11 +25,17 @@ import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-
     AuditRepository,
     {
       provide: DATASOURCE,
-      useValue: null as unknown as DataSource,
+      useExisting: DataSource,
     },
     {
       provide: GOOGLE_CREDENTIAL_VERIFIER,
-      useClass: GoogleAuthLibraryAdapter,
+      useFactory: () => {
+        const clientId = process.env.GOOGLE_WEB_CLIENT_ID;
+        if (!clientId) {
+          throw new Error("GOOGLE_WEB_CLIENT_ID is required in environment");
+        }
+        return new GoogleAuthLibraryAdapter(clientId);
+      },
     },
   ],
   exports: [AuthenticationService, AuthenticationGuard],

@@ -12,7 +12,7 @@ export function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#fafbfc]">
-      <header className="w-full h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 absolute top-0 left-0">
+      <header className="w-full h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 fixed top-0 left-0">
         <div className="flex items-center gap-2.5">
           <span className="font-display font-bold text-xl text-primary">Transmetro</span>
         </div>
@@ -21,7 +21,7 @@ export function LandingPage() {
         </div>
       </header>
 
-      <main className="pt-20 px-4 sm:px-8 py-8 lg:py-12 max-w-6xl mx-auto">
+      <main className="pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-6xl mx-auto">
         <div className="bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04)] p-6 sm:p-11">
           <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight mb-6">Administration Dashboard</h1>
 

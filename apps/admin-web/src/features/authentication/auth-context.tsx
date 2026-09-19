@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { API_BASE_URL } from "../../platform/configuration/environment";
 
 export interface User {
   email: string;
@@ -10,45 +11,70 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  login: (sessionHash: string, email: string) => void;
-  logout: () => void;
+  login: (userData: User) => void;
+  logout: () => Promise<void>;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isAuthenticated: false,
   login: () => {},
-  logout: () => {},
+  logout: async () => {},
+  loading: true,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = (sessionHash: string, email: string) => {
-    const cookie = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith("__Host-transmetro_admin_session="));
-    if (cookie) {
-      const match = cookie.match(/=([a-f0-9]{64})/);
-      if (match) {
-        setUser({
-          email,
-          employeeId: "emp-1",
-          roles: ["ADMIN"],
-          permissions: ["administration.read", "administration.write"],
+  // Restore session on mount: call GET /authentication/me
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/authentication/me`, {
+          credentials: "include",
+          headers: { Origin: window.location.origin },
         });
+        if (response.ok) {
+          const data = await response.json();
+          setUser({
+            email: data.email,
+            employeeId: data.employeeId,
+            roles: data.roles,
+            permissions: data.permissions,
+          });
+        }
+      } catch {
+        // No session active — user stays null
+      } finally {
+        setLoading(false);
       }
+    }
+    checkSession();
+  }, []);
+
+  const login = (userData: User) => {
+    setUser(userData);
+  };
+
+  const logout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/authentication/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Origin: window.location.origin,
+          "X-Transmetro-Request": "admin-web",
+        },
+      });
+    } finally {
+      setUser(null);
     }
   };
 
-  const logout = () => {
-    document.cookie =
-      "__Host-transmetro_admin_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None";
-    setUser(null);
-  };
-
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
