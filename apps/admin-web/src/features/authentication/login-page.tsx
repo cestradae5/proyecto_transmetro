@@ -69,7 +69,7 @@ export function LoginPage() {
       <div className="flex-1 flex flex-col lg:flex-row w-full h-full overflow-y-auto lg:overflow-hidden">
         <main className="flex-1 flex flex-col items-center px-4 sm:px-8 py-8 lg:py-12 bg-[#fafbfc] relative min-h-screen lg:min-h-0">
           <div className="absolute top-0 left-0 w-full h-16 flex items-center px-6 lg:px-12 z-30">
-          <span className="font-display font-bold text-xl text-primary"><img src="/public/images/Transmetro_Logo.png" alt="Transmetro Logo" width="350" height="40" /></span>
+          <span className="font-display font-bold text-xl text-primary"><img src="/images/Transmetro_Logo.png" alt="Transmetro Logo" width="350" height="40" /></span>
           </div>
           <div className="w-full max-w-[480px] my-auto flex flex-col items-center py-4">
             <div className="w-full bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04),0_20px_25px_-5px_rgba(15,23,42,0.02)] p-6 sm:p-11">
