@@ -9,6 +9,7 @@
     "start:dev": "nest start --watch",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:e2e": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config test/jest-e2e.json",
+    "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config test/jest-integration.json",
     "migration:generate": "typeorm-ts-node-esm migration:generate src/platform/database/migrations/migration -d src/platform/database/data-source.ts",
     "migration:run": "typeorm-ts-node-esm migration:run -d src/platform/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-esm migration:revert -d src/platform/database/data-source.ts",
@@ -21,6 +22,7 @@
     "@nestjs/platform-express": "12.0.2",
     "@nestjs/typeorm": "12.0.1",
     "dotenv": "17.2.2",
+    "google-auth-library": "^11.0.2",
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@nestjs/cli": "12.0.1",
     "@nestjs/testing": "12.0.2",
+    "@types/express": "^5.0.6",
     "@types/jest": "30.0.0",
     "@types/node": "26.5.1",
     "@types/supertest": "7.2.1",

@@ -1,5 +1,19 @@
 const DEFAULT_DATABASE_PORT = 5432;
 
+export class AuthenticationConfigurationError extends Error {
+  constructor() {
+    super("Authentication configuration is invalid.");
+    this.name = "AuthenticationConfigurationError";
+  }
+}
+
+export class IntegrationDatabaseConfigurationError extends Error {
+  constructor() {
+    super("Integration database configuration is invalid.");
+    this.name = "IntegrationDatabaseConfigurationError";
+  }
+}
+
 function parsePort(value: string | undefined): number {
   if (value === undefined) {
     return DEFAULT_DATABASE_PORT;
@@ -27,15 +41,97 @@ export interface DatabaseEnvironment {
   username: string;
 }
 
-export function readDatabaseEnvironment(
+export interface AuthenticationEnvironment {
+  adminWebOrigins: string[];
+  googleWebClientId: string;
+}
+
+function readOrigins(value: string | undefined): string[] {
+  const origins = value
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+  if (origins === undefined || origins.length === 0) {
+    throw new AuthenticationConfigurationError();
+  }
+
+  return origins.map((origin) => {
+    try {
+      const url = new URL(origin);
+
+      if (
+        (url.protocol !== "http:" && url.protocol !== "https:") ||
+        url.origin !== origin
+      ) {
+        throw new AuthenticationConfigurationError();
+      }
+    } catch (error: unknown) {
+      if (error instanceof AuthenticationConfigurationError) {
+        throw error;
+      }
+
+      throw new AuthenticationConfigurationError();
+    }
+
+    return origin;
+  });
+}
+
+export function readAuthenticationEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
+): AuthenticationEnvironment {
+  const googleWebClientId = environment.GOOGLE_WEB_CLIENT_ID?.trim();
+
+  if (googleWebClientId === undefined || googleWebClientId.length === 0) {
+    throw new AuthenticationConfigurationError();
+  }
+
+  return {
+    adminWebOrigins: readOrigins(environment.ADMIN_WEB_ORIGINS),
+    googleWebClientId,
+  };
+}
+
+function createDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv,
+  database: string,
 ): DatabaseEnvironment {
   return {
-    database: environment.DATABASE_NAME ?? "transmetro",
+    database,
     host: environment.DATABASE_HOST ?? "localhost",
     password: environment.DATABASE_PASSWORD,
     port: parsePort(environment.DATABASE_PORT),
     ssl: parseBoolean(environment.DATABASE_SSL),
     username: environment.DATABASE_USER ?? "transmetro",
   };
+}
+
+export function readDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): DatabaseEnvironment {
+  return createDatabaseEnvironment(
+    environment,
+    environment.DATABASE_NAME ?? "transmetro",
+  );
+}
+
+export function readIntegrationDatabaseEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): DatabaseEnvironment {
+  const developmentDatabase = environment.DATABASE_NAME?.trim();
+  const testDatabase = environment.TEST_DATABASE_NAME?.trim();
+
+  if (
+    developmentDatabase === undefined ||
+    developmentDatabase.length === 0 ||
+    testDatabase === undefined ||
+    testDatabase.length === 0 ||
+    testDatabase === developmentDatabase ||
+    !testDatabase.endsWith("_test")
+  ) {
+    throw new IntegrationDatabaseConfigurationError();
+  }
+
+  return createDatabaseEnvironment(environment, testDatabase);
 }

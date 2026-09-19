@@ -15,7 +15,8 @@
     "@emotion/styled": "11.14.1",
     "@mui/material": "7.3.11",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
