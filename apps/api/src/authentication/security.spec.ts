@@ -17,44 +17,56 @@ import { PERMISSIONS_KEY } from "./permissions.decorator.js";
 // ============================================================================
 
 describe("Session cookie security flags (task 1.2)", () => {
-  it("sets __Host-transmetro_admin_session with HttpOnly flag", async () => {
-    const { SESSION_COOKIE_FLAGS } = await import(
+  it("sets __Host-transmetro_admin_session with HttpOnly flag (HTTPS/production)", async () => {
+    const { SESSION_COOKIE_FLAGS_SECURE } = await import(
       "./authentication.controller.js"
     );
 
-    expect(SESSION_COOKIE_FLAGS).toContain("HttpOnly");
+    expect(SESSION_COOKIE_FLAGS_SECURE).toContain("HttpOnly");
   });
 
-  it("sets __Host-transmetro_admin_session with Secure flag", async () => {
-    const { SESSION_COOKIE_FLAGS } = await import(
+  it("sets __Host-transmetro_admin_session with Secure flag (HTTPS/production)", async () => {
+    const { SESSION_COOKIE_FLAGS_SECURE } = await import(
       "./authentication.controller.js"
     );
 
-    expect(SESSION_COOKIE_FLAGS).toContain("Secure");
+    expect(SESSION_COOKIE_FLAGS_SECURE).toContain("Secure");
   });
 
-  it("sets __Host-transmetro_admin_session with SameSite=None", async () => {
-    const { SESSION_COOKIE_FLAGS } = await import(
+  it("sets __Host-transmetro_admin_session with SameSite=None (HTTPS/production)", async () => {
+    const { SESSION_COOKIE_FLAGS_SECURE } = await import(
       "./authentication.controller.js"
     );
 
-    expect(SESSION_COOKIE_FLAGS).toContain("SameSite=None");
+    expect(SESSION_COOKIE_FLAGS_SECURE).toContain("SameSite=None");
   });
 
-  it("sets __Host-transmetro_admin_session with Path=/", async () => {
-    const { SESSION_COOKIE_FLAGS } = await import(
+  it("sets __Host-transmetro_admin_session with Path=/ (HTTPS/production)", async () => {
+    const { SESSION_COOKIE_FLAGS_SECURE } = await import(
       "./authentication.controller.js"
     );
 
-    expect(SESSION_COOKIE_FLAGS).toContain("Path=/");
+    expect(SESSION_COOKIE_FLAGS_SECURE).toContain("Path=/");
   });
 
   it("sets __Host-transmetro_admin_session with Max-Age=43200 (12 hours)", async () => {
-    const { SESSION_COOKIE_FLAGS } = await import(
+    const { SESSION_COOKIE_FLAGS_SECURE } = await import(
       "./authentication.controller.js"
     );
 
-    expect(SESSION_COOKIE_FLAGS).toContain("Max-Age=43200");
+    expect(SESSION_COOKIE_FLAGS_SECURE).toContain("Max-Age=43200");
+  });
+
+  it("uses plain cookie name without __Host- prefix for HTTP dev", async () => {
+    const { SESSION_COOKIE_FLAGS_INSECURE } = await import(
+      "./authentication.controller.js"
+    );
+
+    expect(SESSION_COOKIE_FLAGS_INSECURE).toContain("transmetro_admin_session");
+    expect(SESSION_COOKIE_FLAGS_INSECURE).not.toContain("__Host-");
+    expect(SESSION_COOKIE_FLAGS_INSECURE).not.toContain("Secure");
+    expect(SESSION_COOKIE_FLAGS_INSECURE).toContain("HttpOnly");
+    expect(SESSION_COOKIE_FLAGS_INSECURE).toContain("SameSite=Lax");
   });
 });
 

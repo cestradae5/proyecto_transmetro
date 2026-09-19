@@ -23,8 +23,6 @@ declare module "express" {
   }
 }
 
-const SESSION_COOKIE_NAME = "__Host-transmetro_admin_session";
-
 @Injectable()
 export class AuthenticationGuard implements CanActivate {
   constructor(
@@ -72,13 +70,14 @@ export class AuthenticationGuard implements CanActivate {
     return true;
   }
 
-  // Extrae el hash de sesión de la cookie __Host-transmetro_admin_session
+  // Extrae el hash de sesión de la cookie (HTTPS: __Host- prefix, HTTP: plain name)
   private extractSessionHash(cookie: string | undefined): string | undefined {
     if (!cookie) {
       return undefined;
     }
+    // Match both __Host-transmetro_admin_session (HTTPS) and transmetro_admin_session (HTTP dev)
     const match = cookie.match(
-      new RegExp(`${SESSION_COOKIE_NAME}=([a-f0-9]{64})`),
+      /(?:__Host-)?transmetro_admin_session=([a-f0-9]{64})/,
     );
     return match?.[1];
   }

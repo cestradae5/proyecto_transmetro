@@ -14,9 +14,16 @@ import { readAuthenticationEnvironment } from "../platform/configuration/environ
 // Cookie configuration contract — exposed for security testing
 // ============================================================================
 
-export const SESSION_COOKIE_FLAGS = "__Host-transmetro_admin_session=${sessionHash}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=43200";
+// __Host- prefix requires HTTPS + Secure + Path=/ — only safe in production
+// HTTP dev uses plain name without __Host- prefix and without Secure flag
+const COOKIE_NAME_SECURE = "__Host-transmetro_admin_session";
+const COOKIE_NAME_INSECURE = "transmetro_admin_session";
 
-export const SESSION_COOKIE_CLEAR_FLAGS = "__Host-transmetro_admin_session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0";
+export const SESSION_COOKIE_FLAGS_SECURE = `${COOKIE_NAME_SECURE}=\${sessionHash}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=43200`;
+export const SESSION_COOKIE_CLEAR_FLAGS_SECURE = `${COOKIE_NAME_SECURE}=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0`;
+
+export const SESSION_COOKIE_FLAGS_INSECURE = `${COOKIE_NAME_INSECURE}=\${sessionHash}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`;
+export const SESSION_COOKIE_CLEAR_FLAGS_INSECURE = `${COOKIE_NAME_INSECURE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
 
 @Controller("authentication")
 export class AuthenticationController {
@@ -112,7 +119,8 @@ export class AuthenticationController {
 
       // Use existing login flow with the id_token
       const result = await this.authenticationService.login(idToken);
-      this.setSessionCookie(response, result.sessionHash);
+      const isSecure = request.protocol === "https";
+      this.setSessionCookie(response, result.sessionHash, isSecure);
       response.redirect(`${frontendUrl}/landing`);
     } catch {
       response.redirect(`${frontendUrl}/login?error=denied`);
@@ -136,7 +144,8 @@ export class AuthenticationController {
       const credential = request.body.credential as string;
       const result = await this.authenticationService.login(credential);
 
-      this.setSessionCookie(response, result.sessionHash);
+      const isSecure = request.protocol === "https";
+      this.setSessionCookie(response, result.sessionHash, isSecure);
       response.status(HttpStatus.OK).json({ sessionHash: result.sessionHash, expiresAt: result.expiresAt });
     } catch (error: unknown) {
       if (error instanceof InvalidCredentials || error instanceof EmployeeNotEligible) {
@@ -202,7 +211,8 @@ export class AuthenticationController {
       // Logout es idempotente: si no existía sesión, igual responde 204
     }
 
-    this.clearSessionCookie(response);
+    const isSecure = request.protocol === "https";
+    this.clearSessionCookie(response, isSecure);
     response.status(HttpStatus.NO_CONTENT).end();
   }
 
@@ -217,27 +227,25 @@ export class AuthenticationController {
   }
 
   // ---------------------------------------------------------------------------
-  // Cookie: __Host- prefix requiere Secure + Path=/ + HttpOnly
+  // Cookie: __Host- prefix requiere Secure + Path=/ + HttpOnly (HTTPS only)
+  // En HTTP (dev) se usa nombre plano sin prefijo __Host- y sin flag Secure
   // ---------------------------------------------------------------------------
-  private setSessionCookie(response: Record<string, any>, sessionHash: string): void {
-    response.setHeader(
-      "Set-Cookie",
-      SESSION_COOKIE_FLAGS.replace("${sessionHash}", sessionHash),
-    );
+  private setSessionCookie(response: Record<string, any>, sessionHash: string, isSecure: boolean): void {
+    const flags = isSecure ? SESSION_COOKIE_FLAGS_SECURE : SESSION_COOKIE_FLAGS_INSECURE;
+    response.setHeader("Set-Cookie", flags.replace("${sessionHash}", sessionHash));
   }
 
-  private clearSessionCookie(response: Record<string, any>): void {
-    response.setHeader(
-      "Set-Cookie",
-      SESSION_COOKIE_CLEAR_FLAGS,
-    );
+  private clearSessionCookie(response: Record<string, any>, isSecure: boolean): void {
+    const flags = isSecure ? SESSION_COOKIE_CLEAR_FLAGS_SECURE : SESSION_COOKIE_CLEAR_FLAGS_INSECURE;
+    response.setHeader("Set-Cookie", flags);
   }
 
   private extractSessionHash(cookie: string | undefined): string | undefined {
     if (!cookie) {
       return undefined;
     }
-    const match = cookie.match(/__Host-transmetro_admin_session=([^;]+)/);
+    // Try __Host- prefix first (HTTPS), then plain name (HTTP dev)
+    const match = cookie.match(/(?:__Host-)?transmetro_admin_session=([^;]+)/);
     return match?.[1];
   }
 }
