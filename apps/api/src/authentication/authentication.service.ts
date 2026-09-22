@@ -13,6 +13,53 @@ import { AuditRepository } from "./infrastructure/audit.repository.js";
 import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE, type GoogleCredentialVerifier } from "./infrastructure/google-credential-verifier.port.js";
 import { InvalidCredentials, EmployeeNotEligible, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
 
+// ────────────────────────────────────────────────────────────────────────────
+// PERMISSION_TO_MODULE — maps DB permission codes to frontend module keys.
+// Keys MUST match MODULE_LABELS in landing-page.tsx or the card won't render.
+// ────────────────────────────────────────────────────────────────────────────
+export const PERMISSION_TO_MODULE: Record<string, string> = {
+  // GIS / infrastructure
+  INFRAESTRUCTURA_GESTIONAR: "gis",
+  PANEL_OPERATIVO_CENTRAL_USAR: "gis",
+
+  // Fleet management
+  FLOTA_GESTIONAR: "fleet",
+  FLOTA_ESTACION_SOLICITAR: "fleet",
+  UNIDAD_ASIGNADA_CONSULTAR: "fleet",
+
+  // Alerts (operational awareness → report)
+  ALERTAS_OPERATIVAS_GESTIONAR: "report",
+  ALERTAS_ESTACION_GESTIONAR: "report",
+  ALERTAS_UNIDAD_GESTIONAR: "report",
+  METRICAS_UNIDAD_REPORTAR: "report",
+
+  // Reports
+  REPORTES_ADMINISTRATIVOS_CONSULTAR: "report",
+
+  // Audit
+  AUDITORIA_BITACORA_CONSULTAR: "audit",
+
+  // Recharge
+  RECARGAS_REPORTES_CONSULTAR: "recharge",
+
+  // Self-profile (every authenticated user)
+  PERFIL_PROPIO_CONSULTAR: "self_profile",
+};
+
+/**
+ * Derives frontend modules from a list of permission codes.
+ * Returns a stable-ordered, deduplicated array of module keys.
+ */
+export function deriveModulesFromPermissions(permissions: string[]): string[] {
+  const MODULE_ORDER = ["fleet", "gis", "audit", "report", "recharge", "self_profile"];
+  const modules = new Set<string>();
+  for (const perm of permissions) {
+    const mod = PERMISSION_TO_MODULE[perm];
+    if (mod) modules.add(mod);
+  }
+  return MODULE_ORDER.filter((m) => modules.has(m));
+}
+
 // Configuración JWT
 const JWT_EXPIRY = "12h"; // expiración del token JWT
 const JWT_SECRET = process.env.JWT_SECRET || "default-secret-change-in-production"; // IMPORTANTE: cambiar en producción
@@ -55,7 +102,7 @@ export class AuthenticationService {
 
       const roleName = employee.role?.name ?? "NONE";
       const permissions = employee.role?.permissions?.map((p) => p.code) ?? [];
-      const modules = this.getModulesForRole(roleName);
+      const modules = deriveModulesFromPermissions(permissions);
 
       // Genera JWT con payload completo
       const token = jwt.sign(
@@ -117,16 +164,6 @@ export class AuthenticationService {
     } catch {
       throw new InvalidCredentials();
     }
-  }
-
-  // Retorna los módulos accesibles según el rol
-  private getModulesForRole(roleName: string): string[] {
-    const ROLE_MODULES: Record<string, string[]> = {
-      ADMIN: ["dashboard", "passengers", "drivers", "routes", "trips", "billing", "reports", "audit"],
-      DRIVER: ["drivers", "routes", "trips"],
-      OPERATOR: ["passengers", "routes", "trips"],
-    };
-    return ROLE_MODULES[roleName] ?? [];
   }
 
   // Logout stateless: el token sigue siendo válido hasta expirar,
