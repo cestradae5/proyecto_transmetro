@@ -8,14 +8,28 @@ import { jest } from "@jest/globals";
 import type { ExecutionContext } from "@nestjs/common";
 import { UnauthorizedException, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { AuthenticationService } from "./authentication.service.js";
+import type { MeResult } from "./authentication.contracts.js";
 
 // Cookie name del host — la cookie se llama exactamente así en el browser
 const SESSION_COOKIE = "__Host-transmetro_admin_session";
 
 // Mock types
 type MockAuthenticationService = {
-  me: jest.MockedFunction<(hash: string) => Promise<any>>;
+  me: jest.MockedFunction<(hash: string) => Promise<MeResult>>;
 };
+
+// Helper para crear un MeResult con scope completo
+function makeMeResult(overrides: Record<string, any> = {}): MeResult {
+  return {
+    employeeId: "emp-1",
+    email: "admin@transmetro.gt",
+    roles: ["ADMIN"],
+    permissions: ["administration.read", "administration.write"],
+    scope: { role: "ADMIN", modules: ["dashboard", "passengers", "drivers", "routes", "trips", "billing", "reports", "audit"] },
+    ...overrides,
+  };
+}
 
 function makeMockContext(cookies: Record<string, string> = {}): ExecutionContext {
   const cookieHeader = Object.entries(cookies)
@@ -43,12 +57,7 @@ describe("AuthenticationGuard", () => {
     it("allows access when session cookie is valid", async () => {
       const { AuthenticationGuard } = await import("./authentication.guard.js");
       const mockService: MockAuthenticationService = {
-        me: jest.fn().mockResolvedValue({
-          employeeId: "emp-1",
-          email: "admin@transmetro.gt",
-          roles: ["ADMIN"],
-          permissions: ["administration.read", "administration.write"],
-        }),
+        me: jest.fn().mockResolvedValue(makeMeResult()),
       };
 
       const guard = new AuthenticationGuard(mockService as any, new Reflector());
@@ -91,14 +100,8 @@ describe("AuthenticationGuard", () => {
 
     it("attaches user context to request on success", async () => {
       const { AuthenticationGuard } = await import("./authentication.guard.js");
-      const userContext = {
-        employeeId: "emp-1",
-        email: "admin@transmetro.gt",
-        roles: ["ADMIN"],
-        permissions: ["administration.read", "administration.write"],
-      };
       const mockService: MockAuthenticationService = {
-        me: jest.fn().mockResolvedValue(userContext),
+        me: jest.fn().mockResolvedValue(makeMeResult()),
       };
 
       const guard = new AuthenticationGuard(mockService as any, new Reflector());
@@ -114,7 +117,7 @@ describe("AuthenticationGuard", () => {
 
       await guard.canActivate(context);
 
-      expect(request.user).toEqual(userContext);
+      expect(request.user).toEqual(makeMeResult());
     });
   });
 
@@ -126,12 +129,7 @@ describe("AuthenticationGuard", () => {
       const { AuthenticationGuard } = await import("./authentication.guard.js");
       const { PERMISSIONS_KEY } = await import("./permissions.decorator.js");
       const mockService: MockAuthenticationService = {
-        me: jest.fn().mockResolvedValue({
-          employeeId: "emp-1",
-          email: "admin@transmetro.gt",
-          roles: ["ADMIN"],
-          permissions: ["administration.read", "administration.write"],
-        }),
+        me: jest.fn().mockResolvedValue(makeMeResult()),
       };
 
       // Simula un handler decorado con @Permissions("administration.read")
@@ -154,12 +152,13 @@ describe("AuthenticationGuard", () => {
       const { AuthenticationGuard } = await import("./authentication.guard.js");
       const { PERMISSIONS_KEY } = await import("./permissions.decorator.js");
       const mockService: MockAuthenticationService = {
-        me: jest.fn().mockResolvedValue({
+        me: jest.fn().mockResolvedValue(makeMeResult({
           employeeId: "emp-2",
           email: "operator@transmetro.gt",
           roles: ["OPERATOR"],
-          permissions: ["operations.read"], // no tiene administration.write
-        }),
+          permissions: ["operations.read"],
+          scope: { role: "OPERATOR", modules: ["passengers", "routes", "trips"] },
+        })),
       };
 
       const handler = () => {};
@@ -201,12 +200,7 @@ describe("AuthenticationGuard", () => {
     it("extracts session hash from __Host-transmetro_admin_session cookie", async () => {
       const { AuthenticationGuard } = await import("./authentication.guard.js");
       const mockService: MockAuthenticationService = {
-        me: jest.fn().mockResolvedValue({
-          employeeId: "emp-1",
-          email: "admin@transmetro.gt",
-          roles: ["ADMIN"],
-          permissions: [],
-        }),
+        me: jest.fn().mockResolvedValue(makeMeResult()),
       };
 
       const guard = new AuthenticationGuard(mockService as any, new Reflector());
@@ -222,12 +216,7 @@ describe("AuthenticationGuard", () => {
     it("ignores other cookies and extracts only the session cookie", async () => {
       const { AuthenticationGuard } = await import("./authentication.guard.js");
       const mockService: MockAuthenticationService = {
-        me: jest.fn().mockResolvedValue({
-          employeeId: "emp-1",
-          email: "admin@transmetro.gt",
-          roles: ["ADMIN"],
-          permissions: [],
-        }),
+        me: jest.fn().mockResolvedValue(makeMeResult()),
       };
 
       const guard = new AuthenticationGuard(mockService as any, new Reflector());

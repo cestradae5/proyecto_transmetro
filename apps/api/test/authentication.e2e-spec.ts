@@ -41,6 +41,7 @@ function makeMockAuthenticationService(sessionHash: string, email: string): Auth
         email,
         roles: ["ADMIN"],
         permissions: ["administration.read", "administration.write"],
+        scope: { role: "ADMIN", modules: ["dashboard", "passengers", "drivers", "routes", "trips", "billing", "reports", "audit"] },
       } as MeResult);
     }
     return Promise.reject(new Error("Session expired"));
@@ -168,6 +169,7 @@ describe("Authentication HTTP endpoints (RED)", () => {
         email: "admin@transmetro.gt",
         roles: ["ADMIN"],
         permissions: ["administration.read", "administration.write"],
+        scope: { role: "ADMIN", modules: ["dashboard", "passengers", "drivers", "routes", "trips", "billing", "reports", "audit"] },
       } as MeResult);
       const logout = jest.fn().mockResolvedValue({ revoked: true } as LogoutResult);
       return { login, me, logout } as unknown as AuthenticationService;

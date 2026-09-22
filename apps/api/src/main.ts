@@ -6,22 +6,11 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const port = process.env.PORT ?? 3000;
 
-  // CORS para el admin-web: origen exacto, credenciales, methods y headers restringidos
-  const adminWebOrigins = process.env.ADMIN_WEB_ORIGINS?.split(",").map((o) => o.trim()) ?? [];
+  // CORS simplificado para JWT stateless — no cookies
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Permitir requests sin origin (como curl o postman directo)
-      if (!origin) {
-        return callback(null, true);
-      }
-      if (adminWebOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Origin not allowed"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-Transmetro-Request"],
+    origin: "*", // Permitir todos los orígenes (JWT no tiene riesgo CSRF)
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   });
 
   await app.listen(port, "0.0.0.0");
