@@ -1,0 +1,50 @@
+// Shared role→permission fixtures mirroring database/init.sql
+// (tbl_rol_permiso), per the approved matrix (Engram #1817). Used by both
+// rbac-module-derivation.spec.ts and role-module-matrix.spec.ts to avoid
+// duplicating the same seeded grants in two places.
+
+export const ROLE_PERMISSIONS: Record<string, string[]> = {
+  // ADMINISTRADOR_SISTEMA gets every permission via CROSS JOIN in init.sql.
+  ADMINISTRADOR_SISTEMA: [
+    "PERFIL_PROPIO_CONSULTAR",
+    "EMPLEADOS_PERFILES_ADMINISTRAR",
+    "ROLES_PERMISOS_ADMINISTRAR",
+    "INFRAESTRUCTURA_GESTIONAR",
+    "FLOTA_GESTIONAR",
+    "FLOTA_ESTACION_SOLICITAR",
+    "UNIDAD_ASIGNADA_CONSULTAR",
+    "METRICAS_UNIDAD_REPORTAR",
+    "ALERTAS_ESTACION_GESTIONAR",
+    "ALERTAS_UNIDAD_GESTIONAR",
+    "ALERTAS_OPERATIVAS_GESTIONAR",
+    "PANEL_OPERATIVO_CENTRAL_USAR",
+    "REPORTES_ADMINISTRATIVOS_CONSULTAR",
+    "AUDITORIA_BITACORA_CONSULTAR",
+    "RECARGAS_REPORTES_CONSULTAR",
+  ],
+  // Approved matrix: manages infrastructure/fleet/personnel, handles alerts
+  // and the central panel, consults reports/recharges/audit.
+  OPERADOR_CENTRAL: [
+    "PERFIL_PROPIO_CONSULTAR",
+    "EMPLEADOS_PERFILES_ADMINISTRAR",
+    "INFRAESTRUCTURA_GESTIONAR",
+    "FLOTA_GESTIONAR",
+    "ALERTAS_OPERATIVAS_GESTIONAR",
+    "PANEL_OPERATIVO_CENTRAL_USAR",
+    "REPORTES_ADMINISTRATIVOS_CONSULTAR",
+    "AUDITORIA_BITACORA_CONSULTAR",
+    "RECARGAS_REPORTES_CONSULTAR",
+  ],
+  OPERADOR_ESTACION: [
+    "PERFIL_PROPIO_CONSULTAR",
+    "FLOTA_ESTACION_SOLICITAR",
+    "ALERTAS_ESTACION_GESTIONAR",
+  ],
+  PILOTO: [
+    "PERFIL_PROPIO_CONSULTAR",
+    "UNIDAD_ASIGNADA_CONSULTAR",
+    "METRICAS_UNIDAD_REPORTAR",
+    "ALERTAS_UNIDAD_GESTIONAR",
+  ],
+  GUARDIA: ["PERFIL_PROPIO_CONSULTAR"],
+};
