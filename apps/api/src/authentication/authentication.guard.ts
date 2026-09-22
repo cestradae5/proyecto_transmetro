@@ -1,5 +1,5 @@
-// Guard de autenticación — protege rutas que requieren sesión válida.
-// Extrae cookie __Host-transmetro_admin_session, valida vía AuthenticationService.me(),
+// Guard de autenticación JWT — protege rutas que requieren token válido.
+// Extrae Authorization: Bearer <token>, valida vía AuthenticationService.verifyToken(),
 // y adjunta el contexto de usuario al request.
 // Combinable con @Permissions para control de acceso basado en permisos.
 
@@ -31,19 +31,20 @@ export class AuthenticationGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // 1. Extraer cookie de sesión del request
+    // 1. Extraer JWT del header Authorization
     const request = context.switchToHttp().getRequest();
-    const cookie = request.headers.cookie as string | undefined;
-    const sessionHash = this.extractSessionHash(cookie);
+    const authHeader = request.headers.authorization as string | undefined;
 
-    if (!sessionHash) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       throw new UnauthorizedException();
     }
 
-    // 2. Validar sesión vía AuthenticationService.me()
+    const token = authHeader.substring(7); // Remove "Bearer "
+
+    // 2. Validar JWT vía AuthenticationService.verifyToken()
     let user: MeResult;
     try {
-      user = await this.authenticationService.me(sessionHash);
+      user = await this.authenticationService.verifyToken(token);
     } catch {
       throw new UnauthorizedException();
     }
@@ -68,17 +69,5 @@ export class AuthenticationGuard implements CanActivate {
     }
 
     return true;
-  }
-
-  // Extrae el hash de sesión de la cookie (HTTPS: __Host- prefix, HTTP: plain name)
-  private extractSessionHash(cookie: string | undefined): string | undefined {
-    if (!cookie) {
-      return undefined;
-    }
-    // Match both __Host-transmetro_admin_session (HTTPS) and transmetro_admin_session (HTTP dev)
-    const match = cookie.match(
-      /(?:__Host-)?transmetro_admin_session=([a-f0-9]{64})/,
-    );
-    return match?.[1];
   }
 }

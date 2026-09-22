@@ -1,144 +1,139 @@
-// Servicio de autenticación: orquesta el ciclo de vida transaccional de sesiones.
+// Servicio de autenticación: valida credenciales Google y genera JWT stateless.
 // Reglas de negocio puras — sin HTTP, cookies, CORS, ni wiring de Nest.
 // Inyecta repositorios y verifier Google vía puertos (inversión de dependencias).
 
 import { Inject } from "@nestjs/common";
-import { createHash, randomBytes } from "node:crypto";
+import jwt from "jsonwebtoken";
 import { DataSource, type EntityManager } from "typeorm";
 
 import { EmployeeEntity, EMPLOYEE_STATUSES } from "./entities/employee.entity.js";
-import { SessionEntity } from "./entities/session.entity.js";
 import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
-import { SessionRepository } from "./infrastructure/session.repository.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
 import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE, type GoogleCredentialVerifier } from "./infrastructure/google-credential-verifier.port.js";
-import { InvalidCredentials, EmployeeNotEligible, SessionConflict, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
+import { InvalidCredentials, EmployeeNotEligible, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
 
-// Configuración inmutable del ciclo de vida de sesión
-const SESSION_EXPIRY_HOURS = 12;      // expiración fija absoluta, sin sliding renewal
-const SESSION_TOKEN_BYTES = 32;       // 32 bytes = 256 bits de entropía para el token crudo
-
-// Hash SHA-256 del token crudo — lo que se guarda en BD y se envía en cookie
-function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-// Genera token criptográficamente seguro (32 bytes hex = 64 chars)
-function generateRawToken(): string {
-  return randomBytes(SESSION_TOKEN_BYTES).toString("hex");
-}
+// Configuración JWT
+const JWT_EXPIRY = "12h"; // expiración del token JWT
+const JWT_SECRET = process.env.JWT_SECRET || "default-secret-change-in-production"; // IMPORTANTE: cambiar en producción
 
 export class AuthenticationService {
   constructor(
     @Inject(DATASOURCE)
     private readonly dataSource: DataSource,           // para transacciones TypeORM
-    private readonly employeeRepo: EmployeeRepository, // busca empleado elegible con lock
-    private readonly sessionRepo: SessionRepository,   // crea/borra/busca sesiones
-    private readonly auditRepo: AuditRepository,       // registra LOGIN/LOGOUT
+    private readonly employeeRepo: EmployeeRepository, // busca empleado elegible
+    private readonly auditRepo: AuditRepository,       // registra LOGIN
     @Inject(GOOGLE_CREDENTIAL_VERIFIER)
     private readonly googleVerifier: GoogleCredentialVerifier, // valida ID token Google
   ) {}
 
-  // Login transaccional atómico:
+  // Login JWT stateless:
   // 1. Verifica credencial Google → email normalizado
-  // 2. Genera token crudo + hash SHA-256 + expiración 12h
-  // 3. En UNA transacción: lock employee → borra sesiones viejas → inserta nueva → audita
-  // 4. Si falla cualquier paso: rollback total, nada se persiste
-  // 5. Devuelve solo hash y expiración (token crudo NUNCA sale de aquí)
+  // 2. Busca empleado ACTIVO con ROL ACTIVO
+  // 3. Genera JWT (12h) con payload: { employeeId, email, roles, permissions, scope }
+  // 4. Audita LOGIN
+  // 5. Devuelve JWT + datos del usuario
   async login(credential: string): Promise<LoginResult> {
     const { email } = await this.googleVerifier.verify(credential);
     const normalizedEmail = email.trim().toUpperCase(); // case-insensitive lookup
 
-    const rawToken = generateRawToken();
-    const tokenHash = hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
-
     return this.dataSource.transaction(async (manager: EntityManager) => {
-      // Busca empleado ACTIVO con ROL ACTIVO; lock pesimista solo sobre employee
+      // Busca empleado ACTIVO con ROL ACTIVO
       const employee = await this.employeeRepo.findEligibleByEmail(manager, normalizedEmail);
       if (!employee) {
-        // Auditoría de intento fallido (sin filtrar por qué falló)
+        // Auditoría de intento fallido
         await this.auditRepo.create(manager, {
           action: "LOGIN",
           employee: { id: "unknown" } as EmployeeEntity,
-          entityId: tokenHash,
-          entityType: "session",
+          entityId: "jwt-login",
+          entityType: "jwt",
           module: "authentication",
           result: AUDIT_RESULTS.FAILURE,
         });
         throw new InvalidCredentials(); // mensaje genérico
       }
 
-      // Single-session policy: revoca cualquier sesión previa del empleado
-      await this.sessionRepo.deleteByEmployeeId(manager, employee.id);
+      const roleName = employee.role?.name ?? "NONE";
+      const permissions = employee.role?.permissions?.map((p) => p.code) ?? [];
+      const modules = this.getModulesForRole(roleName);
 
-      // Inserta nueva sesión con hash SHA-256 y expiración fija
-      const session = await this.sessionRepo.create(manager, {
-        employee,
-        expiresAt,
-        tokenHash,
-      });
+      // Genera JWT con payload completo
+      const token = jwt.sign(
+        {
+          employeeId: employee.id,
+          email: employee.email,
+          roles: [roleName],
+          permissions,
+          scope: { role: roleName, modules },
+        },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRY }
+      );
 
-      // Auditoría de éxito — solo campos seguros
+      // Auditoría de éxito
       await this.auditRepo.create(manager, {
         action: "LOGIN",
         employee,
-        entityId: session.id,
-        entityType: "session",
+        entityId: employee.id,
+        entityType: "jwt",
         module: "authentication",
         result: AUDIT_RESULTS.SUCCESS,
       });
 
-      return { sessionHash: tokenHash, expiresAt };
+      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12h
+
+      return {
+        token,
+        expiresAt,
+        usuario: {
+          employeeId: employee.id,
+          email: employee.email,
+          roles: [roleName],
+          permissions,
+          scope: { role: roleName, modules },
+        },
+      };
     });
   }
 
-  // /me — contexto mínimo para frontend autenticado
-  // Valida que la sesión exista y no haya expirado
-  async me(sessionHash: string): Promise<MeResult> {
-    const session = await this.sessionRepo.findByHash(sessionHash);
-    if (!session) {
+  // Verifica JWT y retorna payload decodificado
+  async verifyToken(token: string): Promise<MeResult> {
+    try {
+      const payload = jwt.verify(token, JWT_SECRET) as {
+        employeeId: string;
+        email: string;
+        roles: string[];
+        permissions: string[];
+        scope: { role: string; modules: string[] };
+      };
+      
+      return {
+        employeeId: payload.employeeId,
+        email: payload.email,
+        roles: payload.roles,
+        permissions: payload.permissions,
+        scope: payload.scope,
+      };
+    } catch {
       throw new InvalidCredentials();
     }
-    if (session.expiresAt < new Date()) {
-      throw new InvalidCredentials();
-    }
+  }
 
-    const employee = session.employee;
-    // Permisos = códigos de acción (accion_permiso) del rol activo
-    const permissions = employee.role?.permissions?.map((p) => p.code) ?? [];
-
-    return {
-      employeeId: employee.id,
-      email: employee.email,
-      roles: [employee.role?.name].filter(Boolean) as string[],
-      permissions,
+  // Retorna los módulos accesibles según el rol
+  private getModulesForRole(roleName: string): string[] {
+    const ROLE_MODULES: Record<string, string[]> = {
+      ADMIN: ["dashboard", "passengers", "drivers", "routes", "trips", "billing", "reports", "audit"],
+      DRIVER: ["drivers", "routes", "trips"],
+      OPERATOR: ["passengers", "routes", "trips"],
     };
+    return ROLE_MODULES[roleName] ?? [];
   }
 
-  // Logout idempotente: si la sesión ya no existe, retorna true sin error
-  // En transacción: borra sesión + audita LOGOUT
-  async logout(sessionHash: string): Promise<LogoutResult> {
-    const session = await this.sessionRepo.findByHash(sessionHash);
-    if (!session) {
-      return { revoked: true };
-    }
-
-    const employee = session.employee;
-
-    await this.dataSource.transaction(async (manager: EntityManager) => {
-      await this.sessionRepo.deleteByEmployeeId(manager, employee.id);
-      await this.auditRepo.create(manager, {
-        action: "LOGOUT",
-        employee,
-        entityId: session.id,
-        entityType: "session",
-        module: "authentication",
-        result: AUDIT_RESULTS.SUCCESS,
-      });
-    });
-
+  // Logout stateless: el token sigue siendo válido hasta expirar,
+  // pero el cliente lo borra del localStorage
+  async logout(): Promise<LogoutResult> {
+    // Stateless: no hay sesión que revocar server-side
+    // El frontend borra el token del localStorage
     return { revoked: true };
   }
 }

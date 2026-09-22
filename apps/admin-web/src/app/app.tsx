@@ -2,8 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LoginPage } from "../features/authentication/login-page";
 import { LandingPage } from "../features/authentication/landing-page";
 import { GISPage } from "../features/authentication/gis-page";
-import { AdministrativeLanding } from "../features/administration/administrative-landing";
-import { AuthProvider, useAuth } from "../features/authentication/auth-context";
+import { ProfilePage } from "../features/dashboard/profile-page";
+import { AuthProvider } from "../features/authentication/auth-context";
+import { AuthenticationGuard } from "../features/dashboard/protected-route";
 
 export function App() {
   return (
@@ -12,9 +13,9 @@ export function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/landing" element={<LandingPage />} />
+          <Route path="/landing" element={<AuthenticationGuard><LandingPage /></AuthenticationGuard>} />
           <Route path="/gis" element={<GISPage />} />
-          <Route path="/admin" element={<AdministrativeLanding />} />
+          <Route path="/profile" element={<AuthenticationGuard><ProfilePage /></AuthenticationGuard>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -10,8 +10,8 @@ import { AuthenticationController } from "./authentication.controller.js";
 import { AuthenticationService } from "./authentication.service.js";
 import { AuthenticationGuard } from "./authentication.guard.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
-import { SessionRepository } from "./infrastructure/session.repository.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
+import { AssignmentScopeRepository } from "./infrastructure/assignment-scope.repository.js";
 import { GoogleAuthLibraryAdapter } from "./infrastructure/google-auth-library.adapter.js";
 import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-credential-verifier.port.js";
 
@@ -21,8 +21,8 @@ import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-
     AuthenticationService,
     AuthenticationGuard,
     EmployeeRepository,
-    SessionRepository,
     AuditRepository,
+    AssignmentScopeRepository,
     {
       provide: DATASOURCE,
       useExisting: DataSource,

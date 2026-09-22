@@ -8,10 +8,18 @@ export interface LoginInput {
 }
 
 export interface LoginResult {
-  // Hash SHA-256 del token de sesión (lo que se guarda en BD y se devuelve al cliente en cookie)
-  sessionHash: string;
-  // Momento exacto de expiración fija: ahora + 12 horas (sin renovación deslizante)
+  // JWT token (12h expiry)
+  token: string;
+  // Momento exacto de expiración: ahora + 12 horas
   expiresAt: Date;
+  // Datos del usuario para el frontend
+  usuario: {
+    employeeId: string;
+    email: string;
+    roles: string[];
+    permissions: string[];
+    scope: { role: string; modules: string[] };
+  };
 }
 
 export interface MeResult {
@@ -20,6 +28,11 @@ export interface MeResult {
   email: string;
   roles: string[];       // nombres de roles activos
   permissions: string[]; // códigos de permisos (accion_permiso) del rol activo
+  // Scope define los módulos accesibles según el rol del empleado
+  scope: {
+    role: string;
+    modules: string[];
+  };
 }
 
 export interface LogoutResult {

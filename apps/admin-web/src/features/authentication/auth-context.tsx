@@ -1,23 +1,29 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { API_BASE_URL } from "../../platform/configuration/environment";
 
+const TOKEN_STORAGE_KEY = "transmetro_token";
+const USER_STORAGE_KEY = "transmetro_user";
+
 export interface User {
   email: string;
   employeeId: string;
   roles: string[];
   permissions: string[];
+  scope: { role: string; modules: string[] };
 }
 
 interface AuthContextType {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
-  login: (userData: User) => void;
+  login: (token: string, userData: User) => void;
   logout: () => Promise<void>;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  token: null,
   isAuthenticated: false,
   login: () => {},
   logout: async () => {},
@@ -26,55 +32,57 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session on mount: call GET /authentication/me
+  // Restore session from localStorage on mount
   useEffect(() => {
-    async function checkSession() {
+    const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+
+    if (storedToken && storedUser) {
       try {
-        const response = await fetch(`${API_BASE_URL}/authentication/me`, {
-          credentials: "include",
-          headers: { Origin: window.location.origin },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setUser({
-            email: data.email,
-            employeeId: data.employeeId,
-            roles: data.roles,
-            permissions: data.permissions,
-          });
-        }
+        const userData = JSON.parse(storedUser);
+        setToken(storedToken);
+        setUser(userData);
       } catch {
-        // No session active — user stays null
-      } finally {
-        setLoading(false);
+        // Invalid stored data, clear it
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        localStorage.removeItem(USER_STORAGE_KEY);
       }
     }
-    checkSession();
+    setLoading(false);
   }, []);
 
-  const login = (userData: User) => {
+  const login = (newToken: string, userData: User) => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+    setToken(newToken);
     setUser(userData);
   };
 
   const logout = async () => {
-    try {
-      await fetch(`${API_BASE_URL}/authentication/logout`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          Origin: window.location.origin,
-          "X-Transmetro-Request": "admin-web",
-        },
-      });
-    } finally {
-      setUser(null);
+    // Clear localStorage
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+    setToken(null);
+    setUser(null);
+
+    // Notify backend (optional, stateless — server doesn't track)
+    if (token) {
+      try {
+        await fetch(`${API_BASE_URL}/authentication/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // Ignore errors on logout
+      }
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated: !!user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

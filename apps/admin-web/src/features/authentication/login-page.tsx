@@ -8,9 +8,10 @@ export function LoginPage() {
   const { login } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
-  // Handle OAuth callback: /login?error=... or /login?code=...
+  // Handle OAuth callback: /login?token=... or /login?error=...
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get("token");
     const errorParam = params.get("error");
 
     if (errorParam === "denied") {
@@ -19,30 +20,29 @@ export function LoginPage() {
     } else if (errorParam === "unavailable") {
       setError("Servicio de autenticación no disponible.");
       window.history.replaceState({}, "", "/login");
-    }
-
-    // If we landed here from callback (no error), check session
-    const checkSession = async () => {
+    } else if (tokenParam) {
+      // Token received from Google OAuth callback
+      // Decode JWT to extract user info (JWT payload is base64-encoded JSON)
       try {
-        const meResponse = await fetch(`${API_BASE_URL}/authentication/me`, {
-          credentials: "include",
-        });
-        if (meResponse.ok) {
-          const userData = await meResponse.json();
-          login({
-            email: userData.email,
-            employeeId: userData.employeeId,
-            roles: userData.roles,
-            permissions: userData.permissions,
-          });
-          navigate("/landing");
+        const parts = tokenParam.split(".");
+        if (parts.length !== 3 || !parts[1]) {
+          throw new Error("Invalid JWT format");
         }
+        const payload = JSON.parse(atob(parts[1]));
+        login(tokenParam, {
+          email: payload.email,
+          employeeId: payload.employeeId,
+          roles: payload.roles,
+          permissions: payload.permissions,
+          scope: payload.scope ?? { role: "PUBLIC", modules: [] },
+        });
+        navigate("/landing");
       } catch {
-        // No session yet, stay on login
+        setError("Token inválido. Intenta nuevamente.");
+        window.history.replaceState({}, "", "/login");
       }
-    };
-    checkSession();
-  }, []);
+    }
+  }, [login, navigate]);
 
   const handleGoogleLogin = () => {
     setError(null);
@@ -52,20 +52,6 @@ export function LoginPage() {
 
   return (
     <div className="w-full h-screen bg-white text-slate-900 font-sans antialiased flex overflow-hidden">
-      {/* <header className="w-full h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 fixed top-0 left-0">
-        <div className="flex items-center gap-2.5">
-          <a href="#" className="flex items-center focus:outline-none">
-            <span className="font-display font-bold text-xl text-primary">Transmetro</span>
-          </a>
-        </div>
-        <div className="flex items-center gap-2 sm:gap-4 text-slate-500">
-          <button className="px-3 py-1.5 rounded-full text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors flex items-center gap-1.5 border border-slate-200/70">
-            <span className="material-symbols-outlined text-[16px] text-lime-700">support_agent</span>
-            <span className="hidden sm:inline">Ayuda 1551</span>
-          </button>
-        </div>
-      </header> */}
-
       <div className="flex-1 flex flex-col lg:flex-row w-full h-full overflow-y-auto lg:overflow-hidden">
         <main className="flex-1 flex flex-col items-center px-4 sm:px-8 py-8 lg:py-12 bg-[#fafbfc] relative min-h-screen lg:min-h-0">
           <div className="absolute top-0 left-0 w-full h-16 flex items-center px-6 lg:px-12 z-30">
@@ -118,12 +104,6 @@ export function LoginPage() {
         </main>
 
         <aside className="flex flex-col justify-end w-full lg:w-[35%] xl:w-[30%] hero-ribbon-bg relative p-6 sm:p-8 xl:p-12 select-none shrink-0 min-h-[400px] lg:h-full self-stretch">
-          {/* <div className="absolute top-6 right-6 z-30">
-            <button className="px-3 py-1.5 rounded-full text-xs font-medium text-white hover:bg-white/20 transition-colors flex items-center gap-1.5 border border-white/30 backdrop-blur-sm">
-              <span className="material-symbols-outlined text-[16px]">support_agent</span>
-              <span className="hidden sm:inline">Ayuda 1551</span>
-            </button>
-          </div> */}
           <div className="wave-ribbon-1"></div>
           <div className="wave-ribbon-2"></div>
           <div className="ribbon-texture-lines"></div>

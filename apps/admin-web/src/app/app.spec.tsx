@@ -1,14 +1,25 @@
 import { render, screen } from "@testing-library/react";
-
 import { App } from "./app";
 
-describe("Administrative shell", () => {
-  it("renders the application heading and platform status", () => {
-    render(<App />);
+function renderApp(initialRoute = "/") {
+  window.history.pushState({}, "", initialRoute);
+  return render(<App />);
+}
 
-    expect(
-      screen.getByRole("heading", { name: "Transmetro Administration" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Platform scaffold is ready.")).toBeInTheDocument();
+describe("Administrative shell", () => {
+  it("redirects to /login by default", () => {
+    renderApp("/");
+    expect(screen.getByText("Iniciar Sesión")).toBeInTheDocument();
+  });
+
+  it("does not render the /admin route", () => {
+    renderApp("/admin");
+    expect(screen.queryByText("Platform scaffold is ready.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Transmetro Administration")).not.toBeInTheDocument();
+  });
+
+  it("does not render AdministrativeLanding scaffold message", () => {
+    renderApp("/");
+    expect(screen.queryByText("Platform scaffold is ready.")).not.toBeInTheDocument();
   });
 });
