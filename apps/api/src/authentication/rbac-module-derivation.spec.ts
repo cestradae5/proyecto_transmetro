@@ -13,52 +13,28 @@ import {
   PERMISSION_TO_MODULE,
   deriveModulesFromPermissions,
 } from "./authentication.service.js";
+import { ROLE_PERMISSIONS } from "./role-permissions.fixtures.js";
 
 // Mirrors the keys of MODULE_LABELS in
 // apps/admin-web/src/features/authentication/landing-page.tsx.
 // A module outside this set renders nothing, so the backend must never emit one.
 const FRONTEND_MODULES = [
+  "infrastructure",
   "fleet",
-  "gis",
-  "audit",
-  "report",
-  "recharge",
+  "personnel",
+  "operational_alerts",
+  "central_operations_panel",
+  "administrative_reports",
+  "audit_log",
+  "recharge_reporting",
   "self_profile",
 ] as const;
 
-// Permission grants seeded in database/init.sql (tbl_rol_permiso).
-const ADMIN_PERMISSIONS = [
-  "PERFIL_PROPIO_CONSULTAR",
-  "EMPLEADOS_PERFILES_ADMINISTRAR",
-  "ROLES_PERMISOS_ADMINISTRAR",
-  "INFRAESTRUCTURA_GESTIONAR",
-  "FLOTA_GESTIONAR",
-  "FLOTA_ESTACION_SOLICITAR",
-  "UNIDAD_ASIGNADA_CONSULTAR",
-  "METRICAS_UNIDAD_REPORTAR",
-  "ALERTAS_ESTACION_GESTIONAR",
-  "ALERTAS_UNIDAD_GESTIONAR",
-  "ALERTAS_OPERATIVAS_GESTIONAR",
-  "PANEL_OPERATIVO_CENTRAL_USAR",
-  "REPORTES_ADMINISTRATIVOS_CONSULTAR",
-  "AUDITORIA_BITACORA_CONSULTAR",
-  "RECARGAS_REPORTES_CONSULTAR",
-];
-
-const PILOTO_PERMISSIONS = [
-  "PERFIL_PROPIO_CONSULTAR",
-  "UNIDAD_ASIGNADA_CONSULTAR",
-  "METRICAS_UNIDAD_REPORTAR",
-  "ALERTAS_UNIDAD_GESTIONAR",
-];
-
-const GUARDIA_PERMISSIONS = ["PERFIL_PROPIO_CONSULTAR"];
-
-const OPERADOR_ESTACION_PERMISSIONS = [
-  "PERFIL_PROPIO_CONSULTAR",
-  "FLOTA_ESTACION_SOLICITAR",
-  "ALERTAS_ESTACION_GESTIONAR",
-];
+const ADMIN_PERMISSIONS = ROLE_PERMISSIONS.ADMINISTRADOR_SISTEMA!;
+const OPERADOR_CENTRAL_PERMISSIONS = ROLE_PERMISSIONS.OPERADOR_CENTRAL!;
+const PILOTO_PERMISSIONS = ROLE_PERMISSIONS.PILOTO!;
+const GUARDIA_PERMISSIONS = ROLE_PERMISSIONS.GUARDIA!;
+const OPERADOR_ESTACION_PERMISSIONS = ROLE_PERMISSIONS.OPERADOR_ESTACION!;
 
 describe("RBAC module derivation (task 2.4)", () => {
   it("never emits a module the frontend cannot render", () => {
@@ -76,19 +52,25 @@ describe("RBAC module derivation (task 2.4)", () => {
     ]);
   });
 
+  it("grants a central operator every dashboard card (approved matrix)", () => {
+    expect(deriveModulesFromPermissions(OPERADOR_CENTRAL_PERMISSIONS)).toEqual([
+      ...FRONTEND_MODULES,
+    ]);
+  });
+
   it("derives modules per role from seeded permissions", () => {
     expect(deriveModulesFromPermissions(PILOTO_PERMISSIONS)).toEqual([
       "fleet",
-      "report",
+      "operational_alerts",
       "self_profile",
     ]);
     expect(deriveModulesFromPermissions(GUARDIA_PERMISSIONS)).toEqual([
       "self_profile",
     ]);
-    // ALERTAS_ESTACION_GESTIONAR → report
+    // ALERTAS_ESTACION_GESTIONAR → operational_alerts
     expect(deriveModulesFromPermissions(OPERADOR_ESTACION_PERMISSIONS)).toEqual([
       "fleet",
-      "report",
+      "operational_alerts",
       "self_profile",
     ]);
   });
@@ -116,6 +98,10 @@ describe("RBAC module derivation (task 2.4)", () => {
     expect(deriveModulesFromPermissions(["PERMISO_INEXISTENTE"])).toEqual([]);
     expect(
       deriveModulesFromPermissions(["PERMISO_INEXISTENTE", "AUDITORIA_BITACORA_CONSULTAR"]),
-    ).toEqual(["audit"]);
+    ).toEqual(["audit_log"]);
+  });
+
+  it("leaves ROLES_PERMISOS_ADMINISTRAR unmapped (admin-only, not a dashboard card)", () => {
+    expect(deriveModulesFromPermissions(["ROLES_PERMISOS_ADMINISTRAR"])).toEqual([]);
   });
 });

@@ -19,14 +19,29 @@ type MockAuthenticationService = {
   me: jest.MockedFunction<(hash: string) => Promise<MeResult>>;
 };
 
-// Helper para crear un MeResult con scope completo
+// Helper para crear un MeResult con scope completo.
+// Module vocabulary matches the 8 canonical modules + self_profile from
+// PERMISSION_TO_MODULE (task 4.3 — was stale pre-task-2.4 vocabulary).
 function makeMeResult(overrides: Record<string, any> = {}): MeResult {
   return {
     employeeId: "emp-1",
     email: "admin@transmetro.gt",
     roles: ["ADMIN"],
     permissions: ["administration.read", "administration.write"],
-    scope: { role: "ADMIN", modules: ["dashboard", "passengers", "drivers", "routes", "trips", "billing", "reports", "audit"] },
+    scope: {
+      role: "ADMIN",
+      modules: [
+        "infrastructure",
+        "fleet",
+        "personnel",
+        "operational_alerts",
+        "central_operations_panel",
+        "administrative_reports",
+        "audit_log",
+        "recharge_reporting",
+        "self_profile",
+      ],
+    },
     ...overrides,
   };
 }
@@ -157,7 +172,7 @@ describe("AuthenticationGuard", () => {
           email: "operator@transmetro.gt",
           roles: ["OPERATOR"],
           permissions: ["operations.read"],
-          scope: { role: "OPERATOR", modules: ["passengers", "routes", "trips"] },
+          scope: { role: "OPERATOR", modules: ["fleet", "operational_alerts"] },
         })),
       };
 

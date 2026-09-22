@@ -14,44 +14,59 @@ import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE, type GoogleCredentialVerifier }
 import { InvalidCredentials, EmployeeNotEligible, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
 
 // ────────────────────────────────────────────────────────────────────────────
-// PERMISSION_TO_MODULE — maps DB permission codes to frontend module keys.
-// Keys MUST match MODULE_LABELS in landing-page.tsx or the card won't render.
+// PERMISSION_TO_MODULE — maps DB permission codes to the 8 canonical dashboard
+// modules (spec Requirement 2) plus the ambient `self_profile` card.
+// Keys MUST match MODULE_LABELS in landing-page.tsx or the card won't render
+// (guarded by the completeness assertion in role-module-matrix.spec.ts).
+// `ROLES_PERMISOS_ADMINISTRAR` is intentionally NOT mapped: it is an
+// admin-only capability (role/permission administration), not a dashboard
+// card (design Open Question Q2).
 // ────────────────────────────────────────────────────────────────────────────
 export const PERMISSION_TO_MODULE: Record<string, string> = {
-  // GIS / infrastructure
-  INFRAESTRUCTURA_GESTIONAR: "gis",
-  PANEL_OPERATIVO_CENTRAL_USAR: "gis",
+  INFRAESTRUCTURA_GESTIONAR: "infrastructure",
 
-  // Fleet management
   FLOTA_GESTIONAR: "fleet",
   FLOTA_ESTACION_SOLICITAR: "fleet",
   UNIDAD_ASIGNADA_CONSULTAR: "fleet",
 
-  // Alerts (operational awareness → report)
-  ALERTAS_OPERATIVAS_GESTIONAR: "report",
-  ALERTAS_ESTACION_GESTIONAR: "report",
-  ALERTAS_UNIDAD_GESTIONAR: "report",
-  METRICAS_UNIDAD_REPORTAR: "report",
+  EMPLEADOS_PERFILES_ADMINISTRAR: "personnel",
 
-  // Reports
-  REPORTES_ADMINISTRATIVOS_CONSULTAR: "report",
+  ALERTAS_OPERATIVAS_GESTIONAR: "operational_alerts",
+  ALERTAS_ESTACION_GESTIONAR: "operational_alerts",
+  ALERTAS_UNIDAD_GESTIONAR: "operational_alerts",
+  METRICAS_UNIDAD_REPORTAR: "operational_alerts",
 
-  // Audit
-  AUDITORIA_BITACORA_CONSULTAR: "audit",
+  PANEL_OPERATIVO_CENTRAL_USAR: "central_operations_panel",
 
-  // Recharge
-  RECARGAS_REPORTES_CONSULTAR: "recharge",
+  REPORTES_ADMINISTRATIVOS_CONSULTAR: "administrative_reports",
 
-  // Self-profile (every authenticated user)
+  AUDITORIA_BITACORA_CONSULTAR: "audit_log",
+
+  RECARGAS_REPORTES_CONSULTAR: "recharge_reporting",
+
+  // Ambient card: every authenticated employee gets it, regardless of role.
+  // Excluded from the 8-module RBAC matrix (design Decision 3).
   PERFIL_PROPIO_CONSULTAR: "self_profile",
 };
+
+// Stable render order for dashboard cards, independent of permission-row order.
+const MODULE_ORDER = [
+  "infrastructure",
+  "fleet",
+  "personnel",
+  "operational_alerts",
+  "central_operations_panel",
+  "administrative_reports",
+  "audit_log",
+  "recharge_reporting",
+  "self_profile",
+];
 
 /**
  * Derives frontend modules from a list of permission codes.
  * Returns a stable-ordered, deduplicated array of module keys.
  */
 export function deriveModulesFromPermissions(permissions: string[]): string[] {
-  const MODULE_ORDER = ["fleet", "gis", "audit", "report", "recharge", "self_profile"];
   const modules = new Set<string>();
   for (const perm of permissions) {
     const mod = PERMISSION_TO_MODULE[perm];
@@ -143,7 +158,18 @@ export class AuthenticationService {
     });
   }
 
-  // Verifica JWT y retorna payload decodificado
+  // Verifica JWT y retorna payload decodificado.
+  //
+  // Decision 2 (design.md): `scope.modules` is recomputed from the stable
+  // `permissions` array on every call, instead of trusting the module list
+  // baked into the JWT at login(). JWTs live 12h; without recomputation, a
+  // PERMISSION_TO_MODULE rename (like this 6→8 module expansion) would only
+  // reach a user after their token expires and they re-login. Recomputing
+  // here makes it apply immediately on the next `/authentication/me` call.
+  //
+  // Residual limitation: this self-heals module-*naming* drift only. If a
+  // permission itself is revoked mid-session, `payload.permissions` is still
+  // the stale value from login — that only clears on token expiry (12h).
   async verifyToken(token: string): Promise<MeResult> {
     try {
       const payload = jwt.verify(token, JWT_SECRET) as {
@@ -153,13 +179,16 @@ export class AuthenticationService {
         permissions: string[];
         scope: { role: string; modules: string[] };
       };
-      
+
       return {
         employeeId: payload.employeeId,
         email: payload.email,
         roles: payload.roles,
         permissions: payload.permissions,
-        scope: payload.scope,
+        scope: {
+          role: payload.scope.role,
+          modules: deriveModulesFromPermissions(payload.permissions),
+        },
       };
     } catch {
       throw new InvalidCredentials();
