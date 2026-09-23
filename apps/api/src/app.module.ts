@@ -4,6 +4,7 @@ import { ConfigModule } from "@nestjs/config";
 import { HealthModule } from "./health/health.module.js";
 import { DatabaseModule } from "./platform/database/database.module.js";
 import { AuthenticationModule } from "./authentication/authentication.module.js";
+import { InfrastructureModule } from "./infrastructure/infrastructure.module.js";
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { AuthenticationModule } from "./authentication/authentication.module.js"
     }),
     HealthModule,
     AuthenticationModule,
+    InfrastructureModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })
