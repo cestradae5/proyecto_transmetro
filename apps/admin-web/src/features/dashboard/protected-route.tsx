@@ -3,10 +3,14 @@ import { useAuth } from "../authentication/auth-context";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  // Module key required in user.scope.modules (see PERMISSION_TO_MODULE in
+  // apps/api/src/authentication/authentication.service.ts). Omit to only
+  // require authentication, matching existing routes like /profile.
+  requiredModule?: string;
 }
 
-export function AuthenticationGuard({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, loading } = useAuth();
+export function AuthenticationGuard({ children, requiredModule }: ProtectedRouteProps) {
+  const { isAuthenticated, loading, user } = useAuth();
 
   if (loading) {
     return (
@@ -18,6 +22,13 @@ export function AuthenticationGuard({ children }: ProtectedRouteProps) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requiredModule) {
+    const modules = user?.scope?.modules ?? [];
+    if (!modules.includes(requiredModule)) {
+      return <Navigate to="/landing" replace />;
+    }
   }
 
   return <>{children}</>;

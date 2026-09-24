@@ -17,7 +17,7 @@ export function App() {
           <Route path="/landing" element={<AuthenticationGuard><LandingPage /></AuthenticationGuard>} />
           <Route path="/gis" element={<GISPage />} />
           <Route path="/profile" element={<AuthenticationGuard><ProfilePage /></AuthenticationGuard>} />
-          <Route path="/infrastructure" element={<AuthenticationGuard><InfrastructurePage /></AuthenticationGuard>} />
+          <Route path="/infrastructure" element={<AuthenticationGuard requiredModule="infrastructure"><InfrastructurePage /></AuthenticationGuard>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
