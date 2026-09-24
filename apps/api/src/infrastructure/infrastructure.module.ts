@@ -7,6 +7,7 @@ import { ParadaEntity } from "./parada/parada.entity.js";
 import { EstacionEntity } from "./estacion/estacion.entity.js";
 import { ParqueoEntity } from "./parqueo/parqueo.entity.js";
 import { LineaEntity } from "./linea/linea.entity.js";
+import { LineaParadaEntity } from "./linea/linea-parada.entity.js";
 import { AfectacionEntity } from "./afectacion/afectacion.entity.js";
 
 // Controllers
@@ -31,6 +32,7 @@ import { AfectacionService } from "./afectacion/afectacion.service.js";
       EstacionEntity,
       ParqueoEntity,
       LineaEntity,
+      LineaParadaEntity,
       AfectacionEntity,
     ]),
   ],
