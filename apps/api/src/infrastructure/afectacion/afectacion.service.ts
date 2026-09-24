@@ -2,10 +2,11 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { AfectacionEntity } from "./afectacion.entity.js";
+import { AfectacionEntity, EstadoAfectacion } from "./afectacion.entity.js";
 import { CreateAfectacionDto } from "./dto/create-afectacion.dto.js";
 import { UpdateAfectacionDto } from "./dto/update-afectacion.dto.js";
 import { AfectacionResponseDto } from "./dto/afectacion-response.dto.js";
@@ -118,6 +119,26 @@ export class AfectacionService {
     Object.assign(afectacion, updateAfectacionDto);
     const updated = await this.afectacionRepository.save(afectacion);
     return this.toResponseDto(updated);
+  }
+
+  async close(id: string): Promise<AfectacionResponseDto> {
+    const afectacion = await this.afectacionRepository.findOne({
+      where: { idAfectacion: id },
+    });
+    if (!afectacion) {
+      throw new NotFoundException(`Afectación con ID ${id} no encontrada`);
+    }
+    if (afectacion.estadoAfectacion === EstadoAfectacion.CERRADA) {
+      throw new ConflictException(
+        `La afectación ${id} ya está cerrada`,
+        "AFECTACION_ALREADY_CLOSED"
+      );
+    }
+
+    afectacion.estadoAfectacion = EstadoAfectacion.CERRADA;
+    afectacion.fechaFin = new Date();
+    const closed = await this.afectacionRepository.save(afectacion);
+    return this.toResponseDto(closed);
   }
 
   async remove(id: string): Promise<void> {

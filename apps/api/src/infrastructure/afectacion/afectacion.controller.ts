@@ -67,6 +67,24 @@ export class AfectacionController {
     return this.afectacionService.findOne(id);
   }
 
+  // Declared before PATCH ":id" for readability; ":id" only matches a single
+  // path segment, so "/:id/close" never collides with it regardless of order.
+  @Patch(":id/close")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
+  @ApiOperation({
+    summary: "Cerrar una afectación (estado CERRADA, fechaFin = ahora)",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Afectación cerrada",
+    type: AfectacionResponseDto,
+  })
+  @ApiResponse({ status: 404, description: "Afectación no encontrada" })
+  @ApiResponse({ status: 409, description: "La afectación ya está cerrada" })
+  close(@Param("id") id: string): Promise<AfectacionResponseDto> {
+    return this.afectacionService.close(id);
+  }
+
   @Patch(":id")
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Actualizar una afectación" })
