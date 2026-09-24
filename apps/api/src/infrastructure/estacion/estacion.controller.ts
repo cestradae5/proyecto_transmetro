@@ -19,6 +19,7 @@ import { CreateEstacionDto } from "./dto/create-estacion.dto.js";
 import { UpdateEstacionDto } from "./dto/update-estacion.dto.js";
 import { EstacionResponseDto } from "./dto/estacion-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
+import { Permissions } from "../../authentication/permissions.decorator.js";
 
 @ApiTags("Infraestructura - Estaciones")
 @Controller("infrastructure/estaciones")
@@ -28,6 +29,7 @@ export class EstacionController {
   constructor(private readonly estacionService: EstacionService) {}
 
   @Post()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Crear una nueva estación" })
   @ApiResponse({
     status: 201,
@@ -41,6 +43,7 @@ export class EstacionController {
   }
 
   @Get()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener todas las estaciones" })
   @ApiResponse({
     status: 200,
@@ -52,6 +55,7 @@ export class EstacionController {
   }
 
   @Get(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener una estación por ID" })
   @ApiResponse({
     status: 200,
@@ -64,6 +68,7 @@ export class EstacionController {
   }
 
   @Patch(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Actualizar una estación" })
   @ApiResponse({
     status: 200,
@@ -79,6 +84,7 @@ export class EstacionController {
   }
 
   @Delete(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Eliminar (soft delete) una estación" })
   @ApiResponse({
     status: 200,

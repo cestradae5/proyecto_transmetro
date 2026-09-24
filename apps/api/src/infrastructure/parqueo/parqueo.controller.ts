@@ -19,6 +19,7 @@ import { CreateParqueoDto } from "./dto/create-parqueo.dto.js";
 import { UpdateParqueoDto } from "./dto/update-parqueo.dto.js";
 import { ParqueoResponseDto } from "./dto/parqueo-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
+import { Permissions } from "../../authentication/permissions.decorator.js";
 
 @ApiTags("Infraestructura - Parqueos")
 @Controller("infrastructure/parqueos")
@@ -28,6 +29,7 @@ export class ParqueoController {
   constructor(private readonly parqueoService: ParqueoService) {}
 
   @Post()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Crear un nuevo parqueo" })
   @ApiResponse({
     status: 201,
@@ -41,6 +43,7 @@ export class ParqueoController {
   }
 
   @Get()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener todos los parqueos" })
   @ApiResponse({
     status: 200,
@@ -52,6 +55,7 @@ export class ParqueoController {
   }
 
   @Get(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener un parqueo por ID" })
   @ApiResponse({
     status: 200,
@@ -64,6 +68,7 @@ export class ParqueoController {
   }
 
   @Patch(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Actualizar un parqueo" })
   @ApiResponse({
     status: 200,
@@ -79,6 +84,7 @@ export class ParqueoController {
   }
 
   @Delete(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Eliminar (soft delete) un parqueo" })
   @ApiResponse({
     status: 200,

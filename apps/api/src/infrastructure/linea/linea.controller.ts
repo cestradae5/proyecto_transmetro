@@ -19,6 +19,7 @@ import { CreateLineaDto } from "./dto/create-linea.dto.js";
 import { UpdateLineaDto } from "./dto/update-linea.dto.js";
 import { LineaResponseDto } from "./dto/linea-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
+import { Permissions } from "../../authentication/permissions.decorator.js";
 
 @ApiTags("Infraestructura - Líneas")
 @Controller("infrastructure/lineas")
@@ -28,6 +29,7 @@ export class LineaController {
   constructor(private readonly lineaService: LineaService) {}
 
   @Post()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Crear una nueva línea" })
   @ApiResponse({
     status: 201,
@@ -39,6 +41,7 @@ export class LineaController {
   }
 
   @Get()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener todas las líneas" })
   @ApiResponse({
     status: 200,
@@ -50,6 +53,7 @@ export class LineaController {
   }
 
   @Get(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener una línea por ID" })
   @ApiResponse({
     status: 200,
@@ -62,6 +66,7 @@ export class LineaController {
   }
 
   @Patch(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Actualizar una línea" })
   @ApiResponse({
     status: 200,
@@ -77,6 +82,7 @@ export class LineaController {
   }
 
   @Delete(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Eliminar (soft delete) una línea" })
   @ApiResponse({
     status: 200,

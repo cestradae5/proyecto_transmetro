@@ -19,6 +19,7 @@ import { CreateAfectacionDto } from "./dto/create-afectacion.dto.js";
 import { UpdateAfectacionDto } from "./dto/update-afectacion.dto.js";
 import { AfectacionResponseDto } from "./dto/afectacion-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
+import { Permissions } from "../../authentication/permissions.decorator.js";
 
 @ApiTags("Infraestructura - Afectaciones")
 @Controller("infrastructure/afectaciones")
@@ -28,6 +29,7 @@ export class AfectacionController {
   constructor(private readonly afectacionService: AfectacionService) {}
 
   @Post()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Crear una nueva afectación" })
   @ApiResponse({
     status: 201,
@@ -41,6 +43,7 @@ export class AfectacionController {
   }
 
   @Get()
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener todas las afectaciones" })
   @ApiResponse({
     status: 200,
@@ -52,6 +55,7 @@ export class AfectacionController {
   }
 
   @Get(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Obtener una afectación por ID" })
   @ApiResponse({
     status: 200,
@@ -64,6 +68,7 @@ export class AfectacionController {
   }
 
   @Patch(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Actualizar una afectación" })
   @ApiResponse({
     status: 200,
@@ -79,6 +84,7 @@ export class AfectacionController {
   }
 
   @Delete(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Eliminar (soft delete) una afectación" })
   @ApiResponse({
     status: 200,
