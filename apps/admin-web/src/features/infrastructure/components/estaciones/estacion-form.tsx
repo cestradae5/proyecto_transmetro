@@ -10,18 +10,18 @@ interface EstacionFormProps {
 
 export function EstacionForm({ estacion, paradas, onSubmit, onCancel }: EstacionFormProps) {
   const [formData, setFormData] = useState({
-    nombre: estacion?.nombre || '',
+    nombreEstacion: estacion?.nombreEstacion || '',
     latitud: estacion?.latitud?.toString() || '',
     longitud: estacion?.longitud?.toString() || '',
-    id_parada: estacion?.id_parada?.toString() || '',
-    estado: estacion?.estado || 'ABIERTA' as EstadoInfraestructura,
+    idParada: estacion?.idParada?.toString() || '',
+    estadoEstacion: estacion?.estadoEstacion || 'ABIERTA' as EstadoInfraestructura,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.nombre.trim()) newErrors.nombre = 'El nombre es requerido';
+    if (!formData.nombreEstacion.trim()) newErrors.nombreEstacion = 'El nombre es requerido';
     const lat = parseFloat(formData.latitud);
     if (isNaN(lat) || lat < -90 || lat > 90) newErrors.latitud = 'Latitud debe estar entre -90 y 90';
     const lon = parseFloat(formData.longitud);
@@ -35,13 +35,13 @@ export function EstacionForm({ estacion, paradas, onSubmit, onCancel }: Estacion
     if (!validate()) return;
     setSubmitting(true);
     try {
-      await onSubmit({
-        nombre: formData.nombre,
-        latitud: parseFloat(formData.latitud),
-        longitud: parseFloat(formData.longitud),
-        id_parada: formData.id_parada ? parseInt(formData.id_parada) : null,
-        estado: formData.estado,
-      });
+       await onSubmit({
+         nombreEstacion: formData.nombreEstacion,
+         latitud: parseFloat(formData.latitud),
+         longitud: parseFloat(formData.longitud),
+         idParada: formData.idParada ? parseInt(formData.idParada) : null,
+         estadoEstacion: formData.estadoEstacion,
+       });
     } catch (error: any) {
       setErrors({ submit: error.message || 'Error al guardar' });
     } finally {
@@ -53,8 +53,8 @@ export function EstacionForm({ estacion, paradas, onSubmit, onCancel }: Estacion
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Nombre *</label>
-        <input type="text" value={formData.nombre} onChange={(e) => setFormData({ ...formData, nombre: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
-        {errors.nombre && <p className="text-red-600 text-xs mt-1">{errors.nombre}</p>}
+        <input type="text" value={formData.nombreEstacion} onChange={(e) => setFormData({ ...formData, nombreEstacion: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        {errors.nombreEstacion && <p className="text-red-600 text-xs mt-1">{errors.nombreEstacion}</p>}
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -70,16 +70,17 @@ export function EstacionForm({ estacion, paradas, onSubmit, onCancel }: Estacion
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Parada</label>
-        <select value={formData.id_parada} onChange={(e) => setFormData({ ...formData, id_parada: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+        <select value={formData.idParada} onChange={(e) => setFormData({ ...formData, idParada: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
           <option value="">Ninguna</option>
-          {paradas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+          {paradas.map((p) => <option key={p.id} value={p.id}>{p.nombreParada}</option>)}
         </select>
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estado *</label>
-        <select value={formData.estado} onChange={(e) => setFormData({ ...formData, estado: e.target.value as EstadoInfraestructura })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+        <select value={formData.estadoEstacion} onChange={(e) => setFormData({ ...formData, estadoEstacion: e.target.value as EstadoInfraestructura })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
           <option value="ABIERTA">ABIERTA</option>
           <option value="CERRADA">CERRADA</option>
+          <option value="MANTENIMIENTO">MANTENIMIENTO</option>
         </select>
       </div>
       {errors.submit && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{errors.submit}</div>}

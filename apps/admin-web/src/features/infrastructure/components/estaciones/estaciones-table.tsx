@@ -15,12 +15,12 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const filteredEstaciones = estaciones.filter((e) =>
-    e.nombre.toLowerCase().includes(search.toLowerCase())
+    e.nombreEstacion.toLowerCase().includes(search.toLowerCase())
   );
 
   const getParadaNombre = (id: number | null) => {
     if (!id) return '—';
-    return paradas.find((p) => p.id === id)?.nombre || '—';
+    return paradas.find((p) => p.id === id)?.nombreParada || '—';
   };
 
   const handleEdit = (estacion: Estacion) => {
@@ -71,19 +71,19 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
             {filteredEstaciones.map((estacion) => (
               <tr key={estacion.id} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="px-4 py-3 text-sm text-slate-900">{estacion.id}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{estacion.nombre}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{estacion.latitud.toFixed(6)}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{estacion.longitud.toFixed(6)}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{getParadaNombre(estacion.id_parada)}</td>
+                <td className="px-4 py-3 text-sm text-slate-900">{estacion.nombreEstacion}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{estacion.latitud != null ? Number(estacion.latitud).toFixed(6) : '—'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{estacion.longitud != null ? Number(estacion.longitud).toFixed(6) : '—'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{getParadaNombre(estacion.idParada)}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      estacion.estado === 'ABIERTA'
+                      estacion.estadoEstacion === 'ABIERTA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
                   >
-                    {estacion.estado}
+                    {estacion.estadoEstacion}
                   </span>
                 </td>
                 <td className="px-4 py-3">

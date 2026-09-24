@@ -1,18 +1,41 @@
 import { useState } from 'react';
-import type { Parqueo } from '../../types/infrastructure.types';
+import type { Parqueo, Estacion } from '../../types/infrastructure.types';
+import { ParqueoDialog } from './parqueo-dialog';
 
 interface ParqueosTableProps {
   parqueos: Parqueo[];
+  estaciones: Estacion[];
   onUpdate: (id: number, data: any) => Promise<any>;
   onDelete: (id: number) => Promise<any>;
 }
 
-export function ParqueosTable({ parqueos, onUpdate, onDelete }: ParqueosTableProps) {
+export function ParqueosTable({ parqueos, estaciones, onUpdate, onDelete }: ParqueosTableProps) {
   const [search, setSearch] = useState('');
+  const [editingParqueo, setEditingParqueo] = useState<Parqueo | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const filteredParqueos = parqueos.filter((p) =>
-    p.nombre.toLowerCase().includes(search.toLowerCase())
+    p.nombreParqueo.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleEdit = (parqueo: Parqueo) => {
+    setEditingParqueo(parqueo);
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm('¿Está seguro de eliminar este parqueo?')) {
+      await onDelete(id);
+    }
+  };
+
+  const handleSave = async (data: any) => {
+    if (editingParqueo) {
+      await onUpdate(editingParqueo.id, data);
+    }
+    setIsDialogOpen(false);
+    setEditingParqueo(null);
+  };
 
   return (
     <div>
@@ -42,29 +65,29 @@ export function ParqueosTable({ parqueos, onUpdate, onDelete }: ParqueosTablePro
             {filteredParqueos.map((parqueo) => (
               <tr key={parqueo.id} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="px-4 py-3 text-sm text-slate-900">{parqueo.id}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{parqueo.nombre}</td>
+                <td className="px-4 py-3 text-sm text-slate-900">{parqueo.nombreParqueo}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{parqueo.tipo}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{parqueo.capacidad}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{parqueo.capacidad ?? '—'}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      parqueo.estado === 'ABIERTA'
+                      parqueo.estadoParqueo === 'ABIERTA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
                   >
-                    {parqueo.estado}
+                    {parqueo.estadoParqueo}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <button
-                    onClick={() => alert('Editar parqueo')}
+                    onClick={() => handleEdit(parqueo)}
                     className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium mr-2"
                   >
                     Editar
                   </button>
                   <button
-                    onClick={() => onDelete(parqueo.id)}
+                    onClick={() => handleDelete(parqueo.id)}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar
@@ -75,6 +98,18 @@ export function ParqueosTable({ parqueos, onUpdate, onDelete }: ParqueosTablePro
           </tbody>
         </table>
       </div>
+
+      {isDialogOpen && editingParqueo && (
+        <ParqueoDialog
+          parqueo={editingParqueo}
+          estaciones={estaciones}
+          onSave={handleSave}
+          onClose={() => {
+            setIsDialogOpen(false);
+            setEditingParqueo(null);
+          }}
+        />
+      )}
     </div>
   );
 }

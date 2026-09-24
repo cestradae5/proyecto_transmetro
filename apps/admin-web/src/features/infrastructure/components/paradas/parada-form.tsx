@@ -9,10 +9,10 @@ interface ParadaFormProps {
 
 export function ParadaForm({ parada, onSubmit, onCancel }: ParadaFormProps) {
   const [formData, setFormData] = useState({
-    nombre: parada?.nombre || '',
+    nombreParada: parada?.nombreParada || '',
     latitud: parada?.latitud?.toString() || '',
     longitud: parada?.longitud?.toString() || '',
-    estado: parada?.estado || 'ABIERTA' as EstadoInfraestructura,
+    estadoParada: parada?.estadoParada || 'ACTIVA' as EstadoInfraestructura,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -20,8 +20,8 @@ export function ParadaForm({ parada, onSubmit, onCancel }: ParadaFormProps) {
   const validate = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.nombre.trim()) {
-      newErrors.nombre = 'El nombre es requerido';
+    if (!formData.nombreParada.trim()) {
+      newErrors.nombreParada = 'El nombre es requerido';
     }
 
     const lat = parseFloat(formData.latitud);
@@ -45,10 +45,10 @@ export function ParadaForm({ parada, onSubmit, onCancel }: ParadaFormProps) {
     setSubmitting(true);
     try {
       await onSubmit({
-        nombre: formData.nombre,
+        nombreParada: formData.nombreParada,
         latitud: parseFloat(formData.latitud),
         longitud: parseFloat(formData.longitud),
-        estado: formData.estado,
+        estadoParada: formData.estadoParada,
       });
     } catch (error: any) {
       setErrors({ submit: error.message || 'Error al guardar' });
@@ -63,11 +63,11 @@ export function ParadaForm({ parada, onSubmit, onCancel }: ParadaFormProps) {
         <label className="block text-sm font-medium text-slate-700 mb-1">Nombre *</label>
         <input
           type="text"
-          value={formData.nombre}
-          onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+          value={formData.nombreParada}
+          onChange={(e) => setFormData({ ...formData, nombreParada: e.target.value })}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
         />
-        {errors.nombre && <p className="text-red-600 text-xs mt-1">{errors.nombre}</p>}
+        {errors.nombreParada && <p className="text-red-600 text-xs mt-1">{errors.nombreParada}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -99,12 +99,13 @@ export function ParadaForm({ parada, onSubmit, onCancel }: ParadaFormProps) {
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estado *</label>
         <select
-          value={formData.estado}
-          onChange={(e) => setFormData({ ...formData, estado: e.target.value as EstadoInfraestructura })}
+          value={formData.estadoParada}
+          onChange={(e) => setFormData({ ...formData, estadoParada: e.target.value as EstadoInfraestructura })}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
         >
-          <option value="ABIERTA">ABIERTA</option>
+          <option value="ACTIVA">ACTIVA</option>
           <option value="CERRADA">CERRADA</option>
+          <option value="MANTENIMIENTO">MANTENIMIENTO</option>
         </select>
       </div>
 

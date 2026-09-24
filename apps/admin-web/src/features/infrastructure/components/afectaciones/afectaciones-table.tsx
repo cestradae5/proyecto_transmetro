@@ -1,18 +1,42 @@
 import { useState } from 'react';
-import type { Afectacion } from '../../types/infrastructure.types';
+import type { Afectacion, Parada, Estacion } from '../../types/infrastructure.types';
+import { AfectacionDialog } from './afectacion-dialog';
 
 interface AfectacionesTableProps {
   afectaciones: Afectacion[];
+  paradas: Parada[];
+  estaciones: Estacion[];
   onUpdate: (id: number, data: any) => Promise<any>;
   onDelete: (id: number) => Promise<any>;
 }
 
-export function AfectacionesTable({ afectaciones, onUpdate, onDelete }: AfectacionesTableProps) {
+export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate, onDelete }: AfectacionesTableProps) {
   const [search, setSearch] = useState('');
+  const [editingAfectacion, setEditingAfectacion] = useState<Afectacion | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const filteredAfectaciones = afectaciones.filter((a) =>
     a.motivo.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleEdit = (afectacion: Afectacion) => {
+    setEditingAfectacion(afectacion);
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm('¿Está seguro de eliminar esta afectación?')) {
+      await onDelete(id);
+    }
+  };
+
+  const handleSave = async (data: any) => {
+    if (editingAfectacion) {
+      await onUpdate(editingAfectacion.id, data);
+    }
+    setIsDialogOpen(false);
+    setEditingAfectacion(null);
+  };
 
   return (
     <div>
@@ -54,23 +78,23 @@ export function AfectacionesTable({ afectaciones, onUpdate, onDelete }: Afectaci
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      afectacion.estado === 'ABIERTA'
+                      afectacion.estadoAfectacion === 'ACTIVA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
                   >
-                    {afectacion.estado}
+                    {afectacion.estadoAfectacion}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <button
-                    onClick={() => alert('Editar afectación')}
+                    onClick={() => handleEdit(afectacion)}
                     className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium mr-2"
                   >
                     Editar
                   </button>
                   <button
-                    onClick={() => onDelete(afectacion.id)}
+                    onClick={() => handleDelete(afectacion.id)}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar
@@ -81,6 +105,19 @@ export function AfectacionesTable({ afectaciones, onUpdate, onDelete }: Afectaci
           </tbody>
         </table>
       </div>
+
+      {isDialogOpen && editingAfectacion && (
+        <AfectacionDialog
+          afectacion={editingAfectacion}
+          paradas={paradas}
+          estaciones={estaciones}
+          onSave={handleSave}
+          onClose={() => {
+            setIsDialogOpen(false);
+            setEditingAfectacion(null);
+          }}
+        />
+      )}
     </div>
   );
 }

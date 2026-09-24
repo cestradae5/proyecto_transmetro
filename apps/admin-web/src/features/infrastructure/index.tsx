@@ -12,6 +12,9 @@ import { LineasTable } from './components/lineas/lineas-table';
 import { AfectacionesTable } from './components/afectaciones/afectaciones-table';
 import { ParadaDialog } from './components/paradas/parada-dialog';
 import { EstacionDialog } from './components/estaciones/estacion-dialog';
+import { ParqueoDialog } from './components/parqueos/parqueo-dialog';
+import { LineaDialog } from './components/lineas/linea-dialog';
+import { AfectacionDialog } from './components/afectaciones/afectacion-dialog';
 
 type Tab = 'paradas' | 'estaciones' | 'parqueos' | 'lineas' | 'afectaciones';
 
@@ -22,9 +25,9 @@ export function InfrastructurePage() {
 
   const { paradas, loading: paradasLoading, createParada, updateParada, deleteParada } = useParadas();
   const { estaciones, loading: estacionesLoading, createEstacion, updateEstacion, deleteEstacion } = useEstaciones();
-  const { parqueos, loading: parqueosLoading, updateParqueo, deleteParqueo } = useParqueos();
-  const { lineas, loading: lineasLoading, updateLinea, deleteLinea } = useLineas();
-  const { afectaciones, loading: afectacionesLoading, updateAfectacion, deleteAfectacion } = useAfectaciones();
+  const { parqueos, loading: parqueosLoading, createParqueo, updateParqueo, deleteParqueo } = useParqueos();
+  const { lineas, loading: lineasLoading, createLinea, updateLinea, deleteLinea } = useLineas();
+  const { afectaciones, loading: afectacionesLoading, createAfectacion, updateAfectacion, deleteAfectacion } = useAfectaciones();
 
   const tabs = [
     { id: 'paradas' as Tab, label: 'Paradas', count: paradas.length },
@@ -41,6 +44,15 @@ export function InfrastructurePage() {
         break;
       case 'estaciones':
         await createEstacion(data);
+        break;
+      case 'parqueos':
+        await createParqueo(data);
+        break;
+      case 'lineas':
+        await createLinea(data);
+        break;
+      case 'afectaciones':
+        await createAfectacion(data);
         break;
     }
     setShowCreateDialog(false);
@@ -104,13 +116,13 @@ export function InfrastructurePage() {
                 <EstacionesTable estaciones={estaciones} paradas={paradas} onUpdate={updateEstacion} onDelete={deleteEstacion} />
               )}
               {activeTab === 'parqueos' && (
-                <ParqueosTable parqueos={parqueos} onUpdate={updateParqueo} onDelete={deleteParqueo} />
+                <ParqueosTable parqueos={parqueos} estaciones={estaciones} onUpdate={updateParqueo} onDelete={deleteParqueo} />
               )}
               {activeTab === 'lineas' && (
-                <LineasTable lineas={lineas} onUpdate={updateLinea} onDelete={deleteLinea} />
+                <LineasTable lineas={lineas} parqueos={parqueos} onUpdate={updateLinea} onDelete={deleteLinea} />
               )}
               {activeTab === 'afectaciones' && (
-                <AfectacionesTable afectaciones={afectaciones} onUpdate={updateAfectacion} onDelete={deleteAfectacion} />
+                <AfectacionesTable afectaciones={afectaciones} paradas={paradas} estaciones={estaciones} onUpdate={updateAfectacion} onDelete={deleteAfectacion} />
               )}
             </>
           )}
@@ -122,6 +134,15 @@ export function InfrastructurePage() {
       )}
       {showCreateDialog && activeTab === 'estaciones' && (
         <EstacionDialog paradas={paradas} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
+      )}
+      {showCreateDialog && activeTab === 'parqueos' && (
+        <ParqueoDialog estaciones={estaciones} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
+      )}
+      {showCreateDialog && activeTab === 'lineas' && (
+        <LineaDialog parqueos={parqueos} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
+      )}
+      {showCreateDialog && activeTab === 'afectaciones' && (
+        <AfectacionDialog paradas={paradas} estaciones={estaciones} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
       )}
     </div>
   );

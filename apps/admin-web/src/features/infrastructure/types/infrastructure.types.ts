@@ -1,6 +1,8 @@
 export enum EstadoInfraestructura {
+  ACTIVA = 'ACTIVA',
   ABIERTA = 'ABIERTA',
   CERRADA = 'CERRADA',
+  MANTENIMIENTO = 'MANTENIMIENTO',
 }
 
 export enum TipoParqueo {
@@ -22,35 +24,35 @@ export enum TipoAfectacion {
 
 export interface Parada {
   id: number;
-  nombre: string;
+  nombreParada: string;
   latitud: number;
   longitud: number;
-  estado: EstadoInfraestructura;
+  estadoParada: EstadoInfraestructura;
   fecha_creacion: string;
   fecha_actualizacion: string;
 }
 
 export interface Estacion {
   id: number;
-  nombre: string;
+  nombreEstacion: string;
   latitud: number;
   longitud: number;
-  id_parada: number | null;
-  estado: EstadoInfraestructura;
+  idParada: number | null;
+  estadoEstacion: EstadoInfraestructura;
   fecha_creacion: string;
   fecha_actualizacion: string;
 }
 
 export interface Parqueo {
   id: number;
-  nombre: string;
+  nombreParqueo: string;
   tipo: TipoParqueo;
   direccion: string;
   latitud: number;
   longitud: number;
   capacidad: number;
-  id_estacion: number | null;
-  estado: EstadoInfraestructura;
+  idEstacion: number | null;
+  estadoParqueo: EstadoInfraestructura;
   fecha_creacion: string;
   fecha_actualizacion: string;
 }
@@ -58,11 +60,11 @@ export interface Parqueo {
 export interface Linea {
   id: number;
   numero: string;
-  nombre: string;
+  nombreLinea: string;
   color_hex: string;
   tipo_recorrido: TipoRecorrido;
-  id_parqueo: number | null;
-  estado: EstadoInfraestructura;
+  idParqueo: number | null;
+  estadoLinea: EstadoInfraestructura;
   fecha_creacion: string;
   fecha_actualizacion: string;
 }
@@ -73,9 +75,9 @@ export interface Afectacion {
   motivo: string;
   fecha_inicio: string;
   fecha_fin: string | null;
-  id_parada: number | null;
-  id_estacion: number | null;
-  estado: EstadoInfraestructura;
+  idParada: number | null;
+  idEstacion: number | null;
+  estadoAfectacion: EstadoInfraestructura;
   fecha_creacion: string;
   fecha_actualizacion: string;
 }

@@ -14,7 +14,7 @@ export function ParadasTable({ paradas, onUpdate, onDelete }: ParadasTableProps)
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const filteredParadas = paradas.filter((p) =>
-    p.nombre.toLowerCase().includes(search.toLowerCase())
+    p.nombreParada.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleEdit = (parada: Parada) => {
@@ -64,18 +64,18 @@ export function ParadasTable({ paradas, onUpdate, onDelete }: ParadasTableProps)
             {filteredParadas.map((parada) => (
               <tr key={parada.id} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="px-4 py-3 text-sm text-slate-900">{parada.id}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{parada.nombre}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{parada.latitud.toFixed(6)}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{parada.longitud.toFixed(6)}</td>
+                <td className="px-4 py-3 text-sm text-slate-900">{parada.nombreParada}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{parada.latitud != null ? Number(parada.latitud).toFixed(6) : '—'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{parada.longitud != null ? Number(parada.longitud).toFixed(6) : '—'}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      parada.estado === 'ABIERTA'
+                      parada.estadoParada === 'ACTIVA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
                   >
-                    {parada.estado}
+                    {parada.estadoParada}
                   </span>
                 </td>
                 <td className="px-4 py-3">

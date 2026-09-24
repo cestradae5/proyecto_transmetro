@@ -1,18 +1,41 @@
 import { useState } from 'react';
-import type { Linea } from '../../types/infrastructure.types';
+import type { Linea, Parqueo } from '../../types/infrastructure.types';
+import { LineaDialog } from './linea-dialog';
 
 interface LineasTableProps {
   lineas: Linea[];
+  parqueos: Parqueo[];
   onUpdate: (id: number, data: any) => Promise<any>;
   onDelete: (id: number) => Promise<any>;
 }
 
-export function LineasTable({ lineas, onUpdate, onDelete }: LineasTableProps) {
+export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTableProps) {
   const [search, setSearch] = useState('');
+  const [editingLinea, setEditingLinea] = useState<Linea | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const filteredLineas = lineas.filter((l) =>
-    l.nombre.toLowerCase().includes(search.toLowerCase()) || l.numero.includes(search)
+    l.nombreLinea.toLowerCase().includes(search.toLowerCase()) || l.numero.includes(search)
   );
+
+  const handleEdit = (linea: Linea) => {
+    setEditingLinea(linea);
+    setIsDialogOpen(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm('¿Está seguro de eliminar esta línea?')) {
+      await onDelete(id);
+    }
+  };
+
+  const handleSave = async (data: any) => {
+    if (editingLinea) {
+      await onUpdate(editingLinea.id, data);
+    }
+    setIsDialogOpen(false);
+    setEditingLinea(null);
+  };
 
   return (
     <div>
@@ -44,7 +67,7 @@ export function LineasTable({ lineas, onUpdate, onDelete }: LineasTableProps) {
               <tr key={linea.id} className="border-b border-slate-100 hover:bg-slate-50">
                 <td className="px-4 py-3 text-sm text-slate-900">{linea.id}</td>
                 <td className="px-4 py-3 text-sm text-slate-900 font-medium">{linea.numero}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{linea.nombre}</td>
+                <td className="px-4 py-3 text-sm text-slate-900">{linea.nombreLinea}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded" style={{ backgroundColor: linea.color_hex }}></div>
@@ -55,23 +78,23 @@ export function LineasTable({ lineas, onUpdate, onDelete }: LineasTableProps) {
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      linea.estado === 'ABIERTA'
+                      linea.estadoLinea === 'ABIERTA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
                   >
-                    {linea.estado}
+                    {linea.estadoLinea}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <button
-                    onClick={() => alert('Editar línea')}
+                    onClick={() => handleEdit(linea)}
                     className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium mr-2"
                   >
                     Editar
                   </button>
                   <button
-                    onClick={() => onDelete(linea.id)}
+                    onClick={() => handleDelete(linea.id)}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar
@@ -82,6 +105,18 @@ export function LineasTable({ lineas, onUpdate, onDelete }: LineasTableProps) {
           </tbody>
         </table>
       </div>
+
+      {isDialogOpen && editingLinea && (
+        <LineaDialog
+          linea={editingLinea}
+          parqueos={parqueos}
+          onSave={handleSave}
+          onClose={() => {
+            setIsDialogOpen(false);
+            setEditingLinea(null);
+          }}
+        />
+      )}
     </div>
   );
 }

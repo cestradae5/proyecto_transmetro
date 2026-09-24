@@ -23,39 +23,47 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = localStorage.getItem("transmetro_token");
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...(await getAuthHeaders()),
+      ...options.headers,
+    },
+  });
+  return handleResponse<T>(response);
+}
+
 export const apiClient = {
   async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      credentials: 'include',
-    });
-    return handleResponse<T>(response);
+    return fetchWithAuth<T>(path);
   },
 
   async post<T>(path: string, data: any): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    return fetchWithAuth<T>(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(data),
     });
-    return handleResponse<T>(response);
   },
 
   async patch<T>(path: string, data: any): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    return fetchWithAuth<T>(path, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify(data),
     });
-    return handleResponse<T>(response);
   },
 
   async delete<T>(path: string): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    return fetchWithAuth<T>(path, {
       method: 'DELETE',
-      credentials: 'include',
     });
-    return handleResponse<T>(response);
   },
 };
