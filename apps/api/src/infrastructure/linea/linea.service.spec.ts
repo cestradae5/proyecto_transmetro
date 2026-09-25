@@ -199,7 +199,7 @@ describe("LineaService", () => {
       await service.remove("1");
 
       expect(lineaRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ idLinea: "1", estadoLinea: "CERRADA" })
+        expect.objectContaining({ idLinea: "1", estadoLinea: EstadoLinea.INACTIVA })
       );
     });
 

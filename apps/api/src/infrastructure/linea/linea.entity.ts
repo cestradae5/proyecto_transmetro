@@ -9,14 +9,12 @@ import { ParqueoEntity } from "../parqueo/parqueo.entity.js";
 
 export enum EstadoLinea {
   ACTIVA = "ACTIVA",
-  CERRADA = "CERRADA",
-  MANTENIMIENTO = "MANTENIMIENTO",
+  INACTIVA = "INACTIVA",
 }
 
 export enum TipoRecorrido {
   CIRCULAR = "CIRCULAR",
-  IDA_VUELTA = "IDA_VUELTA",
-  DIRECTO = "DIRECTO",
+  LINEAL = "LINEAL",
 }
 
 @Entity({ name: "tbl_linea" })

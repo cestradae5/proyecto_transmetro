@@ -91,7 +91,7 @@ export class LineaController {
   @ApiOperation({ summary: "Eliminar (soft delete) una línea" })
   @ApiResponse({
     status: 200,
-    description: "Línea marcada como CERRADA",
+    description: "Línea marcada como INACTIVA",
   })
   @ApiResponse({ status: 404, description: "Línea no encontrada" })
   remove(@Param("id") id: string): Promise<void> {

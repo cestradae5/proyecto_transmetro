@@ -3,14 +3,12 @@ import { ApiProperty } from "@nestjs/swagger";
 
 export enum EstadoLinea {
   ACTIVA = "ACTIVA",
-  CERRADA = "CERRADA",
-  MANTENIMIENTO = "MANTENIMIENTO",
+  INACTIVA = "INACTIVA",
 }
 
 export enum TipoRecorrido {
   CIRCULAR = "CIRCULAR",
-  IDA_VUELTA = "IDA_VUELTA",
-  DIRECTO = "DIRECTO",
+  LINEAL = "LINEAL",
 }
 
 export class CreateLineaDto {

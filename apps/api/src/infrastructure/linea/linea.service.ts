@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { LineaEntity } from "./linea.entity.js";
+import { EstadoLinea, LineaEntity } from "./linea.entity.js";
 import { LineaParadaEntity } from "./linea-parada.entity.js";
 import { CreateLineaDto } from "./dto/create-linea.dto.js";
 import { UpdateLineaDto } from "./dto/update-linea.dto.js";
@@ -95,8 +95,9 @@ export class LineaService {
       throw new NotFoundException(`Línea con ID ${id} no encontrada`);
     }
 
-    // Soft delete: set status to CERRADA
-    linea.estadoLinea = "CERRADA" as any;
+    // Soft delete: set status to INACTIVA (the DB CHECK constraint only
+    // allows ACTIVA/INACTIVA for estado_linea).
+    linea.estadoLinea = EstadoLinea.INACTIVA;
     await this.lineaRepository.save(linea);
   }
 
