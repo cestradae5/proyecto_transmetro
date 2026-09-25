@@ -78,7 +78,7 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      linea.estadoLinea === 'ABIERTA'
+                      linea.estadoLinea === 'ACTIVA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}

@@ -85,7 +85,7 @@ A numbered route with a color identifier.
 - `color_hex` (required): Hex color code (e.g., "#FF0000")
 - `tipo_recorrido` (required): CIRCULAR | LINEAL
 - `id_parqueo` (optional): Home parking lot ID
-- `estado` (required): ABIERTA | CERRADA
+- `estado` (required): ACTIVA | INACTIVA
 
 **Special Feature:** Color picker input for `color_hex`
 

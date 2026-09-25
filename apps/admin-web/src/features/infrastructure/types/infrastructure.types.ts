@@ -5,6 +5,12 @@ export enum EstadoInfraestructura {
   MANTENIMIENTO = 'MANTENIMIENTO',
 }
 
+/** Valid only for Línea (`tbl_linea.estado_linea` DB CHECK constraint). */
+export enum EstadoLinea {
+  ACTIVA = 'ACTIVA',
+  INACTIVA = 'INACTIVA',
+}
+
 export enum TipoParqueo {
   PUBLICO = 'PUBLICO',
   PRIVADO = 'PRIVADO',
@@ -64,7 +70,7 @@ export interface Linea {
   color_hex: string;
   tipo_recorrido: TipoRecorrido;
   idParqueo: number | null;
-  estadoLinea: EstadoInfraestructura;
+  estadoLinea: EstadoLinea;
   fecha_creacion: string;
   fecha_actualizacion: string;
 }

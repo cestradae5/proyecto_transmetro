@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Linea, TipoRecorrido, EstadoInfraestructura, Parqueo } from '../../types/infrastructure.types';
+import type { Linea, TipoRecorrido, EstadoLinea, Parqueo } from '../../types/infrastructure.types';
 
 interface LineaFormProps {
   linea?: Linea;
@@ -15,7 +15,7 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
     color_hex: linea?.color_hex || '#FF0000',
     tipo_recorrido: linea?.tipo_recorrido || 'LINEAL' as TipoRecorrido,
     idParqueo: linea?.idParqueo?.toString() || '',
-    estadoLinea: linea?.estadoLinea || 'ABIERTA' as EstadoInfraestructura,
+    estadoLinea: linea?.estadoLinea || 'ACTIVA' as EstadoLinea,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -107,10 +107,9 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estado *</label>
-        <select value={formData.estadoLinea} onChange={(e) => setFormData({ ...formData, estadoLinea: e.target.value as EstadoInfraestructura })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="ABIERTA">ABIERTA</option>
-          <option value="CERRADA">CERRADA</option>
-          <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+        <select value={formData.estadoLinea} onChange={(e) => setFormData({ ...formData, estadoLinea: e.target.value as EstadoLinea })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+          <option value="ACTIVA">ACTIVA</option>
+          <option value="INACTIVA">INACTIVA</option>
         </select>
       </div>
 
