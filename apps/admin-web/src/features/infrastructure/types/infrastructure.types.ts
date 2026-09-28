@@ -108,3 +108,22 @@ export type UpdateLineaDto = Partial<CreateLineaDto>;
 
 export type CreateAfectacionDto = Omit<Afectacion, 'idAfectacion'>;
 export type UpdateAfectacionDto = Partial<CreateAfectacionDto>;
+
+export interface LineaParada {
+  idLineaParada: string;
+  orden: number;
+  minutosHastaSiguiente: number;
+  idParada: string;
+  idLinea: string;
+  parada: Parada;
+}
+
+export type CreateLineaParadaDto = {
+  idParada: string;
+  orden: number;
+  minutosHastaSiguiente: number;
+};
+
+export type UpdateLineaParadaDto = Partial<
+  Pick<CreateLineaParadaDto, 'orden' | 'minutosHastaSiguiente'>
+>;
