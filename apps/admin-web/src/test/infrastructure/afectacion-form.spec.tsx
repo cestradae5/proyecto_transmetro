@@ -9,7 +9,7 @@ import type { Afectacion, Estacion, Parada } from "../../features/infrastructure
 
 const SAMPLE_PARADAS: Parada[] = [
   {
-    id: 1,
+    idParada: 1,
     nombreParada: "Parada A",
     latitud: 14.6,
     longitud: -90.5,
@@ -21,28 +21,24 @@ const SAMPLE_PARADAS: Parada[] = [
 
 const SAMPLE_ESTACIONES: Estacion[] = [
   {
-    id: 2,
+    idEstacion: 2,
     nombreEstacion: "Estación B",
     latitud: 14.61,
     longitud: -90.51,
     idParada: null,
-    estadoEstacion: "ABIERTA" as Estacion["estadoEstacion"],
-    fecha_creacion: "2026-01-01T00:00:00.000Z",
-    fecha_actualizacion: "2026-01-01T00:00:00.000Z",
+    estadoEstacion: "ACTIVA" as Estacion["estadoEstacion"],
   },
 ];
 
 const SAMPLE_AFECTACION: Afectacion = {
-  id: 6,
-  tipo: "DESVIO" as Afectacion["tipo"],
+  idAfectacion: "6",
+  tipoAfectacion: "TEMPORAL" as Afectacion["tipoAfectacion"],
   motivo: "Obra vial",
-  fecha_inicio: "2026-02-01T00:00:00.000Z",
-  fecha_fin: null,
-  idParada: 1,
+  fechaInicio: "2026-02-01T00:00:00.000Z",
+  fechaFin: null,
+  idParada: "1",
   idEstacion: null,
   estadoAfectacion: "ACTIVA" as Afectacion["estadoAfectacion"],
-  fecha_creacion: "2026-01-01T00:00:00.000Z",
-  fecha_actualizacion: "2026-01-01T00:00:00.000Z",
 };
 
 function renderForm(props: Partial<Parameters<typeof AfectacionForm>[0]> = {}) {
@@ -111,7 +107,7 @@ describe("AfectacionForm", () => {
     expect(paradaSelect).toHaveValue("1");
   });
 
-  it("shows validation errors for empty motivo/fecha_inicio and end date before start date", async () => {
+  it("shows validation errors for empty motivo/fechaInicio and end date before start date", async () => {
     const { fechaInicio, fechaFin, onSubmit } = renderForm();
 
     fireEvent.change(fechaInicio, { target: { value: "2026-03-10" } });
@@ -123,7 +119,7 @@ describe("AfectacionForm", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("requires a fecha_inicio when it is left empty", async () => {
+  it("requires a fechaInicio when it is left empty", async () => {
     const { motivo, onSubmit } = renderForm();
 
     fireEvent.change(motivo, { target: { value: "Mantenimiento de vía" } });
@@ -179,13 +175,13 @@ describe("AfectacionForm", () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith({
-      tipo: "DESVIO",
+      tipoAfectacion: "TEMPORAL",
       motivo: "Cierre por desfile",
-      fecha_inicio: "2026-04-01",
-      fecha_fin: null,
-      idParada: 1,
-      idEstacion: null,
-      estadoAfectacion: "ABIERTA",
+      fechaInicio: "2026-04-01",
+      fechaFin: undefined,
+      idParada: "1",
+      idEstacion: undefined,
+      estadoAfectacion: "ACTIVA",
     });
   });
 
@@ -200,23 +196,17 @@ describe("AfectacionForm", () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith({
-      tipo: "DESVIO",
+      tipoAfectacion: "TEMPORAL",
       motivo: "Mantenimiento de andén",
-      fecha_inicio: "2026-04-05",
-      fecha_fin: null,
-      idParada: null,
-      idEstacion: 2,
-      estadoAfectacion: "ABIERTA",
+      fechaInicio: "2026-04-05",
+      fechaFin: undefined,
+      idParada: undefined,
+      idEstacion: "2",
+      estadoAfectacion: "ACTIVA",
     });
   });
 
-  // Known spec-drift bug (tracked in infraestructura-hardening progress
-  // notes): the form's default `estadoAfectacion` is 'ABIERTA', but the
-  // <select> below only offers ACTIVA/CERRADA/MANTENIMIENTO as options —
-  // there is no matching <option value="ABIERTA">. This test documents the
-  // *actual* rendered behavior rather than the intended one. See the PR#4
-  // report / README "Known Limitations" for the full note.
-  it("documents spec-drift: default estadoAfectacion 'ABIERTA' has no matching <option>", () => {
+  it("defaults estadoAfectacion to 'ACTIVA', which matches an existing <option>", () => {
     const { estadoSelect } = renderForm();
 
     expect(estadoSelect).toHaveValue("ACTIVA");

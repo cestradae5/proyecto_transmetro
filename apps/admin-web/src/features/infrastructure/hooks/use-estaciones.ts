@@ -33,8 +33,13 @@ export function useEstaciones() {
   };
 
   const deleteEstacion = async (id: number) => {
-    await apiClient.delete(`/infrastructure/estaciones/${id}`);
-    await fetchEstaciones();
+    try {
+      await apiClient.delete(`/infrastructure/estaciones/${id}`);
+      await fetchEstaciones();
+    } catch (err: any) {
+      console.error('Error al eliminar estación:', err);
+      throw err;
+    }
   };
 
   useEffect(() => {

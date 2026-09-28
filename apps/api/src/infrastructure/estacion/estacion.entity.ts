@@ -2,6 +2,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
+  Generated,
   ManyToOne,
   JoinColumn,
   OneToMany,
@@ -13,8 +14,9 @@ import { ParadaEntity } from "../parada/parada.entity.js";
 
 @Entity({ name: "tbl_estacion" })
 export class EstacionEntity {
+  @Generated("increment")
   @PrimaryGeneratedColumn({ name: "id_estacion", type: "bigint" })
-  idEstacion!: string;
+  idEstacion!: number;
 
   @Column({ name: "nombre_estacion", type: "varchar", length: 120 })
   nombreEstacion!: string;
@@ -29,7 +31,7 @@ export class EstacionEntity {
   estadoEstacion!: string;
 
   @Column({ name: "id_parada", type: "bigint", nullable: true })
-  idParada?: string;
+  idParada?: number;
 
   @ManyToOne(() => ParadaEntity, { nullable: true })
   @JoinColumn({ name: "id_parada" })

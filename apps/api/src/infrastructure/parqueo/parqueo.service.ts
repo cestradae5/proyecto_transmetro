@@ -18,13 +18,15 @@ export class ParqueoService {
   ) {}
 
   async create(createParqueoDto: CreateParqueoDto): Promise<ParqueoResponseDto> {
-    // Validate FK
-    await validateForeignKey(
-      this.estacionRepository,
-      createParqueoDto.idEstacion,
-      "idEstacion",
-      "Estación"
-    );
+    // Validate FK if provided
+    if (createParqueoDto.idEstacion) {
+      await validateForeignKey(
+        this.estacionRepository,
+        createParqueoDto.idEstacion,
+        "idEstacion",
+        "Estación"
+      );
+    }
 
     const parqueo = this.parqueoRepository.create(createParqueoDto);
     const saved = await this.parqueoRepository.save(parqueo);

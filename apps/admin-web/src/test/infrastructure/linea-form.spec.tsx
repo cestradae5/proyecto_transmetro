@@ -8,30 +8,26 @@ import type { Linea, Parqueo } from "../../features/infrastructure/types/infrast
 
 const SAMPLE_PARQUEOS: Parqueo[] = [
   {
-    id: 9,
+    idParqueo: "9",
     nombreParqueo: "Parqueo Central",
-    tipo: "PUBLICO" as Parqueo["tipo"],
+    tipoParqueo: "CENTRAL" as Parqueo["tipoParqueo"],
     direccion: "Zona 1",
     latitud: 14.6,
     longitud: -90.5,
-    capacidad: 20,
+    capacidadUnidades: 20,
     idEstacion: null,
-    estadoParqueo: "ABIERTA" as Parqueo["estadoParqueo"],
-    fecha_creacion: "2026-01-01T00:00:00.000Z",
-    fecha_actualizacion: "2026-01-01T00:00:00.000Z",
+    estadoParqueo: "ACTIVO" as Parqueo["estadoParqueo"],
   },
 ];
 
 const SAMPLE_LINEA: Linea = {
-  id: 4,
-  numero: "L1",
+  idLinea: "4",
+  numeroLinea: "L1",
   nombreLinea: "Línea Norte-Sur",
-  color_hex: "#00A651",
-  tipo_recorrido: "CIRCULAR" as Linea["tipo_recorrido"],
-  idParqueo: 9,
+  colorHex: "#00A651",
+  tipoRecorrido: "CIRCULAR" as Linea["tipoRecorrido"],
+  idParqueo: "9",
   estadoLinea: "INACTIVA" as Linea["estadoLinea"],
-  fecha_creacion: "2026-01-01T00:00:00.000Z",
-  fecha_actualizacion: "2026-01-01T00:00:00.000Z",
 };
 
 function renderForm(props: Partial<Parameters<typeof LineaForm>[0]> = {}) {
@@ -94,24 +90,36 @@ describe("LineaForm", () => {
 
     expect(await screen.findByText("El número de línea es requerido")).toBeInTheDocument();
     expect(screen.getByText("El nombre es requerido")).toBeInTheDocument();
-    expect(screen.getByText("Color debe ser formato hex válido (ej: #FF0000)")).toBeInTheDocument();
+    expect(screen.getByText("Color debe ser formato hex válido de 6 dígitos (ej: #FF0000)")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("calls onSubmit with correctly shaped data on success", async () => {
+  it("requires selecting a parqueo", async () => {
     const { numero, nombreLinea, onSubmit } = renderForm();
 
     fireEvent.change(numero, { target: { value: "L2" } });
     fireEvent.change(nombreLinea, { target: { value: "Línea Este-Oeste" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
 
+    expect(await screen.findByText("El parqueo es requerido")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("calls onSubmit with correctly shaped data on success", async () => {
+    const { numero, nombreLinea, parqueoSelect, onSubmit } = renderForm();
+
+    fireEvent.change(numero, { target: { value: "L2" } });
+    fireEvent.change(nombreLinea, { target: { value: "Línea Este-Oeste" } });
+    fireEvent.change(parqueoSelect, { target: { value: "9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith({
-      numero: "L2",
+      numeroLinea: "L2",
       nombreLinea: "Línea Este-Oeste",
-      color_hex: "#FF0000",
-      tipo_recorrido: "LINEAL",
-      idParqueo: null,
+      colorHex: "#FF0000",
+      tipoRecorrido: "LINEAL",
+      idParqueo: "9",
       estadoLinea: "ACTIVA",
     });
   });

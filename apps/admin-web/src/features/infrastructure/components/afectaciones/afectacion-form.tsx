@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Afectacion, TipoAfectacion, EstadoInfraestructura, Parada, Estacion } from '../../types/infrastructure.types';
+import type { Afectacion, TipoAfectacion, EstadoAfectacion, Parada, Estacion } from '../../types/infrastructure.types';
 
 interface AfectacionFormProps {
   afectacion?: Afectacion;
@@ -14,14 +14,14 @@ export function AfectacionForm({ afectacion, paradas, estaciones, onSubmit, onCa
     const initialTargetType = afectacion?.idParada ? 'parada' : afectacion?.idEstacion ? 'estacion' : 'parada';
     
     const [formData, setFormData] = useState({
-      tipo: afectacion?.tipo || 'DESVIO' as TipoAfectacion,
+      tipoAfectacion: afectacion?.tipoAfectacion || 'TEMPORAL' as TipoAfectacion,
       motivo: afectacion?.motivo || '',
-      fecha_inicio: afectacion?.fecha_inicio?.split('T')[0] || '',
-      fecha_fin: afectacion?.fecha_fin?.split('T')[0] || '',
+      fechaInicio: afectacion?.fechaInicio?.split('T')[0] || '',
+      fechaFin: afectacion?.fechaFin?.split('T')[0] || '',
       targetType: initialTargetType,
       idParada: afectacion?.idParada?.toString() || '',
       idEstacion: afectacion?.idEstacion?.toString() || '',
-      estadoAfectacion: afectacion?.estadoAfectacion || 'ABIERTA' as EstadoInfraestructura,
+      estadoAfectacion: afectacion?.estadoAfectacion || 'ACTIVA' as EstadoAfectacion,
     });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -30,14 +30,14 @@ export function AfectacionForm({ afectacion, paradas, estaciones, onSubmit, onCa
     const newErrors: Record<string, string> = {};
     
     if (!formData.motivo.trim()) newErrors.motivo = 'El motivo es requerido';
-    if (!formData.fecha_inicio) newErrors.fecha_inicio = 'La fecha de inicio es requerida';
+    if (!formData.fechaInicio) newErrors.fechaInicio = 'La fecha de inicio es requerida';
     
     // Validate date range
-    if (formData.fecha_fin && formData.fecha_inicio) {
-      const inicio = new Date(formData.fecha_inicio);
-      const fin = new Date(formData.fecha_fin);
+    if (formData.fechaFin && formData.fechaInicio) {
+      const inicio = new Date(formData.fechaInicio);
+      const fin = new Date(formData.fechaFin);
       if (fin < inicio) {
-        newErrors.fecha_fin = 'La fecha de fin debe ser posterior a la fecha de inicio';
+        newErrors.fechaFin = 'La fecha de fin debe ser posterior a la fecha de inicio';
       }
     }
     
@@ -59,12 +59,12 @@ export function AfectacionForm({ afectacion, paradas, estaciones, onSubmit, onCa
     setSubmitting(true);
     try {
       await onSubmit({
-        tipo: formData.tipo,
+        tipoAfectacion: formData.tipoAfectacion,
         motivo: formData.motivo,
-        fecha_inicio: formData.fecha_inicio,
-        fecha_fin: formData.fecha_fin || null,
-        idParada: formData.targetType === 'parada' && formData.idParada ? parseInt(formData.idParada) : null,
-        idEstacion: formData.targetType === 'estacion' && formData.idEstacion ? parseInt(formData.idEstacion) : null,
+        fechaInicio: formData.fechaInicio,
+        fechaFin: formData.fechaFin || undefined,
+        idParada: formData.targetType === 'parada' && formData.idParada ? formData.idParada : undefined,
+        idEstacion: formData.targetType === 'estacion' && formData.idEstacion ? formData.idEstacion : undefined,
         estadoAfectacion: formData.estadoAfectacion,
       });
     } catch (error: any) {
@@ -78,9 +78,9 @@ export function AfectacionForm({ afectacion, paradas, estaciones, onSubmit, onCa
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Afectación *</label>
-        <select value={formData.tipo} onChange={(e) => setFormData({ ...formData, tipo: e.target.value as TipoAfectacion })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="DESVIO">DESVÍO</option>
-          <option value="CIERRE_TEMPORAL">CIERRE TEMPORAL</option>
+        <select value={formData.tipoAfectacion} onChange={(e) => setFormData({ ...formData, tipoAfectacion: e.target.value as TipoAfectacion })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+          <option value="TEMPORAL">TEMPORAL</option>
+          <option value="PERMANENTE">PERMANENTE</option>
           <option value="MANTENIMIENTO">MANTENIMIENTO</option>
         </select>
       </div>
@@ -102,21 +102,21 @@ export function AfectacionForm({ afectacion, paradas, estaciones, onSubmit, onCa
           <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Inicio *</label>
           <input 
             type="date" 
-            value={formData.fecha_inicio} 
-            onChange={(e) => setFormData({ ...formData, fecha_inicio: e.target.value })} 
+            value={formData.fechaInicio} 
+            onChange={(e) => setFormData({ ...formData, fechaInicio: e.target.value })} 
             className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
           />
-          {errors.fecha_inicio && <p className="text-red-600 text-xs mt-1">{errors.fecha_inicio}</p>}
+          {errors.fechaInicio && <p className="text-red-600 text-xs mt-1">{errors.fechaInicio}</p>}
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Fecha Fin</label>
           <input 
             type="date" 
-            value={formData.fecha_fin} 
-            onChange={(e) => setFormData({ ...formData, fecha_fin: e.target.value })} 
+            value={formData.fechaFin} 
+            onChange={(e) => setFormData({ ...formData, fechaFin: e.target.value })} 
             className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
           />
-          {errors.fecha_fin && <p className="text-red-600 text-xs mt-1">{errors.fecha_fin}</p>}
+          {errors.fechaFin && <p className="text-red-600 text-xs mt-1">{errors.fechaFin}</p>}
         </div>
       </div>
 
@@ -141,7 +141,7 @@ value={formData.idParada}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-slate-50 disabled:text-slate-400"
               >
                 <option value="">Seleccionar parada</option>
-{paradas.map((p) => <option key={p.id} value={p.id}>{p.nombreParada}</option>)}
+{paradas.map((p) => <option key={p.idParada} value={p.idParada}>{p.nombreParada}</option>)}
                </select>
              </label>
            </div>
@@ -164,7 +164,7 @@ value={formData.idParada}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary disabled:bg-slate-50 disabled:text-slate-400"
               >
                 <option value="">Seleccionar estación</option>
-{estaciones.map((e) => <option key={e.id} value={e.id}>{e.nombreEstacion}</option>)}
+{estaciones.map((e) => <option key={e.idEstacion} value={e.idEstacion}>{e.nombreEstacion}</option>)}
                </select>
             </label>
           </div>
@@ -174,10 +174,10 @@ value={formData.idParada}
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estado *</label>
-<select value={formData.estadoAfectacion} onChange={(e) => setFormData({ ...formData, estadoAfectacion: e.target.value as EstadoInfraestructura })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+<select value={formData.estadoAfectacion} onChange={(e) => setFormData({ ...formData, estadoAfectacion: e.target.value as EstadoAfectacion })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
            <option value="ACTIVA">ACTIVA</option>
            <option value="CERRADA">CERRADA</option>
-           <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+           <option value="PENDIENTE">PENDIENTE</option>
          </select>
       </div>
 

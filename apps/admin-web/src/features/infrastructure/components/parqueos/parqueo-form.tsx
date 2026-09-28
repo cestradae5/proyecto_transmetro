@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Parqueo, TipoParqueo, EstadoInfraestructura, Estacion } from '../../types/infrastructure.types';
+import type { Parqueo, TipoParqueo, EstadoParqueo, Estacion } from '../../types/infrastructure.types';
 
 interface ParqueoFormProps {
   parqueo?: Parqueo;
@@ -11,13 +11,13 @@ interface ParqueoFormProps {
 export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: ParqueoFormProps) {
   const [formData, setFormData] = useState({
     nombreParqueo: parqueo?.nombreParqueo || '',
-    tipo: parqueo?.tipo || 'PUBLICO' as TipoParqueo,
+    tipoParqueo: parqueo?.tipoParqueo || 'CENTRAL' as TipoParqueo,
     direccion: parqueo?.direccion || '',
     latitud: parqueo?.latitud?.toString() || '',
     longitud: parqueo?.longitud?.toString() || '',
-    capacidad: parqueo?.capacidad?.toString() || '',
+    capacidadUnidades: parqueo?.capacidadUnidades?.toString() || '',
     idEstacion: parqueo?.idEstacion?.toString() || '',
-    estadoParqueo: parqueo?.estadoParqueo || 'ABIERTA' as EstadoInfraestructura,
+    estadoParqueo: parqueo?.estadoParqueo || 'ACTIVO' as EstadoParqueo,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -33,8 +33,8 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
     const lon = parseFloat(formData.longitud);
     if (isNaN(lon) || lon < -180 || lon > 180) newErrors.longitud = 'Longitud debe estar entre -180 y 180';
     
-    const cap = parseInt(formData.capacidad);
-    if (isNaN(cap) || cap < 0) newErrors.capacidad = 'Capacidad debe ser >= 0';
+    const cap = parseInt(formData.capacidadUnidades);
+    if (isNaN(cap) || cap < 0) newErrors.capacidadUnidades = 'Capacidad debe ser >= 0';
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -47,12 +47,12 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
     try {
        await onSubmit({
          nombreParqueo: formData.nombreParqueo,
-         tipo: formData.tipo,
+         tipoParqueo: formData.tipoParqueo,
          direccion: formData.direccion,
          latitud: parseFloat(formData.latitud),
          longitud: parseFloat(formData.longitud),
-         capacidad: parseInt(formData.capacidad),
-         idEstacion: formData.idEstacion ? parseInt(formData.idEstacion) : null,
+         capacidadUnidades: parseInt(formData.capacidadUnidades),
+         idEstacion: formData.idEstacion || undefined,
          estadoParqueo: formData.estadoParqueo,
        });
     } catch (error: any) {
@@ -72,10 +72,10 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Tipo *</label>
-        <select value={formData.tipo} onChange={(e) => setFormData({ ...formData, tipo: e.target.value as TipoParqueo })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="PUBLICO">PÚBLICO</option>
-          <option value="PRIVADO">PRIVADO</option>
-          <option value="MIXTO">MIXTO</option>
+        <select value={formData.tipoParqueo} onChange={(e) => setFormData({ ...formData, tipoParqueo: e.target.value as TipoParqueo })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+          <option value="CENTRAL">CENTRAL</option>
+          <option value="AUXILIAR">AUXILIAR</option>
+          <option value="TEMPORAL">TEMPORAL</option>
         </select>
       </div>
 
@@ -100,23 +100,23 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Capacidad de Unidades *</label>
-        <input type="number" min="0" value={formData.capacidad} onChange={(e) => setFormData({ ...formData, capacidad: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
-        {errors.capacidad && <p className="text-red-600 text-xs mt-1">{errors.capacidad}</p>}
+        <input type="number" min="0" value={formData.capacidadUnidades} onChange={(e) => setFormData({ ...formData, capacidadUnidades: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
+        {errors.capacidadUnidades && <p className="text-red-600 text-xs mt-1">{errors.capacidadUnidades}</p>}
       </div>
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estación</label>
         <select value={formData.idEstacion} onChange={(e) => setFormData({ ...formData, idEstacion: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
           <option value="">Ninguna</option>
-          {estaciones.map((e) => <option key={e.id} value={e.id}>{e.nombreEstacion}</option>)}
+          {estaciones.map((e) => <option key={e.idEstacion} value={e.idEstacion}>{e.nombreEstacion}</option>)}
         </select>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estado *</label>
-        <select value={formData.estadoParqueo} onChange={(e) => setFormData({ ...formData, estadoParqueo: e.target.value as EstadoInfraestructura })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="ABIERTA">ABIERTA</option>
-          <option value="CERRADA">CERRADA</option>
+        <select value={formData.estadoParqueo} onChange={(e) => setFormData({ ...formData, estadoParqueo: e.target.value as EstadoParqueo })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+          <option value="ACTIVO">ACTIVO</option>
+          <option value="CERRADO">CERRADO</option>
           <option value="MANTENIMIENTO">MANTENIMIENTO</option>
         </select>
       </div>

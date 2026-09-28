@@ -8,7 +8,7 @@ import type { Parada } from "../../features/infrastructure/types/infrastructure.
 // input type/order instead, matching the DOM order in parada-form.tsx.
 
 const SAMPLE_PARADA: Parada = {
-  id: 7,
+  idParada: 7,
   nombreParada: "Parada Central",
   latitud: 14.6349,
   longitud: -90.5069,

@@ -20,7 +20,7 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
 
   const getParadaNombre = (id: number | null) => {
     if (!id) return '—';
-    return paradas.find((p) => p.id === id)?.nombreParada || '—';
+    return paradas.find((p) => p.idParada === id)?.nombreParada || '—';
   };
 
   const handleEdit = (estacion: Estacion) => {
@@ -36,7 +36,7 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
 
   const handleSave = async (data: any) => {
     if (editingEstacion) {
-      await onUpdate(editingEstacion.id, data);
+      await onUpdate(editingEstacion.idEstacion, data);
     }
     setIsDialogOpen(false);
     setEditingEstacion(null);
@@ -69,8 +69,8 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
           </thead>
           <tbody>
             {filteredEstaciones.map((estacion) => (
-              <tr key={estacion.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 text-sm text-slate-900">{estacion.id}</td>
+              <tr key={estacion.idEstacion} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm text-slate-900">{estacion.idEstacion}</td>
                 <td className="px-4 py-3 text-sm text-slate-900">{estacion.nombreEstacion}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{estacion.latitud != null ? Number(estacion.latitud).toFixed(6) : '—'}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{estacion.longitud != null ? Number(estacion.longitud).toFixed(6) : '—'}</td>
@@ -78,7 +78,7 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      estacion.estadoEstacion === 'ABIERTA'
+                      estacion.estadoEstacion === 'ACTIVA'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
@@ -94,7 +94,7 @@ export function EstacionesTable({ estaciones, paradas, onUpdate, onDelete }: Est
                     Editar
                   </button>
                   <button
-                    onClick={() => handleDelete(estacion.id)}
+                    onClick={() => handleDelete(estacion.idEstacion)}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar

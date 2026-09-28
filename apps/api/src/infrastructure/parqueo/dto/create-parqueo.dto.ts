@@ -6,8 +6,9 @@ import {
   Max,
   IsEnum,
   IsInt,
+  IsOptional,
 } from "class-validator";
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export enum TipoParqueo {
   CENTRAL = "CENTRAL",
@@ -71,8 +72,8 @@ export class CreateParqueoDto {
   @IsEnum(EstadoParqueo)
   estadoParqueo!: EstadoParqueo;
 
-  @ApiProperty({ description: "ID de la estación asociada" })
+  @ApiPropertyOptional({ description: "ID de la estación asociada (opcional)" })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  idEstacion!: string;
+  idEstacion?: string;
 }

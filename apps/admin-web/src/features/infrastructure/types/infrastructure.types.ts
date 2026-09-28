@@ -1,6 +1,6 @@
+/** Valid for Parada (`tbl_parada`) and Estación (`tbl_estacion`) DB CHECK constraints. */
 export enum EstadoInfraestructura {
   ACTIVA = 'ACTIVA',
-  ABIERTA = 'ABIERTA',
   CERRADA = 'CERRADA',
   MANTENIMIENTO = 'MANTENIMIENTO',
 }
@@ -12,9 +12,16 @@ export enum EstadoLinea {
 }
 
 export enum TipoParqueo {
-  PUBLICO = 'PUBLICO',
-  PRIVADO = 'PRIVADO',
-  MIXTO = 'MIXTO',
+  CENTRAL = 'CENTRAL',
+  AUXILIAR = 'AUXILIAR',
+  TEMPORAL = 'TEMPORAL',
+}
+
+/** Valid only for Parqueo (`tbl_parqueo.estado_parqueo` DB CHECK constraint). */
+export enum EstadoParqueo {
+  ACTIVO = 'ACTIVO',
+  CERRADO = 'CERRADO',
+  MANTENIMIENTO = 'MANTENIMIENTO',
 }
 
 export enum TipoRecorrido {
@@ -23,13 +30,20 @@ export enum TipoRecorrido {
 }
 
 export enum TipoAfectacion {
-  DESVIO = 'DESVIO',
-  CIERRE_TEMPORAL = 'CIERRE_TEMPORAL',
+  TEMPORAL = 'TEMPORAL',
+  PERMANENTE = 'PERMANENTE',
   MANTENIMIENTO = 'MANTENIMIENTO',
 }
 
+/** Valid only for Afectación (`tbl_afectacion.estado_afectacion` DB CHECK constraint). */
+export enum EstadoAfectacion {
+  ACTIVA = 'ACTIVA',
+  CERRADA = 'CERRADA',
+  PENDIENTE = 'PENDIENTE',
+}
+
 export interface Parada {
-  id: number;
+  idParada: number;
   nombreParada: string;
   latitud: number;
   longitud: number;
@@ -39,53 +53,45 @@ export interface Parada {
 }
 
 export interface Estacion {
-  id: number;
+  idEstacion: number;
   nombreEstacion: string;
   latitud: number;
   longitud: number;
   idParada: number | null;
   estadoEstacion: EstadoInfraestructura;
-  fecha_creacion: string;
-  fecha_actualizacion: string;
 }
 
 export interface Parqueo {
-  id: number;
+  idParqueo: string;
   nombreParqueo: string;
-  tipo: TipoParqueo;
+  tipoParqueo: TipoParqueo;
   direccion: string;
   latitud: number;
   longitud: number;
-  capacidad: number;
-  idEstacion: number | null;
-  estadoParqueo: EstadoInfraestructura;
-  fecha_creacion: string;
-  fecha_actualizacion: string;
+  capacidadUnidades: number;
+  idEstacion: string | null;
+  estadoParqueo: EstadoParqueo;
 }
 
 export interface Linea {
-  id: number;
-  numero: string;
+  idLinea: string;
+  numeroLinea: string;
   nombreLinea: string;
-  color_hex: string;
-  tipo_recorrido: TipoRecorrido;
-  idParqueo: number | null;
+  colorHex: string;
+  tipoRecorrido: TipoRecorrido;
+  idParqueo: string;
   estadoLinea: EstadoLinea;
-  fecha_creacion: string;
-  fecha_actualizacion: string;
 }
 
 export interface Afectacion {
-  id: number;
-  tipo: TipoAfectacion;
+  idAfectacion: string;
+  tipoAfectacion: TipoAfectacion;
   motivo: string;
-  fecha_inicio: string;
-  fecha_fin: string | null;
-  idParada: number | null;
-  idEstacion: number | null;
-  estadoAfectacion: EstadoInfraestructura;
-  fecha_creacion: string;
-  fecha_actualizacion: string;
+  fechaInicio: string;
+  fechaFin: string | null;
+  idParada: string | null;
+  idEstacion: string | null;
+  estadoAfectacion: EstadoAfectacion;
 }
 
 export type CreateParadaDto = Omit<Parada, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
@@ -94,11 +100,11 @@ export type UpdateParadaDto = Partial<CreateParadaDto>;
 export type CreateEstacionDto = Omit<Estacion, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
 export type UpdateEstacionDto = Partial<CreateEstacionDto>;
 
-export type CreateParqueoDto = Omit<Parqueo, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
+export type CreateParqueoDto = Omit<Parqueo, 'idParqueo'>;
 export type UpdateParqueoDto = Partial<CreateParqueoDto>;
 
-export type CreateLineaDto = Omit<Linea, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
+export type CreateLineaDto = Omit<Linea, 'idLinea'>;
 export type UpdateLineaDto = Partial<CreateLineaDto>;
 
-export type CreateAfectacionDto = Omit<Afectacion, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
+export type CreateAfectacionDto = Omit<Afectacion, 'idAfectacion'>;
 export type UpdateAfectacionDto = Partial<CreateAfectacionDto>;

@@ -31,7 +31,7 @@ export function ParqueosTable({ parqueos, estaciones, onUpdate, onDelete }: Parq
 
   const handleSave = async (data: any) => {
     if (editingParqueo) {
-      await onUpdate(editingParqueo.id, data);
+      await onUpdate(Number(editingParqueo.idParqueo), data);
     }
     setIsDialogOpen(false);
     setEditingParqueo(null);
@@ -63,15 +63,15 @@ export function ParqueosTable({ parqueos, estaciones, onUpdate, onDelete }: Parq
           </thead>
           <tbody>
             {filteredParqueos.map((parqueo) => (
-              <tr key={parqueo.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 text-sm text-slate-900">{parqueo.id}</td>
+              <tr key={parqueo.idParqueo} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm text-slate-900">{parqueo.idParqueo}</td>
                 <td className="px-4 py-3 text-sm text-slate-900">{parqueo.nombreParqueo}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{parqueo.tipo}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{parqueo.capacidad ?? '—'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{parqueo.tipoParqueo}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{parqueo.capacidadUnidades ?? '—'}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
-                      parqueo.estadoParqueo === 'ABIERTA'
+                      parqueo.estadoParqueo === 'ACTIVO'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}
@@ -87,7 +87,7 @@ export function ParqueosTable({ parqueos, estaciones, onUpdate, onDelete }: Parq
                     Editar
                   </button>
                   <button
-                    onClick={() => handleDelete(parqueo.id)}
+                    onClick={() => handleDelete(Number(parqueo.idParqueo))}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar

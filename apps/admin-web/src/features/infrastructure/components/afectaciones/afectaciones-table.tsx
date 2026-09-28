@@ -32,7 +32,7 @@ export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate,
 
   const handleSave = async (data: any) => {
     if (editingAfectacion) {
-      await onUpdate(editingAfectacion.id, data);
+      await onUpdate(Number(editingAfectacion.idAfectacion), data);
     }
     setIsDialogOpen(false);
     setEditingAfectacion(null);
@@ -65,15 +65,15 @@ export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate,
           </thead>
           <tbody>
             {filteredAfectaciones.map((afectacion) => (
-              <tr key={afectacion.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.id}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.tipo}</td>
+              <tr key={afectacion.idAfectacion} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.idAfectacion}</td>
+                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.tipoAfectacion}</td>
                 <td className="px-4 py-3 text-sm text-slate-900">{afectacion.motivo}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">
-                  {new Date(afectacion.fecha_inicio).toLocaleDateString()}
+                  {new Date(afectacion.fechaInicio).toLocaleDateString()}
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">
-                  {afectacion.fecha_fin ? new Date(afectacion.fecha_fin).toLocaleDateString() : '—'}
+                  {afectacion.fechaFin ? new Date(afectacion.fechaFin).toLocaleDateString() : '—'}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -94,7 +94,7 @@ export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate,
                     Editar
                   </button>
                   <button
-                    onClick={() => handleDelete(afectacion.id)}
+                    onClick={() => handleDelete(Number(afectacion.idAfectacion))}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar

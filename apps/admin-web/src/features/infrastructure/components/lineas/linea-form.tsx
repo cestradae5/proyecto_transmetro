@@ -10,10 +10,10 @@ interface LineaFormProps {
 
 export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProps) {
   const [formData, setFormData] = useState({
-    numero: linea?.numero || '',
+    numeroLinea: linea?.numeroLinea || '',
     nombreLinea: linea?.nombreLinea || '',
-    color_hex: linea?.color_hex || '#FF0000',
-    tipo_recorrido: linea?.tipo_recorrido || 'LINEAL' as TipoRecorrido,
+    colorHex: linea?.colorHex || '#FF0000',
+    tipoRecorrido: linea?.tipoRecorrido || 'LINEAL' as TipoRecorrido,
     idParqueo: linea?.idParqueo?.toString() || '',
     estadoLinea: linea?.estadoLinea || 'ACTIVA' as EstadoLinea,
   });
@@ -22,15 +22,17 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.numero.trim()) newErrors.numero = 'El número de línea es requerido';
+    if (!formData.numeroLinea.trim()) newErrors.numeroLinea = 'El número de línea es requerido';
     if (!formData.nombreLinea.trim()) newErrors.nombreLinea = 'El nombre es requerido';
     
-    // Validate hex color
-    const hexPattern = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
-    if (!hexPattern.test(formData.color_hex)) {
-      newErrors.color_hex = 'Color debe ser formato hex válido (ej: #FF0000)';
+    // Validate hex color (backend requires exact #RRGGBB, 6 hex digits)
+    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
+    if (!hexPattern.test(formData.colorHex)) {
+      newErrors.colorHex = 'Color debe ser formato hex válido de 6 dígitos (ej: #FF0000)';
     }
-    
+
+    if (!formData.idParqueo) newErrors.idParqueo = 'El parqueo es requerido';
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -41,11 +43,11 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
     setSubmitting(true);
     try {
        await onSubmit({
-         numero: formData.numero,
+         numeroLinea: formData.numeroLinea,
          nombreLinea: formData.nombreLinea,
-         color_hex: formData.color_hex,
-         tipo_recorrido: formData.tipo_recorrido,
-         idParqueo: formData.idParqueo ? parseInt(formData.idParqueo) : null,
+         colorHex: formData.colorHex,
+         tipoRecorrido: formData.tipoRecorrido,
+         idParqueo: formData.idParqueo,
          estadoLinea: formData.estadoLinea,
        });
     } catch (error: any) {
@@ -59,8 +61,8 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Número de Línea *</label>
-        <input type="text" value={formData.numero} onChange={(e) => setFormData({ ...formData, numero: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" placeholder="ej: L1, T2" />
-        {errors.numero && <p className="text-red-600 text-xs mt-1">{errors.numero}</p>}
+        <input type="text" value={formData.numeroLinea} onChange={(e) => setFormData({ ...formData, numeroLinea: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" placeholder="ej: L1, T2" />
+        {errors.numeroLinea && <p className="text-red-600 text-xs mt-1">{errors.numeroLinea}</p>}
       </div>
 
       <div>
@@ -74,35 +76,36 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
         <div className="flex gap-2">
           <input 
             type="color" 
-            value={formData.color_hex} 
-            onChange={(e) => setFormData({ ...formData, color_hex: e.target.value })} 
+            value={formData.colorHex} 
+            onChange={(e) => setFormData({ ...formData, colorHex: e.target.value })} 
             className="h-10 w-20 border border-slate-200 rounded-lg cursor-pointer"
           />
           <input 
             type="text" 
-            value={formData.color_hex} 
-            onChange={(e) => setFormData({ ...formData, color_hex: e.target.value })} 
+            value={formData.colorHex} 
+            onChange={(e) => setFormData({ ...formData, colorHex: e.target.value })} 
             className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
             placeholder="#FF0000"
           />
         </div>
-        {errors.color_hex && <p className="text-red-600 text-xs mt-1">{errors.color_hex}</p>}
+        {errors.colorHex && <p className="text-red-600 text-xs mt-1">{errors.colorHex}</p>}
       </div>
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Recorrido *</label>
-        <select value={formData.tipo_recorrido} onChange={(e) => setFormData({ ...formData, tipo_recorrido: e.target.value as TipoRecorrido })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+        <select value={formData.tipoRecorrido} onChange={(e) => setFormData({ ...formData, tipoRecorrido: e.target.value as TipoRecorrido })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
           <option value="LINEAL">LINEAL</option>
           <option value="CIRCULAR">CIRCULAR</option>
         </select>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Parqueo</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Parqueo *</label>
         <select value={formData.idParqueo} onChange={(e) => setFormData({ ...formData, idParqueo: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="">Ninguno</option>
-          {parqueos.map((p) => <option key={p.id} value={p.id}>{p.nombreParqueo}</option>)}
+          <option value="">Seleccionar parqueo</option>
+          {parqueos.map((p) => <option key={p.idParqueo} value={p.idParqueo}>{p.nombreParqueo}</option>)}
         </select>
+        {errors.idParqueo && <p className="text-red-600 text-xs mt-1">{errors.idParqueo}</p>}
       </div>
 
       <div>

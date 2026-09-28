@@ -55,7 +55,7 @@ export class ParqueoEntity {
   })
   estadoParqueo!: EstadoParqueo;
 
-  @Column({ name: "id_estacion", type: "bigint" })
+  @Column({ name: "id_estacion", type: "bigint", nullable: true })
   idEstacion!: string;
 
   @ManyToOne(() => EstacionEntity)

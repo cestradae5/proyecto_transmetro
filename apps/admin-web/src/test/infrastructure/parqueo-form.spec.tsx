@@ -8,29 +8,25 @@ import type { Estacion, Parqueo } from "../../features/infrastructure/types/infr
 
 const SAMPLE_ESTACIONES: Estacion[] = [
   {
-    id: 2,
+    idEstacion: 2,
     nombreEstacion: "Estación Central",
     latitud: 14.6,
     longitud: -90.5,
     idParada: null,
-    estadoEstacion: "ABIERTA" as Estacion["estadoEstacion"],
-    fecha_creacion: "2026-01-01T00:00:00.000Z",
-    fecha_actualizacion: "2026-01-01T00:00:00.000Z",
+    estadoEstacion: "ACTIVA" as Estacion["estadoEstacion"],
   },
 ];
 
 const SAMPLE_PARQUEO: Parqueo = {
-  id: 5,
+  idParqueo: "5",
   nombreParqueo: "Parqueo Norte",
-  tipo: "PRIVADO" as Parqueo["tipo"],
+  tipoParqueo: "AUXILIAR" as Parqueo["tipoParqueo"],
   direccion: "5a Avenida 10-20",
   latitud: 14.62,
   longitud: -90.52,
-  capacidad: 40,
-  idEstacion: 2,
-  estadoParqueo: "ABIERTA" as Parqueo["estadoParqueo"],
-  fecha_creacion: "2026-01-01T00:00:00.000Z",
-  fecha_actualizacion: "2026-01-01T00:00:00.000Z",
+  capacidadUnidades: 40,
+  idEstacion: "2",
+  estadoParqueo: "ACTIVO" as Parqueo["estadoParqueo"],
 };
 
 function renderForm(props: Partial<Parameters<typeof ParqueoForm>[0]> = {}) {
@@ -75,9 +71,9 @@ describe("ParqueoForm", () => {
     expect(latitud).toHaveValue(null);
     expect(longitud).toHaveValue(null);
     expect(capacidad).toHaveValue(null);
-    expect(tipoSelect).toHaveValue("PUBLICO");
+    expect(tipoSelect).toHaveValue("CENTRAL");
     expect(estacionSelect).toHaveValue("");
-    expect(estadoSelect).toHaveValue("ABIERTA");
+    expect(estadoSelect).toHaveValue("ACTIVO");
   });
 
   it("renders pre-filled fields in edit mode", () => {
@@ -90,7 +86,7 @@ describe("ParqueoForm", () => {
     expect(latitud).toHaveValue(14.62);
     expect(longitud).toHaveValue(-90.52);
     expect(capacidad).toHaveValue(40);
-    expect(tipoSelect).toHaveValue("PRIVADO");
+    expect(tipoSelect).toHaveValue("AUXILIAR");
     expect(estacionSelect).toHaveValue("2");
   });
 
@@ -126,13 +122,13 @@ describe("ParqueoForm", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith({
       nombreParqueo: "Parqueo Sur",
-      tipo: "PUBLICO",
+      tipoParqueo: "CENTRAL",
       direccion: "6a Calle 1-1",
       latitud: 14.5,
       longitud: -90.3,
-      capacidad: 10,
-      idEstacion: null,
-      estadoParqueo: "ABIERTA",
+      capacidadUnidades: 10,
+      idEstacion: undefined,
+      estadoParqueo: "ACTIVO",
     });
   });
 });

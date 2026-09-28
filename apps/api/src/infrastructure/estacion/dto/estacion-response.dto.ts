@@ -3,7 +3,7 @@ import { EstadoEstacion } from "./create-estacion.dto.js";
 
 export class EstacionResponseDto {
   @ApiProperty({ description: "ID de la estación" })
-  idEstacion!: string;
+  idEstacion!: number;
 
   @ApiProperty({ description: "Nombre de la estación" })
   nombreEstacion!: string;
@@ -18,5 +18,5 @@ export class EstacionResponseDto {
   estadoEstacion!: EstadoEstacion;
 
   @ApiPropertyOptional({ description: "ID de la parada asociada" })
-  idParada?: string;
+  idParada?: number;
 }

@@ -14,7 +14,7 @@ export function EstacionForm({ estacion, paradas, onSubmit, onCancel }: Estacion
     latitud: estacion?.latitud?.toString() || '',
     longitud: estacion?.longitud?.toString() || '',
     idParada: estacion?.idParada?.toString() || '',
-    estadoEstacion: estacion?.estadoEstacion || 'ABIERTA' as EstadoInfraestructura,
+    estadoEstacion: estacion?.estadoEstacion || 'ACTIVA' as EstadoInfraestructura,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -72,13 +72,13 @@ export function EstacionForm({ estacion, paradas, onSubmit, onCancel }: Estacion
         <label className="block text-sm font-medium text-slate-700 mb-1">Parada</label>
         <select value={formData.idParada} onChange={(e) => setFormData({ ...formData, idParada: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
           <option value="">Ninguna</option>
-          {paradas.map((p) => <option key={p.id} value={p.id}>{p.nombreParada}</option>)}
+          {paradas.map((p) => <option key={p.idParada} value={p.idParada}>{p.nombreParada}</option>)}
         </select>
       </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Estado *</label>
         <select value={formData.estadoEstacion} onChange={(e) => setFormData({ ...formData, estadoEstacion: e.target.value as EstadoInfraestructura })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="ABIERTA">ABIERTA</option>
+          <option value="ACTIVA">ACTIVA</option>
           <option value="CERRADA">CERRADA</option>
           <option value="MANTENIMIENTO">MANTENIMIENTO</option>
         </select>

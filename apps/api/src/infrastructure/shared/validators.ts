@@ -7,7 +7,7 @@ import { Repository, ObjectLiteral } from "typeorm";
  */
 export async function validateForeignKey<T extends ObjectLiteral>(
   repository: Repository<T>,
-  id: string,
+  id: string | number,
   fieldName: string,
   entityName: string
 ): Promise<void> {
@@ -15,7 +15,7 @@ export async function validateForeignKey<T extends ObjectLiteral>(
   
   if (count === 0) {
     // Try with the primary key directly
-    const entity = await repository.findOne({ where: { id } as any });
+    const entity = await repository.findOne({ where: { [fieldName]: id } as any });
     if (!entity) {
       throw new NotFoundException(`${entityName} con ID ${id} no encontrada`);
     }

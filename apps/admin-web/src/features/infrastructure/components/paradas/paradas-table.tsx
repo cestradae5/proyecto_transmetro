@@ -30,7 +30,7 @@ export function ParadasTable({ paradas, onUpdate, onDelete }: ParadasTableProps)
 
   const handleSave = async (data: any) => {
     if (editingParada) {
-      await onUpdate(editingParada.id, data);
+      await onUpdate(editingParada.idParada, data);
     }
     setIsDialogOpen(false);
     setEditingParada(null);
@@ -62,8 +62,8 @@ export function ParadasTable({ paradas, onUpdate, onDelete }: ParadasTableProps)
           </thead>
           <tbody>
             {filteredParadas.map((parada) => (
-              <tr key={parada.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 text-sm text-slate-900">{parada.id}</td>
+              <tr key={parada.idParada} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm text-slate-900">{parada.idParada}</td>
                 <td className="px-4 py-3 text-sm text-slate-900">{parada.nombreParada}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{parada.latitud != null ? Number(parada.latitud).toFixed(6) : '—'}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{parada.longitud != null ? Number(parada.longitud).toFixed(6) : '—'}</td>
@@ -86,7 +86,7 @@ export function ParadasTable({ paradas, onUpdate, onDelete }: ParadasTableProps)
                     Editar
                   </button>
                   <button
-                    onClick={() => handleDelete(parada.id)}
+                    onClick={() => handleDelete(parada.idParada)}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar

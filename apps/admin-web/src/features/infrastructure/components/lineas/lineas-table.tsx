@@ -15,7 +15,7 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const filteredLineas = lineas.filter((l) =>
-    l.nombreLinea.toLowerCase().includes(search.toLowerCase()) || l.numero.includes(search)
+    l.nombreLinea.toLowerCase().includes(search.toLowerCase()) || l.numeroLinea.includes(search)
   );
 
   const handleEdit = (linea: Linea) => {
@@ -31,7 +31,7 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
 
   const handleSave = async (data: any) => {
     if (editingLinea) {
-      await onUpdate(editingLinea.id, data);
+      await onUpdate(Number(editingLinea.idLinea), data);
     }
     setIsDialogOpen(false);
     setEditingLinea(null);
@@ -64,17 +64,17 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
           </thead>
           <tbody>
             {filteredLineas.map((linea) => (
-              <tr key={linea.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 text-sm text-slate-900">{linea.id}</td>
-                <td className="px-4 py-3 text-sm text-slate-900 font-medium">{linea.numero}</td>
+              <tr key={linea.idLinea} className="border-b border-slate-100 hover:bg-slate-50">
+                <td className="px-4 py-3 text-sm text-slate-900">{linea.idLinea}</td>
+                <td className="px-4 py-3 text-sm text-slate-900 font-medium">{linea.numeroLinea}</td>
                 <td className="px-4 py-3 text-sm text-slate-900">{linea.nombreLinea}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded" style={{ backgroundColor: linea.color_hex }}></div>
-                    <span className="text-xs text-slate-600">{linea.color_hex}</span>
+                    <div className="w-6 h-6 rounded" style={{ backgroundColor: linea.colorHex }}></div>
+                    <span className="text-xs text-slate-600">{linea.colorHex}</span>
                   </div>
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-600">{linea.tipo_recorrido}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{linea.tipoRecorrido}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${
@@ -94,7 +94,7 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
                     Editar
                   </button>
                   <button
-                    onClick={() => handleDelete(linea.id)}
+                    onClick={() => handleDelete(Number(linea.idLinea))}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
                     Eliminar

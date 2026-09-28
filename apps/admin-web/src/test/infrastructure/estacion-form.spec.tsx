@@ -8,7 +8,7 @@ import type { Estacion, Parada } from "../../features/infrastructure/types/infra
 
 const SAMPLE_PARADAS: Parada[] = [
   {
-    id: 1,
+    idParada: 1,
     nombreParada: "Parada A",
     latitud: 14.6,
     longitud: -90.5,
@@ -19,14 +19,12 @@ const SAMPLE_PARADAS: Parada[] = [
 ];
 
 const SAMPLE_ESTACION: Estacion = {
-  id: 3,
+  idEstacion: 3,
   nombreEstacion: "Estación Norte",
   latitud: 14.65,
   longitud: -90.51,
   idParada: 1,
-  estadoEstacion: "ABIERTA" as Estacion["estadoEstacion"],
-  fecha_creacion: "2026-01-01T00:00:00.000Z",
-  fecha_actualizacion: "2026-01-01T00:00:00.000Z",
+  estadoEstacion: "ACTIVA" as Estacion["estadoEstacion"],
 };
 
 function renderForm(props: Partial<Parameters<typeof EstacionForm>[0]> = {}) {
@@ -53,7 +51,7 @@ describe("EstacionForm", () => {
     expect(latitud).toHaveValue(null);
     expect(longitud).toHaveValue(null);
     expect(paradaSelect).toHaveValue("");
-    expect(estadoSelect).toHaveValue("ABIERTA");
+    expect(estadoSelect).toHaveValue("ACTIVA");
   });
 
   it("renders pre-filled fields in edit mode", () => {
@@ -92,7 +90,7 @@ describe("EstacionForm", () => {
       latitud: 14.5,
       longitud: -90.3,
       idParada: null,
-      estadoEstacion: "ABIERTA",
+      estadoEstacion: "ACTIVA",
     });
   });
 

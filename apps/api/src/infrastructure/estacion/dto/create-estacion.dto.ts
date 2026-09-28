@@ -47,6 +47,6 @@ export class CreateEstacionDto {
 
   @ApiPropertyOptional({ description: "ID de la parada asociada (opcional)" })
   @IsOptional()
-  @IsString()
-  idParada?: string;
+  @IsNumber()
+  idParada?: number;
 }

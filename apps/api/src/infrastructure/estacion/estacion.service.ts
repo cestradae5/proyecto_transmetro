@@ -28,6 +28,17 @@ export class EstacionService {
         "idParada",
         "Parada"
       );
+
+      const parada = await this.paradaRepository.findOne({
+        where: { idParada: createEstacionDto.idParada },
+      });
+      if (parada) {
+        const estacion = this.estacionRepository.create(createEstacionDto);
+        estacion.parada = parada;
+        estacion.idParada = parada.idParada;
+        const saved = await this.estacionRepository.save(estacion);
+        return this.toResponseDto(saved);
+      }
     }
 
     const estacion = this.estacionRepository.create(createEstacionDto);
@@ -42,7 +53,7 @@ export class EstacionService {
 
   async findOne(id: string): Promise<EstacionResponseDto> {
     const estacion = await this.estacionRepository.findOne({
-      where: { idEstacion: id },
+      where: { idEstacion: Number(id) },
     });
     if (!estacion) {
       throw new NotFoundException(`Estación con ID ${id} no encontrada`);
@@ -55,7 +66,7 @@ export class EstacionService {
     updateEstacionDto: UpdateEstacionDto
   ): Promise<EstacionResponseDto> {
     const estacion = await this.estacionRepository.findOne({
-      where: { idEstacion: id },
+      where: { idEstacion: Number(id) },
     });
     if (!estacion) {
       throw new NotFoundException(`Estación con ID ${id} no encontrada`);
@@ -78,7 +89,7 @@ export class EstacionService {
 
   async remove(id: string): Promise<void> {
     const estacion = await this.estacionRepository.findOne({
-      where: { idEstacion: id },
+      where: { idEstacion: Number(id) },
     });
     if (!estacion) {
       throw new NotFoundException(`Estación con ID ${id} no encontrada`);

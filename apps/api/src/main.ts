@@ -11,7 +11,7 @@ async function bootstrap(): Promise<void> {
   // CORS simplificado para JWT stateless — no cookies
   app.enableCors({
     origin: "*", // Permitir todos los orígenes (JWT no tiene riesgo CSRF)
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   });
 

@@ -20,7 +20,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
       errorData
     );
   }
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    return null as unknown as T;
+  }
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {

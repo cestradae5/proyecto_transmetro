@@ -24,7 +24,7 @@ export class ParadaService {
 
   async findOne(id: string): Promise<ParadaEntity> {
     const parada = await this.paradaRepository.findOne({
-      where: { idParada: id },
+      where: { idParada: Number(id) },
     });
 
     if (!parada) {
@@ -36,20 +36,18 @@ export class ParadaService {
 
   async update(id: string, dto: UpdateParadaDto): Promise<ParadaEntity> {
     await this.findOne(id);
-    await this.paradaRepository.update({ idParada: id }, dto);
+    await this.paradaRepository.update({ idParada: Number(id) }, dto);
     return this.findOne(id);
   }
 
-  async remove(id: string, force = false): Promise<void> {
+async remove(id: string, force = false): Promise<void> {
     const parada = await this.findOne(id);
 
     if (force) {
-      await this.paradaRepository.remove(parada);
+        await this.paradaRepository.remove(parada);
     } else {
-      await this.paradaRepository.update(
-        { idParada: id },
-        { estadoParada: EstadoParada.CERRADA },
-      );
+        parada.estadoParada = EstadoParada.CERRADA;
+        await this.paradaRepository.save(parada);
     }
-  }
+}
 }

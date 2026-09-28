@@ -33,8 +33,13 @@ export function useParadas() {
   };
 
   const deleteParada = async (id: number) => {
-    await apiClient.delete(`/infrastructure/paradas/${id}`);
-    await fetchParadas();
+    try {
+      await apiClient.delete(`/infrastructure/paradas/${id}`);
+      await fetchParadas();
+    } catch (err: any) {
+      console.error('Error al eliminar parada:', err);
+      throw err;
+    }
   };
 
   useEffect(() => {

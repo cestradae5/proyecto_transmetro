@@ -4,7 +4,7 @@ import { EstadoParada } from "../parada.entity.js";
 
 export class ParadaResponseDto {
   @ApiProperty()
-  idParada!: string;
+  idParada!: number;
 
   @ApiProperty()
   nombreParada!: string;
