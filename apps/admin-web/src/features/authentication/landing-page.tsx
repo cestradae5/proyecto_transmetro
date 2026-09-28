@@ -42,8 +42,19 @@ export function LandingPage() {
             {modules.map((module) => {
               const info = MODULE_LABELS[module];
               if (!info) return null;
+              
+              const handleClick = () => {
+                if (module === 'infrastructure') {
+                  navigate('/infrastructure');
+                }
+              };
+              
               return (
-                <div key={module} className={`p-5 rounded-2xl ${info.color} border`}>
+                <div
+                  key={module}
+                  onClick={handleClick}
+                  className={`p-5 rounded-2xl ${info.color} border ${module === 'infrastructure' ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+                >
                   <div className="flex items-center gap-3 mb-2">
                     <span className="material-symbols-outlined text-[22px]">{info.icon}</span>
                     <span className="font-display font-bold text-sm">{info.title}</span>
