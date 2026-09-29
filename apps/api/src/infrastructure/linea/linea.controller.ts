@@ -101,7 +101,10 @@ export class LineaController {
   @Get(":id/paradas")
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Listar la secuencia de paradas de una línea" })
-  @ApiResponse({ status: 200, description: "Paradas ordenadas por orden" })
+  @ApiResponse({
+    status: 200,
+    description: "Paradas ordenadas por orden, con el detalle de cada parada",
+  })
   @ApiResponse({ status: 404, description: "Línea no encontrada" })
   listParadas(@Param("id") id: string): Promise<LineaParadaEntity[]> {
     return this.lineaService.listParadas(id);

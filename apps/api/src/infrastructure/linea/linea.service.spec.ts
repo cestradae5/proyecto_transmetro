@@ -211,7 +211,7 @@ describe("LineaService", () => {
   });
 
   describe("listParadas", () => {
-    it("returns the sequence ordered by orden ascending", async () => {
+    it("returns the sequence ordered by orden ascending, including parada details", async () => {
       lineaRepo.findOne.mockResolvedValue(makeLinea());
       const records = [makeLineaParada(), makeLineaParada({ idLineaParada: "101", orden: 2 })];
       lineaParadaRepo.find.mockResolvedValue(records);
@@ -220,6 +220,7 @@ describe("LineaService", () => {
 
       expect(lineaParadaRepo.find).toHaveBeenCalledWith({
         where: { idLinea: "1" },
+        relations: { parada: true },
         order: { orden: "ASC" },
       });
       expect(result).toEqual(records);
