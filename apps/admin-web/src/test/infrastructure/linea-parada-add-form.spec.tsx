@@ -42,8 +42,8 @@ describe("LineaParadaAddForm", () => {
   it("renders dropdown with available paradas", () => {
     const { select } = renderForm();
     expect(select.options.length).toBe(3); // placeholder + 2 paradas
-    expect(select.options[1].textContent).toBe("Parada A");
-    expect(select.options[2].textContent).toBe("Parada B");
+    expect(select.options[1]!.textContent).toBe("Parada A");
+    expect(select.options[2]!.textContent).toBe("Parada B");
   });
 
   it("calls onAdd with string idParada and parsed integers", async () => {
