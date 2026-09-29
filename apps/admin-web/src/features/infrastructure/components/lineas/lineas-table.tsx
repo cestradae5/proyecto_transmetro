@@ -1,18 +1,21 @@
 import { useState } from 'react';
-import type { Linea, Parqueo } from '../../types/infrastructure.types';
+import type { Linea, Parada, Parqueo } from '../../types/infrastructure.types';
 import { LineaDialog } from './linea-dialog';
+import { LineaParadaDialog } from './linea-parada-dialog';
 
 interface LineasTableProps {
   lineas: Linea[];
   parqueos: Parqueo[];
+  paradas: Parada[];
   onUpdate: (id: number, data: any) => Promise<any>;
   onDelete: (id: number) => Promise<any>;
 }
 
-export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTableProps) {
+export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: LineasTableProps) {
   const [search, setSearch] = useState('');
   const [editingLinea, setEditingLinea] = useState<Linea | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [managingLinea, setManagingLinea] = useState<Linea | null>(null);
 
   const filteredLineas = lineas.filter((l) =>
     l.nombreLinea.toLowerCase().includes(search.toLowerCase()) || l.numeroLinea.includes(search)
@@ -94,6 +97,12 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
                     Editar
                   </button>
                   <button
+                    onClick={() => setManagingLinea(linea)}
+                    className="px-3 py-1 text-sm text-primary hover:text-primary/80 font-medium mr-2"
+                  >
+                    Gestionar paradas
+                  </button>
+                  <button
                     onClick={() => handleDelete(Number(linea.idLinea))}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
@@ -115,6 +124,14 @@ export function LineasTable({ lineas, parqueos, onUpdate, onDelete }: LineasTabl
             setIsDialogOpen(false);
             setEditingLinea(null);
           }}
+        />
+      )}
+
+      {managingLinea && (
+        <LineaParadaDialog
+          linea={managingLinea}
+          paradas={paradas}
+          onClose={() => setManagingLinea(null)}
         />
       )}
     </div>
