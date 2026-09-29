@@ -60,34 +60,44 @@ export function useLineaParadas(lineaId: string): UseLineaParadasResult {
     }
   }, [lineaId]);
 
-  const addParada = async (
-    data: CreateLineaParadaDto
-  ): Promise<LineaParada> => {
-    const result = await apiClient.post<LineaParada>(
-      `/infrastructure/lineas/${lineaId}/paradas`,
-      data
-    );
+  // Mutations re-throw an Error carrying the already-translated message so
+  // components can display `err.message` directly.
+  const runMutation = async <T>(request: () => Promise<T>): Promise<T> => {
+    let result: T;
+    try {
+      result = await request();
+    } catch (err: unknown) {
+      throw new Error(mapLineaParadaError(err));
+    }
     await fetchLineaParadas();
     return result;
   };
 
-  const updateParada = async (
+  const addParada = (data: CreateLineaParadaDto): Promise<LineaParada> =>
+    runMutation(() =>
+      apiClient.post<LineaParada>(
+        `/infrastructure/lineas/${lineaId}/paradas`,
+        data
+      )
+    );
+
+  const updateParada = (
     lineaParadaId: string,
     data: UpdateLineaParadaDto
-  ): Promise<LineaParada> => {
-    const result = await apiClient.patch<LineaParada>(
-      `/infrastructure/lineas/${lineaId}/paradas/${lineaParadaId}`,
-      data
+  ): Promise<LineaParada> =>
+    runMutation(() =>
+      apiClient.patch<LineaParada>(
+        `/infrastructure/lineas/${lineaId}/paradas/${lineaParadaId}`,
+        data
+      )
     );
-    await fetchLineaParadas();
-    return result;
-  };
 
   const removeParada = async (lineaParadaId: string): Promise<void> => {
-    await apiClient.delete(
-      `/infrastructure/lineas/${lineaId}/paradas/${lineaParadaId}`
+    await runMutation(() =>
+      apiClient.delete(
+        `/infrastructure/lineas/${lineaId}/paradas/${lineaParadaId}`
+      )
     );
-    await fetchLineaParadas();
   };
 
   useEffect(() => {
