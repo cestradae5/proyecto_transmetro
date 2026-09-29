@@ -119,7 +119,7 @@ export function InfrastructurePage() {
                 <ParqueosTable parqueos={parqueos} estaciones={estaciones} onUpdate={updateParqueo} onDelete={deleteParqueo} />
               )}
               {activeTab === 'lineas' && (
-                <LineasTable lineas={lineas} parqueos={parqueos} onUpdate={updateLinea} onDelete={deleteLinea} />
+                <LineasTable lineas={lineas} parqueos={parqueos} paradas={paradas} onUpdate={updateLinea} onDelete={deleteLinea} />
               )}
               {activeTab === 'afectaciones' && (
                 <AfectacionesTable afectaciones={afectaciones} paradas={paradas} estaciones={estaciones} onUpdate={updateAfectacion} onDelete={deleteAfectacion} />

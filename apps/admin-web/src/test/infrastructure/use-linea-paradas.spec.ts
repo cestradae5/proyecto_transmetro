@@ -155,6 +155,51 @@ describe("useLineaParadas", () => {
     );
     expect(mockGet).toHaveBeenCalledTimes(2);
   });
+
+  async function renderLoaded() {
+    mockGet.mockResolvedValue([SAMPLE_PARADA]);
+    const hook = renderHook(() => useLineaParadas("1"));
+    await waitFor(() => {
+      expect(hook.result.current.loading).toBe(false);
+    });
+    return hook;
+  }
+
+  it("addParada rejects with translated message and skips refresh", async () => {
+    const { result } = await renderLoaded();
+    mockPost.mockRejectedValue(
+      new ApiError(409, "raw backend text", { error: "PARADA_ALREADY_IN_LINEA" })
+    );
+
+    await expect(
+      result.current.addParada({ idParada: "5", orden: 2, minutosHastaSiguiente: 3 })
+    ).rejects.toThrow("Esta parada ya está asignada a la línea");
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it("updateParada rejects with translated message", async () => {
+    const { result } = await renderLoaded();
+    mockPatch.mockRejectedValue(
+      new ApiError(409, "raw backend text", { error: "ORDEN_DUPLICATE" })
+    );
+
+    await expect(
+      result.current.updateParada("100", { orden: 2, minutosHastaSiguiente: 1 })
+    ).rejects.toThrow("Ya existe una parada con este orden en la línea");
+  });
+
+  it("removeParada rejects with translated message", async () => {
+    const { result } = await renderLoaded();
+    mockDelete.mockRejectedValue(
+      new ApiError(409, "La línea 1 debe conservar al menos 2 paradas", {
+        error: "LINEA_MIN_PARADAS",
+      })
+    );
+
+    await expect(result.current.removeParada("100")).rejects.toThrow(
+      "Una línea debe tener al menos 2 paradas"
+    );
+  });
 });
 
 describe("mapLineaParadaError", () => {
