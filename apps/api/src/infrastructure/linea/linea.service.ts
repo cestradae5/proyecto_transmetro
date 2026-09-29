@@ -109,6 +109,7 @@ export class LineaService {
     await this.ensureLineaExists(lineaId);
     return this.lineaParadaRepository.find({
       where: { idLinea: lineaId },
+      relations: { parada: true },
       order: { orden: "ASC" },
     });
   }
