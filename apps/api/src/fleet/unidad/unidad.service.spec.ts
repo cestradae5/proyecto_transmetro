@@ -6,6 +6,7 @@ import { EmployeeEntity } from "../../authentication/entities/employee.entity.js
 import type { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
 import type { LineaService } from "../../infrastructure/linea/linea.service.js";
 import type { ParqueoService } from "../../infrastructure/parqueo/parqueo.service.js";
+import { AsignacionUnidadEntity } from "../asignacion-unidad/asignacion-unidad.entity.js";
 import { FLEET_AUDIT_ACTIONS, FLEET_MODULE } from "../shared/fleet.constants.js";
 import {
   DuplicatePlate,
@@ -45,17 +46,14 @@ function baseCreateDto(overrides: Partial<CreateUnidadDto> = {}): CreateUnidadDt
   };
 }
 
-// Dispatches the raw-SQL assignment lookups by table name so tests don't
-// depend on Promise.all's internal call order (findLineAssignment and
-// findPilotAssignment run concurrently).
-function makeQueryDispatcher(options: {
-  lineRow?: { idLinea: string };
-  pilotRow?: { idEmpleado: string };
-}): AnyMock {
+// Pilot assignment has no TypeORM entity yet (Slice 4), so UnidadService
+// still reads tbl_asignacion_piloto via raw SQL — this dispatcher covers
+// only that table now. Line assignment reads go through
+// AsignacionUnidadEntity's repository (Priority 1 reconciliation: a single
+// canonical, entity-based path shared with AsignacionUnidadService,
+// replacing the raw-SQL duplicate this service used in Slice 2).
+function makePilotQueryDispatcher(options: { pilotRow?: { idEmpleado: string } }): AnyMock {
   return jest.fn(async (sql: string) => {
-    if (sql.includes("tbl_asignacion_unidad")) {
-      return options.lineRow ? [options.lineRow] : [];
-    }
     if (sql.includes("tbl_asignacion_piloto")) {
       return options.pilotRow ? [options.pilotRow] : [];
     }
@@ -63,10 +61,24 @@ function makeQueryDispatcher(options: {
   });
 }
 
+function makeAsignacionUnidad(idLinea: string): AsignacionUnidadEntity {
+  return {
+    id: "a1",
+    idUnidad: "1",
+    idLinea,
+    fechaAsignacion: new Date("2026-01-01T00:00:00Z"),
+    fechaActualizacion: new Date("2026-01-01T00:00:00Z"),
+    idLineaParadaActual: null,
+    fechaReporteUbicacion: null,
+  };
+}
+
 describe("UnidadService", () => {
   let unidadRepo: { existsBy: AnyMock; findOne: AnyMock; find: AnyMock };
   let txUnidadRepo: { existsBy: AnyMock; findOne: AnyMock; create: AnyMock; save: AnyMock };
   let employeeRepo: { findOneOrFail: AnyMock };
+  let asignacionUnidadRepo: { findOne: AnyMock };
+  let txAsignacionUnidadRepo: { findOne: AnyMock };
   let manager: { getRepository: AnyMock; query: AnyMock };
   let dataSource: { getRepository: AnyMock; query: AnyMock; transaction: AnyMock };
   let auditRepo: { create: AnyMock };
@@ -85,6 +97,11 @@ describe("UnidadService", () => {
       save: jest.fn(async (v: Partial<UnidadEntity>) => ({ id: v.id ?? "1", ...v }) as UnidadEntity),
     };
     employeeRepo = { findOneOrFail: jest.fn(async () => ({ id: "actor-1" }) as EmployeeEntity) };
+    // Default: no line assignment found for any unit (repository-backed,
+    // same table AsignacionUnidadService reads/writes — see Priority 1
+    // reconciliation note on makePilotQueryDispatcher above).
+    asignacionUnidadRepo = { findOne: jest.fn(async () => null) };
+    txAsignacionUnidadRepo = { findOne: jest.fn(async () => null) };
     auditRepo = { create: jest.fn(async () => ({})) };
     lineaService = { findOne: jest.fn() };
     parqueoService = { findOne: jest.fn() };
@@ -93,17 +110,19 @@ describe("UnidadService", () => {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === UnidadEntity) return txUnidadRepo;
         if (entity === EmployeeEntity) return employeeRepo;
+        if (entity === AsignacionUnidadEntity) return txAsignacionUnidadRepo;
         throw new Error(`unexpected repository requested: ${String(entity)}`);
       }),
-      // Default: no line/pilot assignment found for any unit.
-      query: makeQueryDispatcher({}),
+      // Default: no pilot assignment found for any unit.
+      query: makePilotQueryDispatcher({}),
     };
     dataSource = {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === UnidadEntity) return unidadRepo;
+        if (entity === AsignacionUnidadEntity) return asignacionUnidadRepo;
         throw new Error(`unexpected repository requested: ${String(entity)}`);
       }),
-      query: makeQueryDispatcher({}),
+      query: makePilotQueryDispatcher({}),
       transaction: jest.fn(async (cb: (m: unknown) => unknown) => cb(manager)),
     };
 
@@ -182,7 +201,6 @@ describe("UnidadService", () => {
 
     it("throws EnServicioRequiresBothAssignments when neither line nor pilot is assigned", async () => {
       txUnidadRepo.findOne.mockResolvedValue(makeUnidad());
-      manager.query = makeQueryDispatcher({});
 
       await expect(
         service.update("1", { estadoUnidad: EstadoUnidad.EN_SERVICIO }, "actor-1"),
@@ -193,7 +211,7 @@ describe("UnidadService", () => {
 
     it("throws EnServicioRequiresBothAssignments when only the line is assigned (pilot missing)", async () => {
       txUnidadRepo.findOne.mockResolvedValue(makeUnidad());
-      manager.query = makeQueryDispatcher({ lineRow: { idLinea: "10" } });
+      txAsignacionUnidadRepo.findOne.mockResolvedValue(makeAsignacionUnidad("10"));
 
       await expect(
         service.update("1", { estadoUnidad: EstadoUnidad.EN_SERVICIO }, "actor-1"),
@@ -203,7 +221,7 @@ describe("UnidadService", () => {
 
     it("throws EnServicioRequiresBothAssignments when only the pilot is assigned (line missing)", async () => {
       txUnidadRepo.findOne.mockResolvedValue(makeUnidad());
-      manager.query = makeQueryDispatcher({ pilotRow: { idEmpleado: "emp-9" } });
+      manager.query = makePilotQueryDispatcher({ pilotRow: { idEmpleado: "emp-9" } });
 
       await expect(
         service.update("1", { estadoUnidad: EstadoUnidad.EN_SERVICIO }, "actor-1"),
@@ -213,10 +231,8 @@ describe("UnidadService", () => {
 
     it("accepts EN_SERVICIO when both line and pilot assignments exist", async () => {
       txUnidadRepo.findOne.mockResolvedValue(makeUnidad());
-      manager.query = makeQueryDispatcher({
-        lineRow: { idLinea: "10" },
-        pilotRow: { idEmpleado: "emp-9" },
-      });
+      txAsignacionUnidadRepo.findOne.mockResolvedValue(makeAsignacionUnidad("10"));
+      manager.query = makePilotQueryDispatcher({ pilotRow: { idEmpleado: "emp-9" } });
       lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: "5" });
       parqueoService.findOne.mockResolvedValue({ idParqueo: "5", nombreParqueo: "Central" });
 
@@ -342,7 +358,7 @@ describe("UnidadService", () => {
 
     it("includes the derived idLinea and parqueo when the unit has a line assignment", async () => {
       unidadRepo.findOne.mockResolvedValue(makeUnidad());
-      dataSource.query = makeQueryDispatcher({ lineRow: { idLinea: "10" } });
+      asignacionUnidadRepo.findOne.mockResolvedValue(makeAsignacionUnidad("10"));
       lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: "5" });
       parqueoService.findOne.mockResolvedValue({
         idParqueo: "5",
@@ -361,7 +377,7 @@ describe("UnidadService", () => {
 
     it("includes the derived idEmpleadoPiloto when the unit has a pilot assignment", async () => {
       unidadRepo.findOne.mockResolvedValue(makeUnidad());
-      dataSource.query = makeQueryDispatcher({ pilotRow: { idEmpleado: "emp-9" } });
+      dataSource.query = makePilotQueryDispatcher({ pilotRow: { idEmpleado: "emp-9" } });
 
       const result = await service.findOne("1");
 

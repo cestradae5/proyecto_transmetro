@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { InjectDataSource } from "@nestjs/typeorm";
-import { DataSource } from "typeorm";
+import { DataSource, type EntityManager } from "typeorm";
 
 import { AUDIT_RESULTS } from "../../authentication/entities/audit-log.entity.js";
 import { EmployeeEntity } from "../../authentication/entities/employee.entity.js";
 import { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
 import { LineaService } from "../../infrastructure/linea/linea.service.js";
 import { ParqueoService } from "../../infrastructure/parqueo/parqueo.service.js";
+import { AsignacionUnidadEntity } from "../asignacion-unidad/asignacion-unidad.entity.js";
 import { FLEET_AUDIT_ACTIONS, FLEET_MODULE } from "../shared/fleet.constants.js";
 import {
   DuplicatePlate,
@@ -19,17 +20,11 @@ import { UnidadResponseDto } from "./dto/unidad-response.dto.js";
 import { UpdateUnidadDto } from "./dto/update-unidad.dto.js";
 import { EstadoUnidad, UnidadEntity } from "./unidad.entity.js";
 
-// Any object exposing TypeORM's raw `query(sql, params)` — satisfied by both
-// `DataSource` (non-transactional reads) and `EntityManager` (reads/writes
-// inside a transaction). Lets findLineAssignment/findPilotAssignment run in
-// either context without duplicating the query.
-interface Queryable {
-  query(sql: string, parameters?: unknown[]): Promise<unknown[]>;
-}
-
-interface LineAssignmentRow {
-  idLinea: string;
-}
+// Satisfied by both `DataSource` (non-transactional reads) and
+// `EntityManager` (reads/writes inside a transaction). Lets
+// findLineAssignment/findPilotAssignment/toResponseDto run in either
+// context without duplicating the lookup logic.
+type Queryable = DataSource | EntityManager;
 
 interface PilotAssignmentRow {
   idEmpleado: string;
@@ -221,23 +216,27 @@ export class UnidadService {
     return { before: beforeDetail, after: afterDetail };
   }
 
-  // Raw-SQL lookups against tbl_asignacion_unidad/tbl_asignacion_piloto
-  // (design.md Decision 8 + this slice's explicit cross-slice resolution).
-  // Both tables are part of the original database/init.sql baseline; only
-  // their TypeORM entities are Slice 3/4 artifacts, so querying the tables
-  // directly (never importing the not-yet-existing entities) is safe and
-  // stays correct once those entities are added.
+  // Priority 1 reconciliation (Slice 3): this used to be a raw-SQL lookup
+  // against tbl_asignacion_unidad, duplicating what AsignacionUnidadEntity
+  // now models. With that entity created this slice, the EN_SERVICIO gate
+  // and the derived idLinea/parqueo composition read it through the same
+  // `manager/dataSource.getRepository(AsignacionUnidadEntity)` path
+  // AsignacionUnidadService itself uses — one canonical implementation of
+  // "does this unit have a line assignment", not two that could drift.
   private async findLineAssignment(
     queryable: Queryable,
     unitId: string,
-  ): Promise<LineAssignmentRow | null> {
-    const rows = (await queryable.query(
-      `SELECT id_linea AS "idLinea" FROM tbl_asignacion_unidad WHERE id_unidad = $1`,
-      [unitId],
-    )) as LineAssignmentRow[];
-    return rows[0] ?? null;
+  ): Promise<AsignacionUnidadEntity | null> {
+    return queryable
+      .getRepository(AsignacionUnidadEntity)
+      .findOne({ where: { idUnidad: unitId } });
   }
 
+  // Pilot assignment has no TypeORM entity yet (AsignacionPilotoEntity is a
+  // Slice 4 artifact). tbl_asignacion_piloto is already part of the
+  // database/init.sql baseline, so querying it directly via raw SQL (never
+  // importing the not-yet-existing entity) enforces the real EN_SERVICIO
+  // rule now and keeps working unchanged once Slice 4 adds that entity.
   private async findPilotAssignment(
     queryable: Queryable,
     unitId: string,
