@@ -38,6 +38,6 @@ import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-
       },
     },
   ],
-  exports: [AuthenticationService, AuthenticationGuard],
+  exports: [AuthenticationService, AuthenticationGuard, AuditRepository],
 })
 export class AuthenticationModule {}
