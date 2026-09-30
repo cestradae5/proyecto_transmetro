@@ -65,7 +65,7 @@ describe("AuditRepository — optional detalle JSONB", () => {
       result: AUDIT_RESULTS.SUCCESS,
     });
 
-    const savedRecord = create.mock.calls[0][0] as { detalle?: unknown };
+    const savedRecord = create.mock.calls[0]![0] as { detalle?: unknown };
     expect(savedRecord.detalle).toBeUndefined();
     expect(save).toHaveBeenCalledTimes(1);
   });
