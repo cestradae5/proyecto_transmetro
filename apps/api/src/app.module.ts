@@ -5,6 +5,7 @@ import { HealthModule } from "./health/health.module.js";
 import { DatabaseModule } from "./platform/database/database.module.js";
 import { AuthenticationModule } from "./authentication/authentication.module.js";
 import { InfrastructureModule } from "./infrastructure/infrastructure.module.js";
+import { FleetModule } from "./fleet/fleet.module.js";
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { InfrastructureModule } from "./infrastructure/infrastructure.module.js"
     HealthModule,
     AuthenticationModule,
     InfrastructureModule,
+    FleetModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })
