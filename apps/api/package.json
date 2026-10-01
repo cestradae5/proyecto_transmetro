@@ -10,10 +10,8 @@
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:e2e": "cross-env NODE_OPTIONS=--experimental-vm-modules DATABASE_NAME=transmetro_test jest --config test/jest-e2e.json",
     "test:integration": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config test/jest-integration.json",
-    "migration:generate": "typeorm-ts-node-esm migration:generate src/platform/database/migrations/migration -d src/platform/database/data-source.ts",
-    "migration:run": "typeorm-ts-node-esm migration:run -d src/platform/database/data-source.ts",
-    "migration:revert": "typeorm-ts-node-esm migration:revert -d src/platform/database/data-source.ts",
-    "migration:show": "typeorm-ts-node-esm migration:show -d src/platform/database/data-source.ts"
+    "db:schema": "psql -f database/init.sql",
+    "db:recreate": "psql -c \"DROP DATABASE IF EXISTS transmetro;\" && psql -c \"CREATE DATABASE transmetro;\" && npm run db:schema"
   },
   "dependencies": {
     "@nestjs/common": "12.0.2",

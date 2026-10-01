@@ -26,7 +26,10 @@ export function createDataSourceOptions(
     entities: [
       join(currentDirectory, "..", "..", "**", "*.entity.{js,ts}"),
     ],
-    migrations: [join(currentDirectory, "migrations", "*.{js,ts}")],
+    // No `migrations` glob. Schema is owned by `database/init.sql`, applied
+    // with `npm run db:schema`. It is idempotent for both a fresh database
+    // (CREATE TABLE IF NOT EXISTS) and an existing one (ALTER TABLE ... ADD
+    // COLUMN IF NOT EXISTS), so it is the single source of truth.
   };
 }
 

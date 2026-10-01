@@ -425,4 +425,22 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
     FOREIGN KEY (id_empleado) REFERENCES tbl_empleado (id_emple)
 );
 
+-- ---------------------------------------------------------------------------
+-- Evolución de bases existentes
+-- ---------------------------------------------------------------------------
+-- `CREATE TABLE IF NOT EXISTS` es un no-op cuando la tabla ya existe: correr
+-- este archivo contra una base creada con una versión anterior de init.sql NO
+-- agrega columnas nuevas. Para que una base existente alcance el esquema de
+-- arriba sin scripts separados, cada columna agregada después del esquema
+-- inicial se declara aquí con su ALTER idempotente.
+--
+-- `IF NOT EXISTS` los hace seguros de re-ejecutar: correr init.sql completo
+-- varias veces sobre la misma base no falla ni altera nada.
+--
+-- tbl_bitacora.detalle JSONB — nullable, sin default. Requisito del módulo
+-- fleet: cada mutación registra su payload estructurado. Las filas de
+-- auditoría de auth escritas antes de esta columna conservan detalle = NULL.
+
+ALTER TABLE tbl_bitacora ADD COLUMN IF NOT EXISTS detalle JSONB;
+
 COMMIT;
