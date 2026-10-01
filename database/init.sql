@@ -421,6 +421,7 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
     entidad_id BIGINT NOT NULL,
     resultado VARCHAR(30) NOT NULL CHECK (resultado IN ('EXITOSO', 'FALLIDO', 'ERROR')),
     id_empleado BIGINT NOT NULL,
+    detalle JSONB,
     FOREIGN KEY (id_empleado) REFERENCES tbl_empleado (id_emple)
 );
 

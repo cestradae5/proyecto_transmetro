@@ -40,6 +40,9 @@ export class AuditLogEntity {
   @Column({ length: 30, name: "resultado", type: "varchar" })
   result!: AuditResult;
 
+  @Column({ name: "detalle", nullable: true, type: "jsonb" })
+  detalle?: Record<string, unknown> | null;
+
   @ManyToOne(() => EmployeeEntity, (employee) => employee.auditLogs, {
     nullable: false,
   })
