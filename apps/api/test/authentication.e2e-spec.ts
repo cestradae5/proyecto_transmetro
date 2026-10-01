@@ -16,7 +16,7 @@ import { DataSource } from "typeorm";
 import request from "supertest";
 
 import { AuthenticationModule } from "../src/authentication/authentication.module.js";
-import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "../src/authentication/infrastructure/google-credential-verifier.port.js";
+import { GOOGLE_CREDENTIAL_VERIFIER } from "../src/authentication/infrastructure/google-credential-verifier.port.js";
 import { AuthenticationService } from "../src/authentication/authentication.service.js";
 import type { LoginResult, MeResult, LogoutResult } from "../src/authentication/authentication.contracts.js";
 
@@ -77,25 +77,46 @@ function makeMockDataSource(): DataSource {
   } as unknown as DataSource;
 }
 
+interface MockedAuthenticationModuleOptions {
+  authenticationService: AuthenticationService;
+  verifier: ReturnType<typeof makeMockVerifier>;
+}
+
+// AuthenticationModule imports DatabaseModule so that `useExisting: DataSource`
+// resolves on every boot path — AppModule omits DatabaseModule when
+// NODE_ENV === "test", which is exactly the mode jest runs this suite in, so
+// relying on AppModule alone leaves DataSource unresolvable here.
+//
+// The side effect is that TypeOrmModule.forRootAsync would open a real
+// Postgres connection, which this suite must never do: it is a fully-mocked
+// HTTP contract suite. Overriding the DataSource *class* token is what stops
+// the connection — it replaces the forRootAsync factory that would build it,
+// so `useExisting: DataSource` resolves to the mock instead. Overriding the
+// DATASOURCE symbol alone would NOT help, because that provider is consumed by
+// useExisting and the real DataSource would still be constructed.
+async function createMockedAuthenticationModule({
+  authenticationService,
+  verifier,
+}: MockedAuthenticationModuleOptions): Promise<TestingModule> {
+  return Test.createTestingModule({
+    imports: [AuthenticationModule],
+    providers: [{ provide: GOOGLE_CREDENTIAL_VERIFIER, useValue: verifier }],
+  })
+    .overrideProvider(DataSource)
+    .useValue(makeMockDataSource())
+    .overrideProvider(AuthenticationService)
+    .useValue(authenticationService)
+    .compile();
+}
+
 describe("Authentication HTTP endpoints (RED)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [AuthenticationModule],
-      providers: [
-        {
-          provide: GOOGLE_CREDENTIAL_VERIFIER,
-          useValue: makeMockVerifier("admin@transmetro.gt"),
-        },
-        {
-          provide: DATASOURCE,
-          useValue: makeMockDataSource(),
-        },
-      ],
-    })
-      .overrideProvider(AuthenticationService).useValue(makeMockAuthenticationService(TEST_SESSION_HASH, "ADMIN@TRANSMETRO.GT"))
-      .compile();
+    const moduleRef = await createMockedAuthenticationModule({
+      authenticationService: makeMockAuthenticationService(TEST_SESSION_HASH, "ADMIN@TRANSMETRO.GT"),
+      verifier: makeMockVerifier("admin@transmetro.gt"),
+    });
 
     app = moduleRef.createNestApplication();
     await app.init();
@@ -175,21 +196,10 @@ describe("Authentication HTTP endpoints (RED)", () => {
       return { login, me, logout } as unknown as AuthenticationService;
     }
 
-    const failModuleRef: TestingModule = await Test.createTestingModule({
-      imports: [AuthenticationModule],
-      providers: [
-        {
-          provide: GOOGLE_CREDENTIAL_VERIFIER,
-          useValue: failingVerifier,
-        },
-        {
-          provide: DATASOURCE,
-          useValue: makeMockDataSource(),
-        },
-      ],
-    })
-      .overrideProvider(AuthenticationService).useValue(makeFailingAuthenticationService())
-      .compile();
+    const failModuleRef = await createMockedAuthenticationModule({
+      authenticationService: makeFailingAuthenticationService(),
+      verifier: failingVerifier,
+    });
 
     const failApp = failModuleRef.createNestApplication();
     await failApp.init();
