@@ -60,12 +60,22 @@ describe("AsignacionUnidad line-assignment and location (e2e)", () => {
   let lineaParadaB1Id: string;
   let lineaParadaB2Id: string;
 
+  // tbl_unidad.numero_placa is VARCHAR(20) (database/init.sql). The previous
+  // fixture built `E2E-ASG-${Date.now()}-${random}` = 25 characters, so
+  // POST /fleet/units returned 500 "value too long for type character
+  // varying(20)" and every test in this suite cascaded off that failure. Keep
+  // the fixture inside the column limit; base-36 keeps it short and unique
+  // across runs.
+  function createPlaca(): string {
+    return `E2E-ASG-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   async function createUnit(): Promise<string> {
     const response = await request(app.getHttpServer())
       .post("/fleet/units")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        numeroPlaca: `E2E-ASG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        numeroPlaca: createPlaca(),
         marca: "Volvo",
         modelo: "B440",
         anio: 2024,
