@@ -10,7 +10,7 @@ import { validateForeignKey } from "./fk-validation.helper.js";
 describe("validateForeignKey (shared)", () => {
   it("resolves without throwing when the referenced entity exists", async () => {
     const repo = {
-      existsBy: jest.fn().mockResolvedValue(true),
+      existsBy: jest.fn(async () => true),
     } as unknown as Repository<{ id: string }>;
 
     await expect(validateForeignKey(repo, "5", "Línea")).resolves.toBeUndefined();
@@ -19,7 +19,7 @@ describe("validateForeignKey (shared)", () => {
 
   it("throws a shared NotFoundError naming the entity when the referenced row is absent", async () => {
     const repo = {
-      existsBy: jest.fn().mockResolvedValue(false),
+      existsBy: jest.fn(async () => false),
     } as unknown as Repository<{ id: string }>;
 
     await expect(validateForeignKey(repo, "99", "Línea")).rejects.toEqual(

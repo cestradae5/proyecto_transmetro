@@ -8,6 +8,7 @@ import { EmployeeEntity } from "../entities/employee.entity.js";
 
 export interface NewAuditRecord {
   action: string;
+  detalle?: Record<string, unknown> | null;
   employee: EmployeeEntity;
   entityId: string;
   entityType: string;
