@@ -90,6 +90,10 @@ export class AsignacionUnidadController {
   }
 
   @Post(":unitId/location")
+  // Nest defaults @Post to 201, but this route reports the current location
+  // rather than creating a resource, so 200 is the correct status (and what
+  // the @ApiResponse below and the e2e spec both declare).
+  @HttpCode(HttpStatus.OK)
   @Permissions(FLOTA_GESTIONAR)
   @ApiOperation({ summary: "Reportar la ubicación actual de una unidad" })
   @ApiResponse({
