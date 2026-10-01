@@ -2,27 +2,48 @@ import { Module } from "@nestjs/common";
 
 import { AuthenticationModule } from "../authentication/authentication.module.js";
 import { InfrastructureModule } from "../infrastructure/infrastructure.module.js";
+import { AsignacionPilotoController } from "./asignacion-piloto/asignacion-piloto.controller.js";
+import { AsignacionPilotoService } from "./asignacion-piloto/asignacion-piloto.service.js";
+import { AsignacionUnidadController } from "./asignacion-unidad/asignacion-unidad.controller.js";
+import { AsignacionUnidadService } from "./asignacion-unidad/asignacion-unidad.service.js";
 import { PilotEligibilityLookup } from "./shared/pilot-eligibility.lookup.js";
+import { UnidadController } from "./unidad/unidad.controller.js";
+import { UnidadService } from "./unidad/unidad.service.js";
 
-// Skeleton de FleetModule (Slice 1 — design.md, "Approach" y task 1.2.7).
+// FleetModule (Slice 1 skeleton, design.md "Approach" + task 1.2.7;
+// extended in Slice 2 with Unidad CRUD, Slice 3 with line-assignment and
+// location reporting, Slice 4 with pilot assignment and pilot self-service
+// endpoints).
 //
-// Deviation from the task's literal wording: task 1.2.7 lists `controllers`
-// and `providers` for UnidadController/AsignacionUnidadController/
-// AsignacionPilotoController and their services, plus a
-// `TypeOrmModule.forFeature([UnidadEntity, AsignacionUnidadEntity,
-// AsignacionPilotoEntity, EmployeeEntity])` import — none of those entities,
-// services, or controllers exist yet; they are created in Slices 2-4. This
-// skeleton only wires what Slice 1 actually delivers (AuthenticationModule
-// for AuditRepository DI, InfrastructureModule for the Slice 2 derived
-// `parqueo` composition, and PilotEligibilityLookup), so this PR compiles
-// and tests green on its own, per the feature-branch-chain requirement that
-// "every PR must compile on its own target". Controllers, fleet entities,
-// and their TypeOrmModule.forFeature registration are added incrementally
-// in Slices 2-4 as each entity/service/controller is created — matching
-// Decision 9's required registration order (AsignacionPilotoController
-// before UnidadController) once those controllers exist.
+// No `TypeOrmModule.forFeature([UnidadEntity, AsignacionUnidadEntity, ...])`
+// here: none of UnidadService/AsignacionUnidadService/AsignacionPilotoService
+// use `@InjectRepository`. Writes go through `manager.getRepository(X)`
+// inside `dataSource.transaction()`, and the services' non-transactional
+// reads go through `this.dataSource.getRepository(X)` directly — the same
+// stateless pattern as `SessionRepository`/`EmployeeRepository`/
+// `PilotEligibilityLookup`. `typeorm.options.ts` sets `autoLoadEntities:
+// true` and globs every `*.entity.{js,ts}` file, so every fleet entity is
+// already registered on the single DataSource without a `forFeature` call
+// (see apply-progress Slice 1, Deviation #2 — the same reasoning applies
+// here).
+//
+// Decision 9 (design.md): `AsignacionPilotoController` owns the static
+// route `GET /fleet/units/my-unit`, which MUST be listed in `controllers`
+// BEFORE `UnidadController` — otherwise `UnidadController`'s dynamic
+// `GET /fleet/units/:id` would shadow it and "my-unit" would be parsed as a
+// unit id. Verified by the route-collision e2e test in
+// asignacion-piloto.e2e-spec.ts. `AsignacionUnidadController` has no such
+// collision (its routes end in a literal segment like
+// "line-assignment"/"location") but is listed before `UnidadController`
+// too, for symmetry with the design's own ordering.
 @Module({
   imports: [AuthenticationModule, InfrastructureModule],
-  providers: [PilotEligibilityLookup],
+  controllers: [AsignacionPilotoController, AsignacionUnidadController, UnidadController],
+  providers: [
+    PilotEligibilityLookup,
+    UnidadService,
+    AsignacionUnidadService,
+    AsignacionPilotoService,
+  ],
 })
 export class FleetModule {}
