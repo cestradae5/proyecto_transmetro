@@ -7,10 +7,16 @@
 // tbl_asignacion_unidad/tbl_asignacion_piloto), and real tbl_bitacora
 // audit rows — none of which a mocked DataSource can prove.
 //
-// NOT RUN in this session: no local Postgres/Docker is available here
-// (`docker ps` fails to reach the daemon). Run via `npm run test:e2e`
-// (test/jest-e2e.json, testRegex ".*\\.e2e-spec\\.ts$") against a real
-// database once one is available.
+// RUNS against the test database. `npm run test:e2e` forces
+// DATABASE_NAME=transmetro_test (see apps/api/package.json), so this suite never
+// writes to the development database. A local PostgreSQL 18.4 service is
+// available on localhost:5432 — the earlier "no database available" note in
+// this file was wrong: it inferred an unreachable Docker daemon, not the
+// absence of Postgres.
+//
+// Requires apps/api/.env to be exported into the shell (DATABASE_USER,
+// DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT, JWT_SECRET); jest-e2e.json
+// has no dotenv setupFiles, so the run does not load .env itself.
 
 process.env.ADMIN_WEB_ORIGINS ??= "https://admin.transmetro.gt";
 process.env.GOOGLE_WEB_CLIENT_ID ??= "test-client-id";
