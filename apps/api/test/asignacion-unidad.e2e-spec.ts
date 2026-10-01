@@ -7,10 +7,16 @@
 // constraints on tbl_asignacion_unidad/tbl_linea_parada, and real
 // tbl_bitacora audit rows — none of which a mocked DataSource can prove.
 //
-// NOT RUN in this session: no local Postgres/Docker is available here
-// (`docker ps` fails to reach the daemon). Run via `npm run test:e2e`
-// (test/jest-e2e.json, testRegex ".*\\.e2e-spec\\.ts$") against a real
-// database once one is available.
+// RUNS against the test database. `npm run test:e2e` forces
+// DATABASE_NAME=transmetro_test (see apps/api/package.json), so this suite never
+// writes to the development database. A local PostgreSQL 18.4 service is
+// available on localhost:5432 — the earlier "no database available" note in
+// this file was wrong: it inferred an unreachable Docker daemon, not the
+// absence of Postgres.
+//
+// Requires apps/api/.env to be exported into the shell (DATABASE_USER,
+// DATABASE_PASSWORD, DATABASE_HOST, DATABASE_PORT, JWT_SECRET); jest-e2e.json
+// has no dotenv setupFiles, so the run does not load .env itself.
 
 process.env.ADMIN_WEB_ORIGINS ??= "https://admin.transmetro.gt";
 process.env.GOOGLE_WEB_CLIENT_ID ??= "test-client-id";
@@ -60,12 +66,22 @@ describe("AsignacionUnidad line-assignment and location (e2e)", () => {
   let lineaParadaB1Id: string;
   let lineaParadaB2Id: string;
 
+  // tbl_unidad.numero_placa is VARCHAR(20) (database/init.sql). The previous
+  // fixture built `E2E-ASG-${Date.now()}-${random}` = 25 characters, so
+  // POST /fleet/units returned 500 "value too long for type character
+  // varying(20)" and every test in this suite cascaded off that failure. Keep
+  // the fixture inside the column limit; base-36 keeps it short and unique
+  // across runs.
+  function createPlaca(): string {
+    return `E2E-ASG-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   async function createUnit(): Promise<string> {
     const response = await request(app.getHttpServer())
       .post("/fleet/units")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        numeroPlaca: `E2E-ASG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        numeroPlaca: createPlaca(),
         marca: "Volvo",
         modelo: "B440",
         anio: 2024,
@@ -360,5 +376,156 @@ describe("AsignacionUnidad line-assignment and location (e2e)", () => {
       .post(`/fleet/units/${unitId}/line-assignment`)
       .send({ idLinea: lineaAId })
       .expect(401);
+  });
+
+  // Task 4.3.4: now that both AsignacionUnidadService AND
+  // AsignacionPilotoService exist (Slice 4), this is the first point where
+  // the full cross-cutting EN_SERVICIO rule (design.md "Unit State
+  // Transitions and EN_SERVICIO Validation" — a unit may transition to
+  // EN_SERVICIO only with BOTH an active line and an active pilot
+  // assignment) can be exercised end to end against a real database.
+  // tasks.md names `asignacion-unidad.controller.spec.ts` for this task,
+  // but that file is a mocked-service UNIT spec (no real DB, no real
+  // UnidadService.update); this e2e file is the one that actually boots
+  // AppModule against Postgres and can prove the real cross-service rule,
+  // so the matrix lives here instead.
+  describe("EN_SERVICIO validation across both assignments (task 4.3.4)", () => {
+    let pilotRoleId: string;
+    const matrixEmployeeIds: string[] = [];
+
+    async function createPilot(): Promise<string> {
+      const rows = (await dataSource.query(
+        `INSERT INTO tbl_empleado (nombre_emple, estado_emple, correo_emple, id_rol)
+         VALUES ($1, 'ACTIVO', $2, $3)
+         RETURNING id_emple AS "idEmple"`,
+        [
+          "E2E EN_SERVICIO Pilot",
+          `e2e-en-servicio-piloto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@transmetro.gt`,
+          pilotRoleId,
+        ],
+      )) as { idEmple: string }[];
+      const id = rows[0]!.idEmple;
+      matrixEmployeeIds.push(id);
+      return id;
+    }
+
+    beforeAll(async () => {
+      const pilotRoleRows = (await dataSource.query(
+        `SELECT id_rol AS "idRol" FROM tbl_rol WHERE codigo = 'PILOTO'`,
+      )) as { idRol: string }[];
+      if (!pilotRoleRows[0]) {
+        throw new Error("Seed role PILOTO not found in tbl_rol");
+      }
+      pilotRoleId = pilotRoleRows[0].idRol;
+    });
+
+    afterAll(async () => {
+      if (matrixEmployeeIds.length > 0) {
+        await dataSource.query(
+          `DELETE FROM tbl_asignacion_piloto WHERE id_empleado = ANY($1::bigint[])`,
+          [matrixEmployeeIds],
+        );
+        await dataSource.query(`DELETE FROM tbl_empleado WHERE id_emple = ANY($1::bigint[])`, [
+          matrixEmployeeIds,
+        ]);
+      }
+    });
+
+    it("1. unit with no assignments: PATCH estadoUnidad=EN_SERVICIO is rejected with 409", async () => {
+      const unitId = await createUnit();
+
+      await request(app.getHttpServer())
+        .patch(`/fleet/units/${unitId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ estadoUnidad: "EN_SERVICIO" })
+        .expect(409);
+    });
+
+    it("2. unit with a line but no pilot: PATCH estadoUnidad=EN_SERVICIO is rejected with 409", async () => {
+      const unitId = await createUnit();
+      await request(app.getHttpServer())
+        .post(`/fleet/units/${unitId}/line-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ idLinea: lineaAId })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/fleet/units/${unitId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ estadoUnidad: "EN_SERVICIO" })
+        .expect(409);
+    });
+
+    it("3. unit with both a line and a pilot: PATCH estadoUnidad=EN_SERVICIO is accepted (200)", async () => {
+      const unitId = await createUnit();
+      const pilotId = await createPilot();
+      await request(app.getHttpServer())
+        .post(`/fleet/units/${unitId}/line-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ idLinea: lineaAId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/fleet/units/${unitId}/pilot-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ idEmpleado: pilotId })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .patch(`/fleet/units/${unitId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ estadoUnidad: "EN_SERVICIO" })
+        .expect(200);
+
+      expect(response.body.estadoUnidad).toBe("EN_SERVICIO");
+    });
+
+    it("4+5+6. once EN_SERVICIO: both unassigns are blocked (409); after returning to DISPONIBLE, both unassigns succeed (200/204)", async () => {
+      const unitId = await createUnit();
+      const pilotId = await createPilot();
+      await request(app.getHttpServer())
+        .post(`/fleet/units/${unitId}/line-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ idLinea: lineaAId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post(`/fleet/units/${unitId}/pilot-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ idEmpleado: pilotId })
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/fleet/units/${unitId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ estadoUnidad: "EN_SERVICIO" })
+        .expect(200);
+
+      // 4. DELETE line-assignment is blocked while EN_SERVICIO.
+      await request(app.getHttpServer())
+        .delete(`/fleet/units/${unitId}/line-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(409);
+
+      // 5. DELETE pilot-assignment is blocked while EN_SERVICIO.
+      await request(app.getHttpServer())
+        .delete(`/fleet/units/${unitId}/pilot-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(409);
+
+      // 6. Transition back to DISPONIBLE, then both unassigns succeed.
+      await request(app.getHttpServer())
+        .patch(`/fleet/units/${unitId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ estadoUnidad: "DISPONIBLE" })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/fleet/units/${unitId}/line-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .delete(`/fleet/units/${unitId}/pilot-assignment`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(204);
+    });
   });
 });

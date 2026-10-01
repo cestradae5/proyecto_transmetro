@@ -1,11 +1,17 @@
 // Módulo de autenticación administrativa con Google.
 // Registra el controller, el service y los repositorios como proveedores NestJS.
 // El adaptador GoogleCredentialVerifier se inyecta (mockeable en tests).
-// DataSource se provee externamente (DatabaseModule o mock en tests).
+// DatabaseModule se importa explícitamente porque AuthenticationService y los
+// repositorios resuelven DataSource vía `useExisting`. Sin este import el token
+// DATASOURCE sólo resuelve cuando DatabaseModule está en el mismo grafo, y
+// AppModule lo omite bajo NODE_ENV=test — que es justo el modo en que corren
+// los e2e. Los tests que no deben abrir conexión real sobrescriben el token
+// DataSource con .overrideProvider(DataSource).
 
 import { Module } from "@nestjs/common";
 import { DataSource } from "typeorm";
 
+import { DatabaseModule } from "../platform/database/database.module.js";
 import { AuthenticationController } from "./authentication.controller.js";
 import { AuthenticationService } from "./authentication.service.js";
 import { AuthenticationGuard } from "./authentication.guard.js";
@@ -16,6 +22,7 @@ import { GoogleAuthLibraryAdapter } from "./infrastructure/google-auth-library.a
 import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-credential-verifier.port.js";
 
 @Module({
+  imports: [DatabaseModule],
   controllers: [AuthenticationController],
   providers: [
     AuthenticationService,
