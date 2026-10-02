@@ -26,7 +26,7 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
 
 ## Tasks
 - [x] B4 Backend: `GET /fleet/units/my-unit/stops` (`UNIDAD_ASIGNADA_CONSULTAR`) -> ordered stops of the pilot's assigned line `{idLineaParada, idParada, nombre, orden}`; `my-unit` response adds `nombreLinea`; unit + e2e/spec tests
-- [ ] P1 FE: types + `PilotHasNoUnitAssigned`/location errors in `fleet-errors.ts` + `use-mi-unidad` hook (load unit, load stops, report location) + tests
+- [x] P1 FE: types + `PilotHasNoUnitAssigned`/location errors in `fleet-errors.ts` + `use-mi-unidad` hook (load unit, load stops, report location) + tests
 - [ ] P2 FE: `MiUnidadPage` (unit card, line, current stop + report time, empty state when no unit) + report-location dialog (POST-only) + tests
 - [ ] P3 FE: route `/fleet/my-unit`; landing card routes PILOTO (no `FLOTA_GESTIONAR`) to it; `/fleet` redirects pilots; tests
 - [ ] P4 Full build/test pass + README note
@@ -45,5 +45,13 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
   - `npm test` (apps/api): 5 suites / 25 tests fail, identical on the untouched baseline (authentication guard/foundation/security, parada/estacion service specs); fleet specs 12 suites / 153 tests pass (+8 new tests).
   - `npm run test:e2e -- asignacion-piloto` (with apps/api/.env exported): 19/19 pass. Full `npm run test:e2e`: 50/60 pass; the 10 failures are all in `authentication.e2e-spec.ts` and fail identically on baseline.
 
+- P1 commit: `feat(admin-web): add pilot my-unit hook and error mapping`.
+  - `Unidad.nombreLinea?`, `LineaParadaStop` type; `PilotHasNoUnitAssigned` message; `getFleetErrorCode` + `FLEET_ERROR_CODES` for branching on a specific backend error (the other location errors were already mapped).
+  - `useMiUnidad`: GET my-unit (404 `PilotHasNoUnitAssigned` -> `noUnit` state, not `error`); GET my-unit/stops only when the unit has a line, sorted by `orden` (409 `UnitHasNoLineAssignment` -> empty list); `reportLocation` POSTs then silently refreshes the unit; failures rethrow translated and skip refresh.
+  - `npx vitest run src/test/fleet`: 13 files / 113 tests pass.
+  - `npm test -w @transmetro/admin-web`: 27 files / 196 tests pass.
+  - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
+  - Runtime harness: N/A (hook only, no UI consumer yet).
+
 ## Next step
-P1.
+P2.

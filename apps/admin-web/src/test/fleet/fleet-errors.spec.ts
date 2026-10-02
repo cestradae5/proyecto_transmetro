@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { mapFleetError, getFleetErrorMessage } from "../../features/fleet/hooks/fleet-errors";
+import { mapFleetError, getFleetErrorMessage, getFleetErrorCode } from "../../features/fleet/hooks/fleet-errors";
 import { ApiError } from "../../lib/api-client";
 
 vi.mock("../../lib/api-client", () => ({
@@ -42,7 +42,21 @@ const CASES: Array<[string, string]> = [
   ["PilotAssignmentUnchanged", "La unidad ya tiene asignado a ese piloto"],
   ["UnitEnServicioCannotReassignPilot", "No se puede reasignar el piloto de una unidad En servicio"],
   ["UnitEnServicioCannotUnassignPilot", "No se puede quitar el piloto a una unidad En servicio"],
+  ["PilotHasNoUnitAssigned", "No tiene una unidad asignada"],
 ];
+
+describe("getFleetErrorCode", () => {
+  it("returns the backend error class name of an ApiError", () => {
+    expect(getFleetErrorCode(new ApiError(404, "x", { error: "PilotHasNoUnitAssigned" }))).toBe(
+      "PilotHasNoUnitAssigned"
+    );
+  });
+
+  it("returns undefined for non-API errors or missing codes", () => {
+    expect(getFleetErrorCode(new Error("x"))).toBeUndefined();
+    expect(getFleetErrorCode(new ApiError(500, "x", {}))).toBeUndefined();
+  });
+});
 
 describe("mapFleetError", () => {
   it.each(CASES)("maps %s to its Spanish message", (code, message) => {

@@ -18,6 +18,8 @@ export interface Unidad {
   fechaRegistro: string;
   fechaActualizacion: string;
   idLinea?: string | null;
+  /** Name of the assigned line; present whenever the unit has a line. */
+  nombreLinea?: string;
   parqueo?: Parqueo | null;
   idEmpleadoPiloto?: string | null;
   idLineaParadaActual?: string | null;
@@ -33,6 +35,17 @@ export interface AsignacionUnidad {
   fechaActualizacion: string;
   idLineaParadaActual?: string;
   fechaReporteUbicacion?: string;
+}
+
+/**
+ * Stop of the pilot's assigned line from `GET /fleet/units/my-unit/stops`.
+ * `idLineaParada` is the value `POST /fleet/units/my-unit/location` expects.
+ */
+export interface LineaParadaStop {
+  idLineaParada: string;
+  idParada: string;
+  nombre: string;
+  orden: number;
 }
 
 export interface AsignacionPiloto {
