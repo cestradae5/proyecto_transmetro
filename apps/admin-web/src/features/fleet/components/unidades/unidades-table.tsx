@@ -1,14 +1,21 @@
 import { useState } from 'react';
 import { EstadoUnidad } from '../../types/fleet.types';
 import type { CreateUnidadDto, Unidad } from '../../types/fleet.types';
+import type { Linea } from '../../../infrastructure/types/infrastructure.types';
 import { UnidadDialog } from './unidad-dialog';
+import { AsignacionLineaDialog } from './asignacion-linea-dialog';
 
 interface UnidadesTableProps {
   unidades: Unidad[];
+  /** Lines used to show names and to pick an assignment. Empty if unavailable. */
+  lineas?: Linea[];
   /** When false the table is read-only (no actions column). */
   canManage: boolean;
   onUpdate: (id: string, data: CreateUnidadDto) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
+  onAssignLine: (unitId: string, idLinea: string) => Promise<unknown>;
+  onReassignLine: (unitId: string, idLinea: string) => Promise<unknown>;
+  onUnassignLine: (unitId: string) => Promise<unknown>;
 }
 
 const ESTADO_BADGE: Record<EstadoUnidad, string> = {
@@ -20,10 +27,25 @@ const ESTADO_BADGE: Record<EstadoUnidad, string> = {
 
 const TH = 'px-4 py-3 text-left text-sm font-semibold text-slate-700';
 
-export function UnidadesTable({ unidades, canManage, onUpdate, onDelete }: UnidadesTableProps) {
+export function UnidadesTable({
+  unidades,
+  lineas = [],
+  canManage,
+  onUpdate,
+  onDelete,
+  onAssignLine,
+  onReassignLine,
+  onUnassignLine,
+}: UnidadesTableProps) {
   const [search, setSearch] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<'' | EstadoUnidad>('');
   const [editingUnidad, setEditingUnidad] = useState<Unidad | null>(null);
+  const [assigningUnidad, setAssigningUnidad] = useState<Unidad | null>(null);
+
+  const lineaLabel = (idLinea?: string | null) => {
+    if (!idLinea) return '-';
+    return lineas.find((l) => l.idLinea === idLinea)?.nombreLinea ?? idLinea;
+  };
   const [actionError, setActionError] = useState<string | null>(null);
 
   const term = search.trim().toLowerCase();
@@ -110,7 +132,7 @@ export function UnidadesTable({ unidades, canManage, onUpdate, onDelete }: Unida
                     {unidad.estadoUnidad}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-600">{unidad.idLinea || '-'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{lineaLabel(unidad.idLinea)}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{unidad.idEmpleadoPiloto || '-'}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{unidad.idLineaParadaActual || '-'}</td>
                 {canManage && (
@@ -120,6 +142,12 @@ export function UnidadesTable({ unidades, canManage, onUpdate, onDelete }: Unida
                       className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium mr-2"
                     >
                       Editar
+                    </button>
+                    <button
+                      onClick={() => setAssigningUnidad(unidad)}
+                      className="px-3 py-1 text-sm text-slate-600 hover:text-slate-900 font-medium mr-2"
+                    >
+                      Línea
                     </button>
                     {unidad.estadoUnidad !== EstadoUnidad.FUERA_DE_SERVICIO && (
                       <button
@@ -139,6 +167,17 @@ export function UnidadesTable({ unidades, canManage, onUpdate, onDelete }: Unida
 
       {editingUnidad && (
         <UnidadDialog unidad={editingUnidad} onSave={handleSave} onClose={() => setEditingUnidad(null)} />
+      )}
+
+      {assigningUnidad && (
+        <AsignacionLineaDialog
+          unit={assigningUnidad}
+          lineas={lineas}
+          onAssign={onAssignLine}
+          onReassign={onReassignLine}
+          onUnassign={onUnassignLine}
+          onClose={() => setAssigningUnidad(null)}
+        />
       )}
     </div>
   );
