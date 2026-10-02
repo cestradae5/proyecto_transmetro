@@ -380,6 +380,24 @@ describe("UnidadService", () => {
       );
     });
 
+    it("exposes nombreLinea from the assigned line, and omits it without a line", async () => {
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+      asignacionUnidadRepo.findOne.mockResolvedValueOnce(makeAsignacionUnidad("10"));
+      lineaService.findOne.mockResolvedValue({
+        idLinea: "10",
+        idParqueo: "5",
+        nombreLinea: "Línea 12",
+      });
+      parqueoService.findOne.mockResolvedValue({ idParqueo: "5", nombreParqueo: "Central" });
+
+      const withLine = await service.findOne("1");
+      expect(withLine.nombreLinea).toBe("Línea 12");
+
+      asignacionUnidadRepo.findOne.mockResolvedValueOnce(null);
+      const withoutLine = await service.findOne("1");
+      expect(withoutLine.nombreLinea).toBeUndefined();
+    });
+
     it("exposes idLineaParadaActual and fechaReporteUbicacion when the assignment has a current stop", async () => {
       const reportDate = new Date("2026-02-03T10:00:00Z");
       unidadRepo.findOne.mockResolvedValue(makeUnidad());

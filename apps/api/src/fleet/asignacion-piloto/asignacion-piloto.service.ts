@@ -7,6 +7,7 @@ import { EmployeeEntity } from "../../authentication/entities/employee.entity.js
 import { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
 import { AsignacionUnidadService } from "../asignacion-unidad/asignacion-unidad.service.js";
 import type { AsignacionUnidadResponseDto } from "../asignacion-unidad/dto/asignacion-unidad-response.dto.js";
+import type { LineaParadaStopResponseDto } from "../asignacion-unidad/dto/linea-parada-stop-response.dto.js";
 import type { ReportLocationDto } from "../asignacion-unidad/dto/report-location.dto.js";
 import { FLEET_AUDIT_ACTIONS, FLEET_MODULE, ROLE_CODES } from "../shared/fleet.constants.js";
 import {
@@ -231,6 +232,19 @@ export class AsignacionPilotoService {
       throw new PilotHasNoUnitAssigned();
     }
     return this.asignacionUnidadService.reportLocation(assignment.idUnidad, dto, employeeId);
+  }
+
+  // Pilot-scoped read of the stops reportOwnLocation accepts. Same delegation
+  // shape as reportOwnLocation: the unit is resolved from the pilot's own
+  // employeeId, and AsignacionUnidadService owns the line-assignment lookup.
+  async getOwnStops(employeeId: string): Promise<LineaParadaStopResponseDto[]> {
+    const assignment = await this.dataSource
+      .getRepository(AsignacionPilotoEntity)
+      .findOne({ where: { idEmpleado: employeeId } });
+    if (!assignment) {
+      throw new PilotHasNoUnitAssigned();
+    }
+    return this.asignacionUnidadService.listLineStops(assignment.idUnidad);
   }
 
   // Resolves the role-code check (design.md Decision 1/task 4.2.3): throws

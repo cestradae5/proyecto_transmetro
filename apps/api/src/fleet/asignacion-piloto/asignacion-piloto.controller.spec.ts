@@ -18,7 +18,7 @@ import type { AsignacionPilotoService } from "./asignacion-piloto.service.js";
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
 type MockService = Record<
-  "assign" | "reassign" | "unassign" | "getOwnUnit" | "reportOwnLocation",
+  "assign" | "reassign" | "unassign" | "getOwnUnit" | "getOwnStops" | "reportOwnLocation",
   AnyMock
 >;
 
@@ -28,6 +28,7 @@ function makeMockService(): MockService {
     reassign: jest.fn(),
     unassign: jest.fn(),
     getOwnUnit: jest.fn(),
+    getOwnStops: jest.fn(),
     reportOwnLocation: jest.fn(),
   };
 }
@@ -88,6 +89,16 @@ describe("AsignacionPilotoController", () => {
       expect(service.getOwnUnit).toHaveBeenCalledWith("pilot-1");
     });
 
+    it("getOwnStops() forwards only the pilot's own employeeId, never a route param", async () => {
+      const stops = [{ idLineaParada: "3", idParada: "9", nombre: "Centro", orden: 1 }];
+      service.getOwnStops.mockResolvedValue(stops);
+
+      const result = await controller.getOwnStops(makeRequest("pilot-1"));
+
+      expect(result).toEqual(stops);
+      expect(service.getOwnStops).toHaveBeenCalledWith("pilot-1");
+    });
+
     it("reportOwnLocation() forwards the body and the pilot's own employeeId, never a route param", async () => {
       const dto = { idLineaParada: "7" } as never;
       service.reportOwnLocation.mockResolvedValue({ idLineaParadaActual: "7" });
@@ -117,10 +128,13 @@ describe("AsignacionPilotoController", () => {
       },
     );
 
-    it("requires UNIDAD_ASIGNADA_CONSULTAR permission on getOwnUnit()", () => {
-      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, handler("getOwnUnit"));
-      expect(permissions).toEqual([UNIDAD_ASIGNADA_CONSULTAR]);
-    });
+    it.each(["getOwnUnit", "getOwnStops"])(
+      "requires UNIDAD_ASIGNADA_CONSULTAR permission on %s()",
+      (method) => {
+        const permissions = Reflect.getMetadata(PERMISSIONS_KEY, handler(method));
+        expect(permissions).toEqual([UNIDAD_ASIGNADA_CONSULTAR]);
+      },
+    );
 
     it("requires METRICAS_UNIDAD_REPORTAR permission on reportOwnLocation()", () => {
       const permissions = Reflect.getMetadata(PERMISSIONS_KEY, handler("reportOwnLocation"));

@@ -75,7 +75,7 @@ describe("AsignacionPilotoService", () => {
   let auditRepo: { create: AnyMock };
   let pilotEligibilityLookup: { findRoleCode: AnyMock };
   let unidadService: { findOne: AnyMock };
-  let asignacionUnidadService: { reportLocation: AnyMock };
+  let asignacionUnidadService: { reportLocation: AnyMock; listLineStops: AnyMock };
   let service: AsignacionPilotoService;
 
   beforeEach(() => {
@@ -102,6 +102,9 @@ describe("AsignacionPilotoService", () => {
     };
     asignacionUnidadService = {
       reportLocation: jest.fn(async () => ({ idLineaParadaActual: "7" }) as AsignacionUnidadResponseDto),
+      listLineStops: jest.fn(async () => [
+        { idLineaParada: "3", idParada: "9", nombre: "Centro", orden: 1 },
+      ]),
     };
 
     manager = {
@@ -352,6 +355,25 @@ describe("AsignacionPilotoService", () => {
 
       expect(unidadService.findOne).toHaveBeenCalledWith("7");
       expect(result.idUnidad).toBe("7");
+    });
+  });
+
+  describe("getOwnStops", () => {
+    it("throws PilotHasNoUnitAssigned when the pilot has no assignment", async () => {
+      asignacionRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getOwnStops("employee-1")).rejects.toThrow(PilotHasNoUnitAssigned);
+      expect(asignacionUnidadService.listLineStops).not.toHaveBeenCalled();
+    });
+
+    it("delegates to AsignacionUnidadService.listLineStops with the pilot's own unit", async () => {
+      asignacionRepo.findOne.mockResolvedValue(makeAssignment({ idUnidad: "7", idEmpleado: "employee-1" }));
+
+      const result = await service.getOwnStops("employee-1");
+
+      expect(asignacionRepo.findOne).toHaveBeenCalledWith({ where: { idEmpleado: "employee-1" } });
+      expect(asignacionUnidadService.listLineStops).toHaveBeenCalledWith("7");
+      expect(result).toEqual([{ idLineaParada: "3", idParada: "9", nombre: "Centro", orden: 1 }]);
     });
   });
 

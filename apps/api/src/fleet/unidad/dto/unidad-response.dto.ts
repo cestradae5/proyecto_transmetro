@@ -43,6 +43,9 @@ export class UnidadResponseDto {
   @ApiPropertyOptional({ description: "ID de la línea asignada (si existe)" })
   idLinea?: string;
 
+  @ApiPropertyOptional({ description: "Nombre de la línea asignada (si existe)" })
+  nombreLinea?: string;
+
   @ApiPropertyOptional({ description: "Parqueo derivado de la línea asignada" })
   parqueo?: ParqueoResponseDto;
 

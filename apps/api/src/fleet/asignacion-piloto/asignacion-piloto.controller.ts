@@ -18,6 +18,7 @@ import { AuthenticationGuard } from "../../authentication/authentication.guard.j
 import { Permissions } from "../../authentication/permissions.decorator.js";
 import { DomainExceptionFilter } from "../../shared/errors/domain-exception.filter.js";
 import { AsignacionUnidadResponseDto } from "../asignacion-unidad/dto/asignacion-unidad-response.dto.js";
+import { LineaParadaStopResponseDto } from "../asignacion-unidad/dto/linea-parada-stop-response.dto.js";
 import { ReportLocationDto } from "../asignacion-unidad/dto/report-location.dto.js";
 import { UnidadResponseDto } from "../unidad/dto/unidad-response.dto.js";
 import { AsignacionPilotoService } from "./asignacion-piloto.service.js";
@@ -109,6 +110,23 @@ export class AsignacionPilotoController {
   @ApiResponse({ status: 404, description: "El piloto no tiene una unidad asignada" })
   getOwnUnit(@Req() request: Record<string, any>): Promise<UnidadResponseDto> {
     return this.asignacionPilotoService.getOwnUnit(request.user.employeeId);
+  }
+
+  // Pilot-scoped alternative to GET /infrastructure/lineas/:id/paradas
+  // (INFRAESTRUCTURA_GESTIONAR-only): the line is derived from the pilot's
+  // own unit, never from a route param.
+  @Get("my-unit/stops")
+  @Permissions(UNIDAD_ASIGNADA_CONSULTAR)
+  @ApiOperation({ summary: "Listar las paradas de la línea de la unidad propia del piloto" })
+  @ApiResponse({
+    status: 200,
+    description: "Paradas de la línea asignada, ordenadas por orden",
+    type: [LineaParadaStopResponseDto],
+  })
+  @ApiResponse({ status: 404, description: "El piloto no tiene una unidad asignada" })
+  @ApiResponse({ status: 409, description: "La unidad no tiene una línea asignada" })
+  getOwnStops(@Req() request: Record<string, any>): Promise<LineaParadaStopResponseDto[]> {
+    return this.asignacionPilotoService.getOwnStops(request.user.employeeId);
   }
 
   @Post("my-unit/location")

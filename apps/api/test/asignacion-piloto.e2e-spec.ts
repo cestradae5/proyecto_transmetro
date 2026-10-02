@@ -520,6 +520,25 @@ describe("AsignacionPiloto pilot-assignment and self-service (e2e)", () => {
           .send({ idLinea: lineaId })
           .expect(201);
 
+        const ownUnit = await request(app.getHttpServer())
+          .get("/fleet/units/my-unit")
+          .set("Authorization", `Bearer ${pilot.token}`)
+          .expect(200);
+        expect(ownUnit.body.nombreLinea).toBe("Línea E2E Piloto");
+
+        const stops = await request(app.getHttpServer())
+          .get("/fleet/units/my-unit/stops")
+          .set("Authorization", `Bearer ${pilot.token}`)
+          .expect(200);
+        expect(stops.body).toEqual([
+          {
+            idLineaParada: String(lineaParadaId),
+            idParada: String(paradaId),
+            nombre: "E2E Piloto Parada",
+            orden: 1,
+          },
+        ]);
+
         const response = await request(app.getHttpServer())
           .post("/fleet/units/my-unit/location")
           .set("Authorization", `Bearer ${pilot.token}`)
@@ -559,6 +578,35 @@ describe("AsignacionPiloto pilot-assignment and self-service (e2e)", () => {
         .set("Authorization", `Bearer ${pilot.token}`)
         .send({ idLineaParada: NON_EXISTENT_ID })
         .expect(404);
+    });
+
+    it("GET /fleet/units/my-unit/stops returns 404 PilotHasNoUnitAssigned for an unassigned pilot", async () => {
+      const pilot = await createPilot();
+
+      const response = await request(app.getHttpServer())
+        .get("/fleet/units/my-unit/stops")
+        .set("Authorization", `Bearer ${pilot.token}`)
+        .expect(404);
+
+      expect(response.body.error).toBe("PilotHasNoUnitAssigned");
+    });
+
+    it("GET /fleet/units/my-unit/stops returns 409 UnitHasNoLineAssignment when the unit has no line", async () => {
+      const unitId = await createUnit();
+      const pilot = await createPilot();
+
+      await request(app.getHttpServer())
+        .post(`/fleet/units/${unitId}/pilot-assignment`)
+        .set("Authorization", `Bearer ${operatorToken}`)
+        .send({ idEmpleado: pilot.id })
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get("/fleet/units/my-unit/stops")
+        .set("Authorization", `Bearer ${pilot.token}`)
+        .expect(409);
+
+      expect(response.body.error).toBe("UnitHasNoLineAssignment");
     });
 
     it("GET /fleet/units/my-unit without UNIDAD_ASIGNADA_CONSULTAR permission is rejected with 403", async () => {

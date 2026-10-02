@@ -23,6 +23,7 @@ import { EstadoUnidad, UnidadEntity } from "../unidad/unidad.entity.js";
 import { AsignacionUnidadEntity } from "./asignacion-unidad.entity.js";
 import { AsignacionUnidadResponseDto } from "./dto/asignacion-unidad-response.dto.js";
 import { CreateAsignacionUnidadDto } from "./dto/create-asignacion-unidad.dto.js";
+import type { LineaParadaStopResponseDto } from "./dto/linea-parada-stop-response.dto.js";
 import { ReportLocationDto } from "./dto/report-location.dto.js";
 import { UpdateAsignacionUnidadDto } from "./dto/update-asignacion-unidad.dto.js";
 
@@ -193,6 +194,33 @@ export class AsignacionUnidadService {
 
       return this.toResponseDto(saved);
     });
+  }
+
+  // Ordered stops of the unit's assigned line (the same set reportLocation's
+  // validateStopInLine accepts). Reads through LineaService.listParadas
+  // instead of duplicating the tbl_linea_parada query; its NotFoundException
+  // (line row missing, FK-impossible in practice) is re-raised as LineNotFound.
+  async listLineStops(unitId: string): Promise<LineaParadaStopResponseDto[]> {
+    const assignment = await this.dataSource
+      .getRepository(AsignacionUnidadEntity)
+      .findOne({ where: { idUnidad: unitId } });
+    if (!assignment) {
+      throw new UnitHasNoLineAssignment();
+    }
+
+    let stops: LineaParadaEntity[];
+    try {
+      stops = await this.lineaService.listParadas(assignment.idLinea);
+    } catch {
+      throw new LineNotFound(assignment.idLinea);
+    }
+
+    return stops.map((stop) => ({
+      idLineaParada: String(stop.idLineaParada),
+      idParada: String(stop.idParada),
+      nombre: stop.parada?.nombreParada ?? "",
+      orden: stop.orden,
+    }));
   }
 
   // Reuses InfrastructureModule's exported LineaService (design.md
