@@ -129,11 +129,28 @@ describe("AfectacionService", () => {
 
     it("throws NotFoundException when the parada does not exist", async () => {
       paradaRepo.count.mockResolvedValue(0);
-      paradaRepo.findOne.mockResolvedValue(null);
 
       await expect(service.create(baseDto({ idParada: "999" }))).rejects.toThrow(
         NotFoundException
       );
+      // The message must name the entity idParada actually references, never the
+      // sibling idEstacion this payload deliberately leaves out.
+      await expect(service.create(baseDto({ idParada: "999" }))).rejects.toThrow(
+        "Parada con ID 999 no encontrada"
+      );
+      expect(afectacionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it("names the estación when idEstacion does not exist", async () => {
+      estacionRepo.count.mockResolvedValue(0);
+
+      await expect(service.create(baseDto({ idEstacion: "999" }))).rejects.toThrow(
+        "Estación con ID 999 no encontrada"
+      );
+      expect(estacionRepo.count).toHaveBeenCalledWith({
+        where: { idEstacion: "999" },
+      });
+      expect(paradaRepo.count).not.toHaveBeenCalled();
       expect(afectacionRepo.save).not.toHaveBeenCalled();
     });
   });

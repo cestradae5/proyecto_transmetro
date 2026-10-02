@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
-import type { EntityManager } from "typeorm";
+import jwt from "jsonwebtoken";
+import type { DataSource, EntityManager } from "typeorm";
 import { getMetadataArgsStorage } from "typeorm";
 
 import {
@@ -9,7 +10,7 @@ import {
   readIntegrationDatabaseEnvironment,
 } from "../platform/configuration/environment.js";
 import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
-import { EmployeeEntity } from "./entities/employee.entity.js";
+import { EmployeeEntity, EMPLOYEE_STATUSES } from "./entities/employee.entity.js";
 import { PermissionEntity } from "./entities/permission.entity.js";
 import { RoleEntity } from "./entities/role.entity.js";
 import { SessionEntity } from "./entities/session.entity.js";
@@ -24,6 +25,7 @@ import {
   GoogleCredentialVerificationError,
 } from "./infrastructure/google-credential-verifier.port.js";
 import { SessionRepository } from "./infrastructure/session.repository.js";
+import { AuthenticationService } from "./authentication.service.js";
 
 function tableName(target: Function): string | undefined {
   return getMetadataArgsStorage().tables.find((table) => table.target === target)
@@ -299,250 +301,215 @@ describe("Google authentication foundation", () => {
 });
 
 // ============================================================================
-// TESTS RED — Contrato transaccional del ciclo de vida de sesión (task 1.3)
-// Estos tests definen el comportamiento ANTES de implementar AuthenticationService.
-// Cada test falla (RED) hasta que el service implemente la regla correspondiente.
+// Contrato transaccional de login JWT stateless.
+//
+// La arquitectura es JWT stateless (decisión del usuario): `login` no crea ni
+// rota ninguna fila de sesión. El contrato real es `LoginResult
+// { token, expiresAt, usuario }` con auditoría `entityType: "jwt"` dentro de
+// una única transacción. Estos tests fijan ese contrato; el diseño de cookie
+// de sesión (`sessionHash`, `SessionRepository` en `login`) queda como alcance
+// NO implementado, documentado en odd/tasks/fix-api-test-failures.md.
 // ============================================================================
 
-describe("Session lifecycle transactional contract (RED)", () => {
-  type SessionCreateInput = {
-    employee: EmployeeEntity;
-    expiresAt: Date;
-    tokenHash: string;
+type AuditCreateInput = {
+  action: string;
+  employee: EmployeeEntity;
+  entityId: string;
+  entityType: string;
+  module: string;
+  result: string;
+};
+
+/**
+ * Builds the 4 collaborators AuthenticationService actually takes:
+ * `(dataSource, employeeRepo, auditRepo, googleVerifier)`.
+ *
+ * `auditRepo` stays the REAL AuditRepository so the test exercises the real
+ * `manager.getRepository(AuditLogEntity).save(create(record))` path.
+ */
+function makeLoginHarness(
+  employee: EmployeeEntity | null,
+  verifiedEmail = "user@transmetro.gt",
+) {
+  const auditCreate = jest.fn((value: object) => value);
+  const auditSave = jest.fn(async (value: object) => value);
+  const manager = {
+    getRepository: jest.fn((entity: Function) => {
+      if (entity === AuditLogEntity) return { create: auditCreate, save: auditSave };
+      return {
+        create: jest.fn((value: object) => value),
+        save: jest.fn(async (value: object) => value),
+      };
+    }),
+  } as unknown as EntityManager;
+
+  const transaction = jest.fn(
+    async (callback: (m: EntityManager) => Promise<unknown>) => callback(manager),
+  );
+  const dataSource = { transaction } as unknown as DataSource;
+  const employeeRepo = {
+    findEligibleByEmail: jest.fn().mockResolvedValue(employee),
+  };
+  const googleVerifier = {
+    verify: jest.fn().mockResolvedValue({ email: verifiedEmail, name: "Test User" }),
   };
 
-  type AuditCreateInput = {
-    action: string;
-    employee: EmployeeEntity;
-    entityId: string;
-    entityType: string;
-    module: string;
-    result: string;
-  };
+  const service = new AuthenticationService(
+    dataSource,
+    employeeRepo as unknown as EmployeeRepository,
+    new AuditRepository(),
+    googleVerifier,
+  );
 
-  function makeMockDataSource(
-    employeeRepoReturn: EmployeeEntity | null,
-    sessionCreateReturn: SessionCreateInput & { id: string },
-    auditCreateReturn: AuditCreateInput & { id: string },
-  ) {
-    const sessionCreate = jest.fn(async (v: object) => v);
-    const sessionSave = jest.fn(async (v: object) => v);
-    const auditCreate = jest.fn(async (v: object) => v);
-    const auditSave = jest.fn(async (v: object) => v);
-    
-    const queryBuilder = {
-      andWhere: jest.fn().mockReturnThis(),
-      getOne: jest.fn().mockResolvedValue(employeeRepoReturn),
-      innerJoinAndSelect: jest.fn().mockReturnThis(),
-      leftJoinAndSelect: jest.fn().mockReturnThis(),
-      setLock: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-    };
-    
-    const employeeRepo = {
-      findEligibleByEmail: jest.fn().mockResolvedValue(employeeRepoReturn),
-      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
-    };
-    const sessionRepo = { create: sessionCreate, save: sessionSave, deleteByEmployeeId: jest.fn().mockResolvedValue(undefined) };
-    const auditRepo = { create: auditCreate, save: auditSave };
-    const mockManager = {
-      getRepository: jest.fn((entity: Function) => {
-        if (entity === EmployeeEntity) return employeeRepo;
-        if (entity === SessionEntity) return { ...sessionRepo, delete: jest.fn().mockResolvedValue(undefined) };
-        if (entity === AuditLogEntity) return auditRepo;
-        return { createQueryBuilder: jest.fn().mockReturnValue(queryBuilder) };
-      }),
-    };
-    const mockTransaction = jest.fn(async (cb: (m: any) => Promise<any>) => cb(mockManager));
-    const dataSource = {
-      transaction: mockTransaction,
-      getRepository: jest.fn((entity: Function) => {
-        if (entity === SessionEntity) return { findOne: jest.fn().mockResolvedValue(null) };
-        if (entity === EmployeeEntity) return employeeRepo;
-        return { createQueryBuilder: jest.fn().mockReturnValue(queryBuilder) };
-      }),
-    };
-    return { dataSource, sessionCreate, sessionSave, auditCreate, auditSave, mockTransaction, queryBuilder };
-  }
+  const lastAuditEntry = (): AuditCreateInput =>
+    auditCreate.mock.calls[0][0] as AuditCreateInput;
 
-  function makeVerifier(email: string, shouldFail = false) {
-    return {
-      verify: jest.fn().mockResolvedValue(shouldFail ? null : { email: email.trim().toUpperCase(), name: "Test User" }),
-    };
-  }
+  return { service, transaction, employeeRepo, googleVerifier, auditCreate, auditSave, manager, lastAuditEntry };
+}
 
-  it("login replaces prior session atomically in one transaction", async () => {
-    const { dataSource, sessionCreate, sessionSave, auditCreate, auditSave, mockTransaction } = makeMockDataSource(
-      { id: "emp-1" } as EmployeeEntity,
-      { id: "ses-1", employee: {} as EmployeeEntity, expiresAt: new Date(), tokenHash: "a".repeat(64) },
-      { id: "aud-1", action: "LOGIN", employee: {} as EmployeeEntity, entityId: "ses-1", entityType: "session", module: "authentication", result: "SUCCESS" },
-    );
+function makeEligibleEmployee(overrides: Partial<EmployeeEntity> = {}): EmployeeEntity {
+  return {
+    id: "emp-1",
+    email: "user@transmetro.gt",
+    status: EMPLOYEE_STATUSES.ACTIVE,
+    role: {
+      name: "OPERADOR",
+      active: true,
+      permissions: [{ code: "FLOTA_GESTIONAR" }, { code: "PERFIL_PROPIO_CONSULTAR" }],
+    },
+    ...overrides,
+  } as EmployeeEntity;
+}
 
-    const { AuthenticationService } = await import("./authentication.service.js");
-    const { EmployeeRepository } = await import("./infrastructure/employee.repository.js");
-    const { SessionRepository } = await import("./infrastructure/session.repository.js");
-    const { AuditRepository } = await import("./infrastructure/audit.repository.js");
-
-    const service = new AuthenticationService(
-      dataSource as any,
-      new EmployeeRepository(),
-      new SessionRepository(dataSource as any),
-      new AuditRepository(),
-      makeVerifier("user@transmetro.gt"),
-    );
-
-    await expect(service.login("credential")).resolves.toEqual(
-      expect.objectContaining({
-        sessionHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-        expiresAt: expect.any(Date),
-      }),
-    );
-
-    expect(mockTransaction).toHaveBeenCalledTimes(1);
-    expect(sessionCreate).toHaveBeenCalledTimes(1);
-    expect(sessionSave).toHaveBeenCalledTimes(1);
-    expect(auditCreate).toHaveBeenCalledTimes(1);
-    expect(auditSave).toHaveBeenCalledTimes(1);
-  });
-
-  it("session id stored as SHA-256 only, raw token never persists", async () => {
-    const { dataSource, sessionCreate } = makeMockDataSource(
-      { id: "emp-2" } as EmployeeEntity,
-      { id: "ses-2", employee: {} as EmployeeEntity, expiresAt: new Date(), tokenHash: "b".repeat(64) },
-      { id: "aud-2", action: "LOGIN", employee: {} as EmployeeEntity, entityId: "ses-2", entityType: "session", module: "authentication", result: "SUCCESS" },
-    );
-
-    const { AuthenticationService } = await import("./authentication.service.js");
-    const { EmployeeRepository } = await import("./infrastructure/employee.repository.js");
-    const { SessionRepository } = await import("./infrastructure/session.repository.js");
-    const { AuditRepository } = await import("./infrastructure/audit.repository.js");
-
-    const service = new AuthenticationService(
-      dataSource as any,
-      new EmployeeRepository(),
-      new SessionRepository(dataSource as any),
-      new AuditRepository(),
-      makeVerifier("user2@transmetro.gt"),
-    );
+describe("Login JWT stateless transactional contract", () => {
+  it("issues a JWT and audits the attempt inside a single transaction", async () => {
+    const { service, transaction, auditCreate, auditSave, lastAuditEntry } =
+      makeLoginHarness(makeEligibleEmployee());
 
     const result = await service.login("credential");
-    expect(result.sessionHash).toMatch(/^[a-f0-9]{64}$/);
-    const created = sessionCreate.mock.calls[0][0] as SessionCreateInput;
-    expect(created.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+
+    expect(result.token).toEqual(expect.any(String));
+    expect(result.token.length).toBeGreaterThan(0);
+    expect(result.expiresAt).toBeInstanceOf(Date);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+    expect(auditSave).toHaveBeenCalledTimes(1);
+    expect(lastAuditEntry()).toEqual(
+      expect.objectContaining({
+        action: "LOGIN",
+        entityId: "emp-1",
+        entityType: "jwt",
+        module: "authentication",
+        result: AUDIT_RESULTS.SUCCESS,
+      }),
+    );
+  });
+
+  it("signs a JWT whose payload carries employee, role, permissions and scope", async () => {
+    const { service, lastAuditEntry } = makeLoginHarness(makeEligibleEmployee());
+
+    const { token } = await service.login("credential");
+    const payload = jwt.decode(token) as {
+      employeeId: string;
+      email: string;
+      roles: string[];
+      permissions: string[];
+      scope: { role: string; modules: string[] };
+      iat: number;
+      exp: number;
+    };
+
+    expect(payload.employeeId).toBe("emp-1");
+    expect(payload.email).toBe("user@transmetro.gt");
+    expect(payload.roles).toEqual(["OPERADOR"]);
+    expect(payload.permissions).toEqual(["FLOTA_GESTIONAR", "PERFIL_PROPIO_CONSULTAR"]);
+    expect(payload.scope).toEqual({ role: "OPERADOR", modules: ["fleet", "self_profile"] });
+    // JWT_EXPIRY is 12h; the payload must not advertise a shorter lifetime.
+    expect(payload.exp - payload.iat).toBe(12 * 60 * 60);
+
+    // Round trip: the issued token must verify through the real contract the
+    // AuthenticationGuard calls, and the raw token must never reach the audit row.
+    await expect(service.verifyToken(token)).resolves.toEqual(
+      expect.objectContaining({
+        employeeId: "emp-1",
+        roles: ["OPERADOR"],
+        permissions: ["FLOTA_GESTIONAR", "PERFIL_PROPIO_CONSULTAR"],
+      }),
+    );
+    expect(JSON.stringify(lastAuditEntry())).not.toContain(token);
   });
 
   it("fixed 12-hour expiry, no sliding renewal", async () => {
     const before = new Date();
-    const { dataSource, sessionCreate } = makeMockDataSource(
-      { id: "emp-3" } as EmployeeEntity,
-      { id: "ses-3", employee: {} as EmployeeEntity, expiresAt: new Date(), tokenHash: "c".repeat(64) },
-      { id: "aud-3", action: "LOGIN", employee: {} as EmployeeEntity, entityId: "ses-3", entityType: "session", module: "authentication", result: "SUCCESS" },
-    );
-
-    const { AuthenticationService } = await import("./authentication.service.js");
-    const { EmployeeRepository } = await import("./infrastructure/employee.repository.js");
-    const { SessionRepository } = await import("./infrastructure/session.repository.js");
-    const { AuditRepository } = await import("./infrastructure/audit.repository.js");
-
-    const service = new AuthenticationService(
-      dataSource as any,
-      new EmployeeRepository(),
-      new SessionRepository(dataSource as any),
-      new AuditRepository(),
-      makeVerifier("user3@transmetro.gt"),
-    );
+    const { service } = makeLoginHarness(makeEligibleEmployee());
 
     const result = await service.login("credential");
+
     const diff = result.expiresAt.getTime() - before.getTime();
     expect(diff).toBeGreaterThanOrEqual(11.9 * 60 * 60 * 1000);
     expect(diff).toBeLessThanOrEqual(12.1 * 60 * 60 * 1000);
   });
 
   it("bounded audit payload contains only safe fields", async () => {
-    const { dataSource, auditCreate } = makeMockDataSource(
-      { id: "emp-4" } as EmployeeEntity,
-      { id: "ses-4", employee: {} as EmployeeEntity, expiresAt: new Date(), tokenHash: "d".repeat(64) },
-      { id: "aud-4", action: "LOGIN", employee: {} as EmployeeEntity, entityId: "ses-4", entityType: "session", module: "authentication", result: "EXITOSO" },
-    );
-
-    const { AuthenticationService } = await import("./authentication.service.js");
-    const { EmployeeRepository } = await import("./infrastructure/employee.repository.js");
-    const { SessionRepository } = await import("./infrastructure/session.repository.js");
-    const { AuditRepository } = await import("./infrastructure/audit.repository.js");
-
-    const service = new AuthenticationService(
-      dataSource as any,
-      new EmployeeRepository(),
-      new SessionRepository(dataSource as any),
-      new AuditRepository(),
-      makeVerifier("user4@transmetro.gt"),
-    );
+    const { service, lastAuditEntry } = makeLoginHarness(makeEligibleEmployee());
 
     await service.login("credential");
-    const created = auditCreate.mock.calls[0][0] as AuditCreateInput;
+
+    const created = lastAuditEntry();
     expect(created).toEqual(
       expect.objectContaining({
         action: "LOGIN",
-        entityType: "session",
+        entityType: "jwt",
         module: "authentication",
-        result: "EXITOSO",
+        result: AUDIT_RESULTS.SUCCESS,
       }),
     );
     expect(created).not.toHaveProperty("credential");
     expect(created).not.toHaveProperty("rawToken");
+    expect(created).not.toHaveProperty("token");
     expect(created).not.toHaveProperty("cookie");
     expect(created).not.toHaveProperty("ip");
     expect(created).not.toHaveProperty("userAgent");
   });
 
   it("inactive employee or no active role triggers generic denial", async () => {
-    const { dataSource } = makeMockDataSource(
+    const { service, auditCreate, auditSave, lastAuditEntry } = makeLoginHarness(
       null,
-      { id: "ses-5", employee: {} as EmployeeEntity, expiresAt: new Date(), tokenHash: "e".repeat(64) },
-      { id: "aud-5", action: "LOGIN", employee: {} as EmployeeEntity, entityId: "ses-5", entityType: "session", module: "authentication", result: "SUCCESS" },
-    );
-
-    const { AuthenticationService } = await import("./authentication.service.js");
-    const { EmployeeRepository } = await import("./infrastructure/employee.repository.js");
-    const { SessionRepository } = await import("./infrastructure/session.repository.js");
-    const { AuditRepository } = await import("./infrastructure/audit.repository.js");
-
-    const service = new AuthenticationService(
-      dataSource as any,
-      new EmployeeRepository(),
-      new SessionRepository(dataSource as any),
-      new AuditRepository(),
-      makeVerifier("inactive@transmetro.gt"),
+      "inactive@transmetro.gt",
     );
 
     await expect(service.login("credential")).rejects.toEqual(
       expect.objectContaining({ message: "Credenciales inválidas." }),
     );
+
+    // The failed attempt is still audited, with no employee row attached and
+    // no session identifier to record.
+    expect(auditCreate).toHaveBeenCalledTimes(1);
+    expect(auditSave).toHaveBeenCalledTimes(1);
+    expect(lastAuditEntry()).toEqual(
+      expect.objectContaining({
+        action: "LOGIN",
+        entityId: "jwt-login",
+        entityType: "jwt",
+        module: "authentication",
+        result: AUDIT_RESULTS.FAILURE,
+      }),
+    );
   });
 
-  it("verified email lookup is case-insensitive", async () => {
-    const { dataSource, sessionCreate } = makeMockDataSource(
-      { id: "emp-6" } as EmployeeEntity,
-      { id: "ses-6", employee: {} as EmployeeEntity, expiresAt: new Date(), tokenHash: "f".repeat(64) },
-      { id: "aud-6", action: "LOGIN", employee: {} as EmployeeEntity, entityId: "ses-6", entityType: "session", module: "authentication", result: "SUCCESS" },
-    );
-
-    const { AuthenticationService } = await import("./authentication.service.js");
-    const { EmployeeRepository } = await import("./infrastructure/employee.repository.js");
-    const { SessionRepository } = await import("./infrastructure/session.repository.js");
-    const { AuditRepository } = await import("./infrastructure/audit.repository.js");
-
-    const service = new AuthenticationService(
-      dataSource as any,
-      new EmployeeRepository(),
-      new SessionRepository(dataSource as any),
-      new AuditRepository(),
-      makeVerifier("  USER@TRANSMETRO.GT  "),
+  it("looks up the employee with the trimmed, uppercased verified email", async () => {
+    const { service, employeeRepo, manager } = makeLoginHarness(
+      makeEligibleEmployee({ email: "USER@TRANSMETRO.GT" }),
+      "  User@Transmetro.GT  ",
     );
 
     await service.login("credential");
-    const repo = new EmployeeRepository();
-    const mockManager = { getRepository: () => ({ createQueryBuilder: () => ({ andWhere: jest.fn().mockReturnThis(), getOne: jest.fn().mockResolvedValue({ id: "emp-6" }), innerJoinAndSelect: jest.fn().mockReturnThis(), leftJoinAndSelect: jest.fn().mockReturnThis(), setLock: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis() }) }) } as any;
-    await repo.findEligibleByEmail(mockManager, "  USER@TRANSMETRO.GT  ");
+
+    expect(employeeRepo.findEligibleByEmail).toHaveBeenCalledTimes(1);
+    expect(employeeRepo.findEligibleByEmail).toHaveBeenCalledWith(
+      manager,
+      "USER@TRANSMETRO.GT",
+    );
   });
 });
