@@ -59,10 +59,10 @@ Base path: `/personal/empleados`. All routes require `AuthenticationGuard` +
 
 | Method | Path | Permission | Request | Success | Errors |
 | --- | --- | --- | --- | --- | --- |
-| POST | `/` | `EMPLEADOS_PERFILES_ADMINISTRAR` | `CreateEmployeeDto` | `201` `EmployeeResponseDto` | `400` invalid payload / unknown or inactive role / missing pilot licence · `401` no or invalid token · `403` missing permission · `409` email or DPI already in use |
+| POST | `/` | `EMPLEADOS_PERFILES_ADMINISTRAR` | `CreateEmployeeDto` | `201` `EmployeeResponseDto` | `400` invalid payload / unknown or inactive role · `401` no or invalid token · `403` missing permission · `409` email or DPI already in use |
 | GET | `/` | same | `search`, `status`, `roleId` (all optional) | `200` `EmployeeResponseDto[]` | `400` invalid query value · `401` · `403` |
 | GET | `/:id` | same | — | `200` `EmployeeResponseDto` | `401` · `403` · `404` unknown id |
-| PATCH | `/:id` | same | `UpdateEmployeeDto` (all fields optional) | `200` `EmployeeResponseDto` | `400` invalid payload / unknown or inactive role / missing pilot licence · `401` · `403` · `404` · `409` email or DPI already in use |
+| PATCH | `/:id` | same | `UpdateEmployeeDto` (all fields optional) | `200` `EmployeeResponseDto` | `400` invalid payload / unknown or inactive role · `401` · `403` · `404` · `409` email or DPI already in use |
 | DELETE | `/:id` | same | — | `204` no body | `401` · `403` · `404` unknown id · `409` caller is the employee, or the employee has history |
 
 `EmployeeResponseDto` inlines the role (`roleId`, `roleCode`, `roleName`) so
@@ -81,7 +81,7 @@ hidden inside `DELETE`.
 | Rule | Where | Failure |
 | --- | --- | --- |
 | `dpi` is mandatory and exactly 13 digits | DTO (`@Matches(/^\d{13}$/)`) on create **and** update | `400` |
-| `licenseNumber` is mandatory when the role code is `PILOTO` | service, on create, on update, and on a role change | `400` |
+| `licenseNumber` is optional for every role, `PILOTO` included | DTO (`@IsOptional()`) on create **and** update; nullable column | — |
 | `email` is unique (compared lowercased) | service pre-check + `23505` fallback | `409` |
 | `dpi` is unique when present | service pre-check + `23505` fallback + partial unique index | `409` |
 | The role must exist **and** be `activo` | service `requireActiveRole` | `400` |
@@ -97,11 +97,6 @@ Notable consequences:
   makes Postgres reject the delete with a foreign-key violation; the service
   translates it into `409` and tells the caller to set `status: "INACTIVO"`
   instead. Retire people, do not delete them.
-- **A legacy PILOTO without a stored licence cannot be renamed.** The licence
-  check runs on *every* update, using the effective licence (supplied value, or
-  the stored one). Until a licence is supplied, any `PATCH` on such an employee
-  — including a plain rename — is rejected with `400`. Supply `licenseNumber` in
-  the same request to migrate the row.
 - **`null` never clears a mandatory field.** `PartialType` adds `@IsOptional()`,
   which lets an explicit `null` through validation, so the service treats `null`
   as "not provided" for `name`, `status` and `dpi`.
@@ -148,7 +143,7 @@ existing rows (the seeded admin has no DPI) keep working:
 | `dpi_emple` | `VARCHAR(13)` | `dpi` | Mandatory at the API level; nullable in the DB for legacy rows |
 | `fecha_ingreso_emple` | `DATE` | `hireDate` | `YYYY-MM-DD` in the API |
 | `direccion_emple` | `VARCHAR(255)` | `address` | |
-| `licencia_emple` | `VARCHAR(30)` | `licenseNumber` | Mandatory for `PILOTO` at the API level |
+| `licencia_emple` | `VARCHAR(30)` | `licenseNumber` | Optional for every role, `PILOTO` included; nullable in the DB |
 | `historial_educativo_emple` | `TEXT` | `educationHistory` | Free text, no child table |
 | `idiomas_emple` | `TEXT` | `languages` | Free text, no child table |
 
@@ -172,7 +167,7 @@ block at the end of the file.
 ```bash
 cd apps/api
 npm test -- personal            # unit: 4 suites / 82 tests
-npm run test:e2e -- personal    # e2e against transmetro_test: 15 tests
+npm run test:e2e -- personal    # e2e against transmetro_test: 14 tests
 ```
 
 The e2e suite (`apps/api/test/personal.e2e-spec.ts`) boots the real `AppModule`

@@ -640,47 +640,25 @@ describe("Personal /personal/empleados (e2e)", () => {
   // --------------------------------------------------------------------------
   // Business rules
   // --------------------------------------------------------------------------
-  it("requires a licence to create a PILOTO and accepts it when supplied", async () => {
-    const missing = await request(app.getHttpServer())
-      .post("/personal/empleados")
-      .set("Authorization", `Bearer ${operatorToken}`)
-      .send(payload({ roleId: pilotRoleId }))
-      .expect(400);
-    expect(missing.body.message as string).toContain("licencia");
-
-    const pilot = await createEmployee({
-      name: `${runTag} Licensed Pilot`,
-      roleId: pilotRoleId,
-      licenseNumber: "LIC-E2E-2",
-    });
-    expect(pilot.roleCode).toBe(PILOT_ROLE_CODE);
-    expect(pilot.licenseNumber).toBe("LIC-E2E-2");
-  });
-
-  it("requires a licence when the role changes to PILOTO", async () => {
+  it("accepts changing the role to PILOTO without a licence", async () => {
     const employee = await createEmployee({ name: `${runTag} Reassigned` });
     expect(employee.roleCode).toBe(GUARD_ROLE_CODE);
 
-    const missing = await request(app.getHttpServer())
-      .patch(`/personal/empleados/${employee.id}`)
-      .set("Authorization", `Bearer ${operatorToken}`)
-      .send({ roleId: pilotRoleId })
-      .expect(400);
-    expect(missing.body.message as string).toContain("licencia");
-
+    // licenseNumber is optional for every role, so a role change to PILOTO
+    // succeeds with no licence supplied and leaves the column null.
     const reassigned = await request(app.getHttpServer())
       .patch(`/personal/empleados/${employee.id}`)
       .set("Authorization", `Bearer ${operatorToken}`)
-      .send({ roleId: pilotRoleId, licenseNumber: "LIC-E2E-3" })
+      .send({ roleId: pilotRoleId })
       .expect(200);
     expect((reassigned.body as EmployeeBody).roleCode).toBe(PILOT_ROLE_CODE);
-    expect((reassigned.body as EmployeeBody).licenseNumber).toBe("LIC-E2E-3");
+    expect((reassigned.body as EmployeeBody).licenseNumber).toBeNull();
+    expect((await readStoredRow(employee.id))!.licencia_emple).toBeNull();
 
     const rows = await auditRows(employee.id);
     const roleChange = rows[rows.length - 1]!;
     expect(roleChange.accion).toBe("update");
     expect(roleChange.detalle).toContain(pilotRoleId);
-    expectNoPii(roleChange.detalle, ["LIC-E2E-3"]);
   });
 
   it("refuses to delete the caller (409)", async () => {
