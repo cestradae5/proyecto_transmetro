@@ -214,6 +214,25 @@ describe("UnidadesTable", () => {
     expect(row.getByText(new Date("2026-01-02T10:00:00Z").toLocaleString("es-GT"))).toBeInTheDocument();
   });
 
+  it("shows the last stop name instead of the id when nombreParadaActual is present", () => {
+    renderTable({
+      unidades: [
+        unit({
+          idUnidad: "8",
+          numeroPlaca: "P-008",
+          idLinea: "4",
+          idLineaParadaActual: "33",
+          nombreParadaActual: "Plaza Italia",
+          fechaReporteUbicacion: "2026-01-02T10:00:00Z",
+        }),
+      ],
+    });
+    const row = within(rowOf("P-008"));
+    expect(row.getByText("Plaza Italia")).toBeInTheDocument();
+    expect(row.queryByText("33")).not.toBeInTheDocument();
+    expect(row.getByText(new Date("2026-01-02T10:00:00Z").toLocaleString("es-GT"))).toBeInTheDocument();
+  });
+
   it("disables the location action for units without a line", () => {
     renderTable();
     expect(within(rowOf("P-002")).getByRole("button", { name: "Ubicación" })).toBeDisabled();

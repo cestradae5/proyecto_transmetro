@@ -20,8 +20,8 @@ export interface Unidad {
   idLinea?: string | null;
   parqueo?: Parqueo | null;
   idEmpleadoPiloto?: string | null;
-  /** Not filled by `GET /fleet/units` (known backend gap). */
   idLineaParadaActual?: string | null;
+  nombreParadaActual?: string;
   fechaReporteUbicacion?: string | null;
 }
 

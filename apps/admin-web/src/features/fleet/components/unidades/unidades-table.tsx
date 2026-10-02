@@ -156,8 +156,8 @@ export function UnidadesTable({
                 <td className="px-4 py-3 text-sm text-slate-600">{lineaLabel(unidad.idLinea)}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{pilotoLabel(unidad.idEmpleadoPiloto)}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">
-                  {/* Stop names are only loaded in the open dialog (no N+1); show the id here. */}
-                  <div>{unidad.idLineaParadaActual || '-'}</div>
+                  {/* The API resolves the stop name; fall back to the id when absent. */}
+                  <div>{unidad.nombreParadaActual || unidad.idLineaParadaActual || '-'}</div>
                   {unidad.idLineaParadaActual && formatReportDate(unidad.fechaReporteUbicacion) && (
                     <div className="text-xs text-slate-500">{formatReportDate(unidad.fechaReporteUbicacion)}</div>
                   )}
