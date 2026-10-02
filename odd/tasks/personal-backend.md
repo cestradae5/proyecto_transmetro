@@ -57,7 +57,7 @@ Re-sliced on 2026-10-02 after E2 landed at 682 lines (original plan had 4 PRs).
 - [x] E2 DTOs + service: Create/Update/Query/Response DTOs (DPI required, 13 digits); `PersonalService` create, findAll (filters: search, status, roleId), findOne, update, remove (physical delete); unit tests.
 - [x] E3 Business rules: 409 on duplicate email/DPI (+23505 fallback), role must exist and be active -> 400, cannot delete yourself, delete blocked by FK -> 409 with "deactivate instead" message; unit tests. The licence is not one of the rules: it is optional for every role.
 - [x] E4 Controller + module + wiring: `personal/empleados` routes with `@Permissions("EMPLEADOS_PERFILES_ADMINISTRAR")`, Swagger docs, `PersonalModule` imported in `AppModule`; controller tests.
-- [ ] E5 Audit: create/update/remove write a `tbl_bitacora` row (module "personal", entity type "empleado") atomically with the mutation (fleet precedent: `dataSource.transaction` + `AuditRepository`); no sensitive PII (dpi, phone, address, education, languages) in `detalle`; service/controller take an `AuditActor`; specs updated.
+- [x] E5 Audit: create/update/remove write a `tbl_bitacora` row (module "personal", entity type "empleado") atomically with the mutation (fleet precedent: `dataSource.transaction` + `AuditRepository`); no sensitive PII (dpi, phone, address, education, languages) in `detalle`; service/controller take an `AuditActor`; specs updated.
 - [ ] E6 e2e + docs: e2e happy/forbidden/conflict paths against the real test DB (also exercises the new `init.sql` columns), `apps/api/src/personal/README.md`.
 
 ## Acceptance criteria
@@ -77,7 +77,8 @@ Re-sliced on 2026-10-02 after E2 landed at 682 lines (original plan had 4 PRs).
 - Running authored count: ~775 lines (E1 93 + E2 682). Forecast raised to ~1,100 total.
 - 2026-10-02 E3 done, commit `3860fec` on `feature/personal-backend-04-rules` (+437/-15 across 3 files). **History was rewritten before the push**, so the licence rule an earlier local attempt had introduced was dropped from the commit instead of being added and then removed: the rule never reaches review and no revert commit is needed. Checks after the removal: `npm test -w @transmetro/api -- personal` 3 suites / 53 tests; full `npm test -w @transmetro/api` 40 suites / 485 tests, 0 failures; `npm run build -w @transmetro/api` ok. Counts differ from the pre-rewrite figures (3 suites / 58 tests, 40 suites / 490 tests) because the 5 tests asserting a required licence were removed together with the rule. Parent read the service in full. Notes: dedicated `requireActiveRole` (400) instead of `validateForeignKey` (404), called on create and on update only when the role actually changes; uniqueness via `count`; email uniqueness compares lowercase, so a legacy mixed-case stored email would not be detected by the pre-check (DB unique constraint + 23505 fallback still covers exact duplicates).
 - 2026-10-02 E4 done, commit `f21ae93` on `feature/personal-backend-05-controller` (+297: controller 107, controller spec 173, module 15, app.module 2). Checks (writer): `npm test -w @transmetro/api -- personal` 4 suites / 73 tests; full suite 41 suites / 505 tests; build ok; boot check: `PersonalModule` initialized and 5 routes mapped, then `EADDRINUSE` on port 3000 (another process holds it), so HTTP listen not confirmed (E6 e2e covers it). Parent read the controller in full. Actor read via `request.user.employeeId` (existing pattern), `UnauthorizedException` if missing.
-- Running authored count: ~1,524 lines (E1 93 + E2 682 + E3 452 + E4 297).
+- 2026-10-02 E5 done on `feature/personal-backend-06-audit` (audit wiring, rebased onto the licence-free E3). Parent reviewed the audit wiring by grep. Notes: `AuthenticationModule` already exports `AuditRepository` (module unchanged); `AuditActor` imported type-only from fleet contracts (no cycle); **the 23505/23503 catch must wrap the `dataSource.transaction` call, not sit inside the callback** (a rejected callback promise is not translated); specs wire `manager.getRepository()` to the same mock repository or every save assertion dies silently; pre-checks stay outside the transaction (TOCTOU covered by the 23505 fallback). Not done: no `personal.module.spec.ts` (DI verified by a throwaway probe, not committed) — consider in a follow-up.
+- Running authored count: ~1,930 lines (E1 93 + E2 682 + E3 452 + E4 297 + E5 406).
 
 ## Key learnings
 - **Why the licence rule was dropped:** enforcing "PILOTO requires a licence" on *every* update meant a legacy PILOTO with no stored `licencia_emple` could not be renamed, reactivated or have any other single field patched at all — every write re-checked the invariant. While the workforce is still being administered by hand in dev, that blocks exactly the rows that most need attention, so the rule was worse than the problem it solved.
@@ -92,6 +93,7 @@ Re-sliced on 2026-10-02 after E2 landed at 682 lines (original plan had 4 PRs).
 - E3: delegated writer (3 files). Parent read the service in full and re-ran the focused tests.
 
 - E4: delegated writer (4 files). Parent read the controller in full.
+- E5: delegated writer (6 files). Parent verified the audit wiring, transaction boundary and PII exclusion.
 
 ## Next step
-E5 on `feature/personal-backend-06-audit` (branch from `-05-controller`).
+E6 on `feature/personal-backend-07-e2e-docs` (branch from `-06-audit`): e2e against the real test DB + `apps/api/src/personal/README.md`.
