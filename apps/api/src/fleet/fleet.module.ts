@@ -6,6 +6,8 @@ import { AsignacionPilotoController } from "./asignacion-piloto/asignacion-pilot
 import { AsignacionPilotoService } from "./asignacion-piloto/asignacion-piloto.service.js";
 import { AsignacionUnidadController } from "./asignacion-unidad/asignacion-unidad.controller.js";
 import { AsignacionUnidadService } from "./asignacion-unidad/asignacion-unidad.service.js";
+import { PilotoController } from "./piloto/piloto.controller.js";
+import { PilotoService } from "./piloto/piloto.service.js";
 import { PilotEligibilityLookup } from "./shared/pilot-eligibility.lookup.js";
 import { UnidadController } from "./unidad/unidad.controller.js";
 import { UnidadService } from "./unidad/unidad.service.js";
@@ -38,9 +40,15 @@ import { UnidadService } from "./unidad/unidad.service.js";
 // too, for symmetry with the design's own ordering.
 @Module({
   imports: [AuthenticationModule, InfrastructureModule],
-  controllers: [AsignacionPilotoController, AsignacionUnidadController, UnidadController],
+  controllers: [
+    AsignacionPilotoController,
+    AsignacionUnidadController,
+    PilotoController,
+    UnidadController,
+  ],
   providers: [
     PilotEligibilityLookup,
+    PilotoService,
     UnidadService,
     AsignacionUnidadService,
     AsignacionPilotoService,

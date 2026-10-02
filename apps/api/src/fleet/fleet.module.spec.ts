@@ -8,6 +8,8 @@
 import { AuthenticationModule } from "../authentication/authentication.module.js";
 import { InfrastructureModule } from "../infrastructure/infrastructure.module.js";
 import { FleetModule } from "./fleet.module.js";
+import { PilotoController } from "./piloto/piloto.controller.js";
+import { PilotoService } from "./piloto/piloto.service.js";
 import { PilotEligibilityLookup } from "./shared/pilot-eligibility.lookup.js";
 
 describe("FleetModule (skeleton)", () => {
@@ -20,5 +22,12 @@ describe("FleetModule (skeleton)", () => {
   it("provides PilotEligibilityLookup for later fleet services to consume", () => {
     const providers = Reflect.getMetadata("providers", FleetModule) as unknown[];
     expect(providers).toContain(PilotEligibilityLookup);
+  });
+
+  it("registers PilotoController and PilotoService", () => {
+    const controllers = Reflect.getMetadata("controllers", FleetModule) as unknown[];
+    const providers = Reflect.getMetadata("providers", FleetModule) as unknown[];
+    expect(controllers).toContain(PilotoController);
+    expect(providers).toContain(PilotoService);
   });
 });
