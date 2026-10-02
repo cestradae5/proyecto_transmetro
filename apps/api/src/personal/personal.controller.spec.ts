@@ -79,9 +79,9 @@ describe("PersonalController", () => {
       const created = makeEmployee();
       service.create.mockResolvedValue(created);
 
-      const result = await controller.create(dto);
+      const result = await controller.create(dto, makeRequest("42"));
 
-      expect(service.create).toHaveBeenCalledWith(dto);
+      expect(service.create).toHaveBeenCalledWith(dto, { employeeId: "42" });
       expect(result).toBe(created);
     });
 
@@ -111,10 +111,21 @@ describe("PersonalController", () => {
       const updated = makeEmployee({ phone: "55551234" });
       service.update.mockResolvedValue(updated);
 
-      const result = await controller.update("7", dto);
+      const result = await controller.update("7", dto, makeRequest("42"));
 
-      expect(service.update).toHaveBeenCalledWith("7", dto);
+      expect(service.update).toHaveBeenCalledWith("7", dto, { employeeId: "42" });
       expect(result).toBe(updated);
+    });
+
+    it("create() and update() reject with 401 and do not write when request.user is missing", () => {
+      expect(() => controller.create({} as CreateEmployeeDto, makeRequest())).toThrow(
+        UnauthorizedException,
+      );
+      expect(() => controller.update("7", {} as UpdateEmployeeDto, makeRequest())).toThrow(
+        UnauthorizedException,
+      );
+      expect(service.create).not.toHaveBeenCalled();
+      expect(service.update).not.toHaveBeenCalled();
     });
 
     it("remove() passes the authenticated actor employee id to service.remove", async () => {
@@ -122,7 +133,7 @@ describe("PersonalController", () => {
 
       await controller.remove("7", makeRequest("42"));
 
-      expect(service.remove).toHaveBeenCalledWith("7", "42");
+      expect(service.remove).toHaveBeenCalledWith("7", { employeeId: "42" });
     });
 
     it("remove() rejects with 401 and does not delete when request.user is missing", () => {

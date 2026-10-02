@@ -23,6 +23,7 @@ import type { Request } from "express";
 
 import { AuthenticationGuard } from "../authentication/authentication.guard.js";
 import { Permissions } from "../authentication/permissions.decorator.js";
+import type { AuditActor } from "../fleet/shared/fleet.contracts.js";
 import { CreateEmployeeDto } from "./dto/create-employee.dto.js";
 import { EmployeeResponseDto } from "./dto/employee-response.dto.js";
 import { QueryEmployeesDto } from "./dto/query-employees.dto.js";
@@ -46,8 +47,11 @@ export class PersonalController {
   @ApiResponse({ status: 400, description: "Invalid payload, or role missing/inactive" })
   @ApiResponse({ status: 403, description: "Missing EMPLEADOS_PERFILES_ADMINISTRAR permission" })
   @ApiResponse({ status: 409, description: "Email or DPI already in use" })
-  create(@Body() dto: CreateEmployeeDto): Promise<EmployeeResponseDto> {
-    return this.personalService.create(dto);
+  create(
+    @Body() dto: CreateEmployeeDto,
+    @Req() request: Request,
+  ): Promise<EmployeeResponseDto> {
+    return this.personalService.create(dto, this.actorOf(request));
   }
 
   @Get()
@@ -81,8 +85,9 @@ export class PersonalController {
   update(
     @Param("id") id: string,
     @Body() dto: UpdateEmployeeDto,
+    @Req() request: Request,
   ): Promise<EmployeeResponseDto> {
-    return this.personalService.update(id, dto);
+    return this.personalService.update(id, dto, this.actorOf(request));
   }
 
   @Delete(":id")
@@ -97,11 +102,15 @@ export class PersonalController {
     description: "Employee is the caller or has history; deactivate instead",
   })
   remove(@Param("id") id: string, @Req() request: Request): Promise<void> {
-    const actorEmployeeId = request.user?.employeeId;
-    if (!actorEmployeeId) {
+    return this.personalService.remove(id, this.actorOf(request));
+  }
+
+  private actorOf(request: Request): AuditActor {
+    const employeeId = request.user?.employeeId;
+    if (!employeeId) {
       // AuthenticationGuard always sets request.user; this only guards misuse.
       throw new UnauthorizedException();
     }
-    return this.personalService.remove(id, actorEmployeeId);
+    return { employeeId };
   }
 }
