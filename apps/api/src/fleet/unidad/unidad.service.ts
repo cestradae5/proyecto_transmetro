@@ -292,6 +292,7 @@ export class UnidadService {
         }
       }
       const linea = await this.lineaService.findOne(lineAssignment.idLinea);
+      response.nombreLinea = linea.nombreLinea;
       response.parqueo = await this.parqueoService.findOne(linea.idParqueo);
     }
 

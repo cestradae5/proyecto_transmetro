@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import type { Unidad } from '../../types/fleet.types';
+import { formatReportDate } from '../../utils/format';
 import { useLineaParadas } from '../../../infrastructure/hooks/use-linea-paradas';
 
 interface UbicacionDialogProps {
@@ -14,13 +15,6 @@ const SELECT_CLASS =
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : 'Error al guardar la ubicación';
-}
-
-export function formatReportDate(value?: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString('es-GT');
 }
 
 const Shell = ({ unit, children }: { unit: Unidad; children: React.ReactNode }) => (

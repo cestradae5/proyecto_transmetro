@@ -20,7 +20,7 @@ const ALL_MODULE_TITLES = [
   "Perfil",
 ];
 
-function seedSession(modules: string[]) {
+function seedSession(modules: string[], permissions: string[] = []) {
   localStorage.setItem("transmetro_token", "fake-jwt");
   localStorage.setItem(
     "transmetro_user",
@@ -28,7 +28,7 @@ function seedSession(modules: string[]) {
       employeeId: "emp-1",
       email: "user@transmetro.gt",
       roles: ["OPERADOR_CENTRAL"],
-      permissions: [],
+      permissions,
       scope: { role: "OPERADOR_CENTRAL", modules },
     }),
   );
@@ -84,13 +84,14 @@ describe("LandingPage card filtering (task 5)", () => {
   });
 
   it("navigates to /fleet when the Flota card is clicked and marks it clickable", async () => {
-    seedSession(["fleet", "audit_log"]);
+    seedSession(["fleet", "audit_log"], ["FLOTA_GESTIONAR"]);
     render(
       <MemoryRouter initialEntries={["/landing"]}>
         <AuthProvider>
           <Routes>
             <Route path="/landing" element={<LandingPage />} />
             <Route path="/fleet" element={<div>Fleet destination</div>} />
+            <Route path="/fleet/my-unit" element={<div>Mi unidad destination</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
@@ -103,6 +104,28 @@ describe("LandingPage card filtering (task 5)", () => {
 
     fireEvent.click(fleetCard);
     expect(await screen.findByText("Fleet destination")).toBeInTheDocument();
+  });
+
+  it("routes the Flota card to /fleet/my-unit when the user lacks FLOTA_GESTIONAR", async () => {
+    // PILOTO reaches module fleet through UNIDAD_ASIGNADA_CONSULTAR only.
+    seedSession(["fleet", "self_profile"], ["UNIDAD_ASIGNADA_CONSULTAR", "METRICAS_UNIDAD_REPORTAR"]);
+    render(
+      <MemoryRouter initialEntries={["/landing"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/fleet" element={<div>Fleet destination</div>} />
+            <Route path="/fleet/my-unit" element={<div>Mi unidad destination</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const fleetCard = (await screen.findByText("Flota")).closest("div[class*='border']") as HTMLElement;
+    fireEvent.click(fleetCard);
+
+    expect(await screen.findByText("Mi unidad destination")).toBeInTheDocument();
+    expect(screen.queryByText("Fleet destination")).not.toBeInTheDocument();
   });
 
   it("renders no module cards but keeps the title and sign-out section when scope.modules is empty", async () => {

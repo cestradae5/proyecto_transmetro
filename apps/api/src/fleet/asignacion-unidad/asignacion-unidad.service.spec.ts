@@ -58,9 +58,9 @@ describe("AsignacionUnidadService", () => {
   let paradaRepo: { findOne: AnyMock };
   let employeeRepo: { findOneOrFail: AnyMock };
   let manager: { getRepository: AnyMock };
-  let dataSource: { transaction: AnyMock };
+  let dataSource: { transaction: AnyMock; getRepository: AnyMock };
   let auditRepo: { create: AnyMock };
-  let lineaService: { findOne: AnyMock };
+  let lineaService: { findOne: AnyMock; listParadas: AnyMock };
   let service: AsignacionUnidadService;
 
   beforeEach(() => {
@@ -81,7 +81,10 @@ describe("AsignacionUnidadService", () => {
     auditRepo = { create: jest.fn(async () => ({})) };
     // Default: the requested line exists (FK validation reused from
     // InfrastructureModule's exported LineaService, design.md Decision 8).
-    lineaService = { findOne: jest.fn(async (id: string) => ({ idLinea: id, idParqueo: "5" })) };
+    lineaService = {
+      findOne: jest.fn(async (id: string) => ({ idLinea: id, idParqueo: "5" })),
+      listParadas: jest.fn(async () => []),
+    };
 
     manager = {
       getRepository: jest.fn((entity: unknown) => {
@@ -94,6 +97,7 @@ describe("AsignacionUnidadService", () => {
     };
     dataSource = {
       transaction: jest.fn(async (cb: (m: unknown) => unknown) => cb(manager)),
+      getRepository: jest.fn((entity: unknown) => manager.getRepository(entity)),
     };
 
     service = new AsignacionUnidadService(
@@ -323,6 +327,37 @@ describe("AsignacionUnidadService", () => {
           detalle: { idLineaParadaAnterior: "7", idLineaParadaNueva: "8" },
         }),
       );
+    });
+  });
+
+  describe("listLineStops", () => {
+    it("throws UnitHasNoLineAssignment when the unit has no line", async () => {
+      await expect(service.listLineStops("1")).rejects.toThrow(UnitHasNoLineAssignment);
+      expect(lineaService.listParadas).not.toHaveBeenCalled();
+    });
+
+    it("maps the assigned line's stops (already ordered by LineaService) to the stop DTO", async () => {
+      asignacionRepo.findOne.mockResolvedValue(makeAssignment({ idLinea: "10" }));
+      lineaService.listParadas.mockResolvedValue([
+        { idLineaParada: "21", idParada: "5", orden: 1, parada: { idParada: 5, nombreParada: "Centro" } },
+        { idLineaParada: "22", idParada: "6", orden: 2, parada: { idParada: 6, nombreParada: "Trébol" } },
+      ]);
+
+      const result = await service.listLineStops("1");
+
+      expect(asignacionRepo.findOne).toHaveBeenCalledWith({ where: { idUnidad: "1" } });
+      expect(lineaService.listParadas).toHaveBeenCalledWith("10");
+      expect(result).toEqual([
+        { idLineaParada: "21", idParada: "5", nombre: "Centro", orden: 1 },
+        { idLineaParada: "22", idParada: "6", nombre: "Trébol", orden: 2 },
+      ]);
+    });
+
+    it("re-raises a missing line as LineNotFound", async () => {
+      asignacionRepo.findOne.mockResolvedValue(makeAssignment({ idLinea: "10" }));
+      lineaService.listParadas.mockRejectedValue(new Error("not found"));
+
+      await expect(service.listLineStops("1")).rejects.toThrow(LineNotFound);
     });
   });
 });

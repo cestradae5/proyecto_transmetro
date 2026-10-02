@@ -5,7 +5,8 @@ import type { Linea } from '../../../infrastructure/types/infrastructure.types';
 import { UnidadDialog } from './unidad-dialog';
 import { AsignacionLineaDialog } from './asignacion-linea-dialog';
 import { AsignacionPilotoDialog } from './asignacion-piloto-dialog';
-import { UbicacionDialog, formatReportDate } from './ubicacion-dialog';
+import { UbicacionDialog } from './ubicacion-dialog';
+import { formatReportDate } from '../../utils/format';
 
 interface UnidadesTableProps {
   unidades: Unidad[];

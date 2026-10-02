@@ -26,7 +26,23 @@ const FLEET_ERROR_MESSAGES: Record<string, string> = {
     'No se puede reasignar el piloto de una unidad En servicio',
   UnitEnServicioCannotUnassignPilot:
     'No se puede quitar el piloto a una unidad En servicio',
+  PilotHasNoUnitAssigned: 'No tiene una unidad asignada',
 };
+
+/** Backend error class names, for callers that branch on a specific error. */
+export const FLEET_ERROR_CODES = {
+  PILOT_HAS_NO_UNIT_ASSIGNED: 'PilotHasNoUnitAssigned',
+  UNIT_HAS_NO_LINE_ASSIGNMENT: 'UnitHasNoLineAssignment',
+} as const;
+
+/** Returns the backend error class name of an API error, if any. */
+export function getFleetErrorCode(err: unknown): string | undefined {
+  if (err instanceof ApiError) {
+    const code = err.data?.error;
+    return typeof code === 'string' ? code : undefined;
+  }
+  return undefined;
+}
 
 /** Resolves a user-facing Spanish message for a fleet API error. */
 export function getFleetErrorMessage(err: unknown): string {
