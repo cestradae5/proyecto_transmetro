@@ -1,9 +1,11 @@
-﻿// PersonalService unit tests (mocked repository, direct instantiation).
+// PersonalService unit tests (mocked repository, direct instantiation).
 
 import { jest } from "@jest/globals";
 import { NotFoundException } from "@nestjs/common";
-import type { Repository } from "typeorm";
+import type { DataSource, Repository } from "typeorm";
 
+import { AUDIT_RESULTS, type AuditLogEntity } from "../authentication/entities/audit-log.entity.js";
+import type { AuditRepository } from "../authentication/infrastructure/audit.repository.js";
 import {
   EMPLOYEE_STATUSES,
   EmployeeEntity,
@@ -19,6 +21,7 @@ type MockRepository = {
   findOne: jest.MockedFunction<(options: unknown) => Promise<EmployeeEntity | null>>;
   remove: jest.MockedFunction<(entity: EmployeeEntity) => Promise<EmployeeEntity>>;
   count: jest.MockedFunction<(options: unknown) => Promise<number>>;
+  findOneOrFail: jest.MockedFunction<(options: unknown) => Promise<EmployeeEntity>>;
 };
 
 function makeMockRepository(): MockRepository {
@@ -27,6 +30,7 @@ function makeMockRepository(): MockRepository {
     save: jest.fn(),
     find: jest.fn(),
     findOne: jest.fn(),
+    findOneOrFail: jest.fn(),
     remove: jest.fn(),
     count: jest.fn<(options: unknown) => Promise<number>>().mockResolvedValue(0),
   };
@@ -89,13 +93,36 @@ describe("PersonalService", () => {
   let repository: MockRepository;
   let roleRepository: { findOne: jest.MockedFunction<(options: unknown) => Promise<RoleEntity | null>> };
   let service: PersonalService;
+  let manager: { getRepository: jest.Mock };
+  let dataSource: { transaction: jest.Mock };
+  let auditRepo: { create: jest.MockedFunction<AuditRepository["create"]> };
+  let callOrder: string[];
+  // The authenticated employee performing the mutation (not the affected one).
+  const actor = { employeeId: "9" };
 
   beforeEach(() => {
     repository = makeMockRepository();
     roleRepository = { findOne: jest.fn<(options: unknown) => Promise<RoleEntity | null>>().mockResolvedValue(makeRole()) };
+    callOrder = [];
+    // The transactional manager hands out the same mocked employee repository.
+    manager = { getRepository: jest.fn().mockReturnValue(repository) };
+    dataSource = {
+      transaction: jest.fn(async (work: unknown) =>
+        (work as (entityManager: unknown) => Promise<unknown>)(manager),
+      ),
+    };
+    auditRepo = {
+      create: jest.fn<AuditRepository["create"]>().mockImplementation(async () => {
+        callOrder.push("audit");
+        return {} as AuditLogEntity;
+      }),
+    };
+    repository.findOneOrFail.mockResolvedValue(makeEmployee({ id: "9" }));
     service = new PersonalService(
       repository as unknown as Repository<EmployeeEntity>,
       roleRepository as unknown as Repository<RoleEntity>,
+      dataSource as unknown as DataSource,
+      auditRepo as unknown as AuditRepository,
     );
   });
 
@@ -113,7 +140,7 @@ describe("PersonalService", () => {
       repository.save.mockResolvedValue(makeEmployee());
       repository.findOne.mockResolvedValue(makeEmployee());
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, actor);
 
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -137,11 +164,69 @@ describe("PersonalService", () => {
       repository.save.mockResolvedValue(makeEmployee());
       repository.findOne.mockResolvedValue(makeEmployee());
 
-      await service.create({ ...dto, status: EMPLOYEE_STATUSES.INACTIVE });
+      await service.create({ ...dto, status: EMPLOYEE_STATUSES.INACTIVE }, actor);
 
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({ status: EMPLOYEE_STATUSES.INACTIVE }),
       );
+    });
+
+    it("audits the creation with the actor and no PII, in the same transaction", async () => {
+      repository.create.mockImplementation((value) => value as EmployeeEntity);
+      repository.save.mockImplementation(async (entity) => {
+        callOrder.push("save");
+        return { ...(entity as EmployeeEntity), id: "31" } as EmployeeEntity;
+      });
+      repository.findOne.mockResolvedValue(makeEmployee({ id: "31" }));
+
+      await service.create(
+        {
+          ...dto,
+          phone: "PHONE-SECRET",
+          address: "ADDRESS-SECRET",
+          educationHistory: "EDUCATION-SECRET",
+          languages: "LANGUAGES-SECRET",
+        },
+        actor,
+      );
+
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      const [usedManager, record] = auditRepo.create.mock.calls[0] ?? [];
+      expect(usedManager).toBe(manager);
+      expect(record).toMatchObject({
+        action: "create",
+        entityId: "31",
+        entityType: "empleado",
+        module: "personal",
+        result: AUDIT_RESULTS.SUCCESS,
+        employee: { id: "9" },
+      });
+      expect(record?.detalle).toEqual({
+        email: "maria@transmetro.gt",
+        roleId: "2",
+        status: EMPLOYEE_STATUSES.ACTIVE,
+      });
+      const serialized = JSON.stringify(record?.detalle);
+      for (const secret of [
+        "2456789012301",
+        "PHONE-SECRET",
+        "ADDRESS-SECRET",
+        "LIC-1",
+        "EDUCATION-SECRET",
+        "LANGUAGES-SECRET",
+      ]) {
+        expect(serialized).not.toContain(secret);
+      }
+      expect(callOrder).toEqual(["save", "audit"]);
+    });
+
+    it("propagates an audit failure", async () => {
+      const failure = new Error("audit down");
+      repository.create.mockImplementation((value) => value as EmployeeEntity);
+      repository.save.mockResolvedValue(makeEmployee());
+      auditRepo.create.mockRejectedValue(failure);
+
+      await expect(service.create(dto, actor)).rejects.toBe(failure);
     });
   });
 
@@ -225,11 +310,15 @@ describe("PersonalService", () => {
         .mockResolvedValueOnce(makeEmployee({ name: "Maria Renombrada" }));
       repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
 
-      const result = await service.update("1", {
-        name: "Maria Renombrada",
-        email: "NEW@Transmetro.gt",
-        roleId: "5",
-      });
+      const result = await service.update(
+        "1",
+        {
+          name: "Maria Renombrada",
+          email: "NEW@Transmetro.gt",
+          roleId: "5",
+        },
+        actor,
+      );
 
       const saved = repository.save.mock.calls[0]?.[0] as EmployeeEntity;
       expect(saved.name).toBe("Maria Renombrada");
@@ -245,7 +334,7 @@ describe("PersonalService", () => {
       repository.findOne.mockResolvedValue(makeEmployee());
       repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
 
-      await service.update("1", { name: undefined, address: "Zona 1" });
+      await service.update("1", { name: undefined, address: "Zona 1" }, actor);
 
       const saved = repository.save.mock.calls[0]?.[0] as EmployeeEntity;
       expect(saved.name).toBe("Maria Lopez");
@@ -256,12 +345,16 @@ describe("PersonalService", () => {
       repository.findOne.mockResolvedValue(makeEmployee());
       repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
 
-      await service.update("1", {
-        dpi: null,
-        name: null,
-        email: null,
-        roleId: null,
-      } as unknown as Parameters<PersonalService["update"]>[1]);
+      await service.update(
+        "1",
+        {
+          dpi: null,
+          name: null,
+          email: null,
+          roleId: null,
+        } as unknown as Parameters<PersonalService["update"]>[1],
+        actor,
+      );
 
       const saved = repository.save.mock.calls[0]?.[0] as EmployeeEntity;
       expect(saved.dpi).toBe("2456789012301");
@@ -273,8 +366,115 @@ describe("PersonalService", () => {
     it("throws NotFoundException when the employee does not exist", async () => {
       repository.findOne.mockResolvedValue(null);
 
-      await expect(service.update("99", { name: "X" })).rejects.toThrow(NotFoundException);
+      await expect(service.update("99", { name: "X" }, actor)).rejects.toThrow(
+        NotFoundException,
+      );
       expect(repository.save).not.toHaveBeenCalled();
+      expect(auditRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("audits only the changed field names and the status and role transitions", async () => {
+      roleRepository.findOne.mockResolvedValue(makeRole({ id: "5", code: "ADMIN" }));
+      repository.findOne
+        .mockResolvedValueOnce(makeEmployee({ phone: "5555-1234" }))
+        .mockResolvedValueOnce(makeEmployee());
+      repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
+
+      await service.update(
+        "1",
+        {
+          name: "Maria Lopez", // unchanged: must not be listed
+          phone: "7777-0000",
+          status: EMPLOYEE_STATUSES.INACTIVE,
+          roleId: "5",
+        },
+        actor,
+      );
+
+      const record = auditRepo.create.mock.calls[0]?.[1];
+      expect(record).toMatchObject({
+        action: "update",
+        entityId: "1",
+        entityType: "empleado",
+        module: "personal",
+        result: AUDIT_RESULTS.SUCCESS,
+        employee: { id: "9" },
+      });
+      expect(record?.detalle).toEqual({
+        changedFields: ["phone", "status", "roleId"],
+        status: { from: "ACTIVO", to: "INACTIVO" },
+        roleId: { from: "2", to: "5" },
+      });
+      expect(JSON.stringify(record?.detalle)).not.toContain("7777-0000");
+    });
+
+    it("omits status and roleId transitions when they do not change", async () => {
+      repository.findOne.mockResolvedValue(makeEmployee());
+      repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
+
+      await service.update(
+        "1",
+        { status: EMPLOYEE_STATUSES.ACTIVE, roleId: "2", address: "Zona 1" },
+        actor,
+      );
+
+      expect(auditRepo.create.mock.calls[0]?.[1].detalle).toEqual({ changedFields: ["address"] });
+    });
+
+    it("never puts PII values in the audit detalle", async () => {
+      repository.findOne.mockResolvedValue(makeEmployee());
+      repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
+
+      await service.update(
+        "1",
+        {
+          dpi: "9999999999999",
+          phone: "PHONE-SECRET",
+          address: "ADDRESS-SECRET",
+          licenseNumber: "LICENSE-SECRET",
+          educationHistory: "EDUCATION-SECRET",
+          languages: "LANGUAGES-SECRET",
+        },
+        actor,
+      );
+
+      const detalle = JSON.stringify(auditRepo.create.mock.calls[0]?.[1].detalle);
+      for (const secret of [
+        "9999999999999",
+        "PHONE-SECRET",
+        "ADDRESS-SECRET",
+        "LICENSE-SECRET",
+        "EDUCATION-SECRET",
+        "LANGUAGES-SECRET",
+      ]) {
+        expect(detalle).not.toContain(secret);
+      }
+      expect(auditRepo.create.mock.calls[0]?.[1].detalle).toEqual({
+        changedFields: ["dpi", "phone", "address", "licenseNumber", "educationHistory", "languages"],
+      });
+    });
+
+    it("writes the employee and the audit row through the same transaction manager, in order", async () => {
+      repository.findOne.mockResolvedValue(makeEmployee());
+      repository.save.mockImplementation(async (entity) => {
+        callOrder.push("save");
+        return entity as EmployeeEntity;
+      });
+
+      await service.update("1", { name: "Renamed" }, actor);
+
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(auditRepo.create.mock.calls[0]?.[0]).toBe(manager);
+      expect(callOrder).toEqual(["save", "audit"]);
+    });
+
+    it("propagates an audit failure", async () => {
+      const failure = new Error("audit down");
+      repository.findOne.mockResolvedValue(makeEmployee());
+      repository.save.mockImplementation(async (entity) => entity as EmployeeEntity);
+      auditRepo.create.mockRejectedValue(failure);
+
+      await expect(service.update("1", { name: "Renamed" }, actor)).rejects.toBe(failure);
     });
   });
 
@@ -284,7 +484,7 @@ describe("PersonalService", () => {
       repository.findOne.mockResolvedValue(existing);
       repository.remove.mockResolvedValue(existing);
 
-      await expect(service.remove("1", "9")).resolves.toBeUndefined();
+      await expect(service.remove("1", actor)).resolves.toBeUndefined();
 
       expect(repository.remove).toHaveBeenCalledWith(existing);
       expect(repository.save).not.toHaveBeenCalled();
@@ -293,8 +493,36 @@ describe("PersonalService", () => {
     it("throws NotFoundException when the employee does not exist", async () => {
       repository.findOne.mockResolvedValue(null);
 
-      await expect(service.remove("99", "9")).rejects.toThrow(NotFoundException);
+      await expect(service.remove("99", actor)).rejects.toThrow(NotFoundException);
       expect(repository.remove).not.toHaveBeenCalled();
+      expect(auditRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("audits the removal with the removed id, email and role only, in the same transaction", async () => {
+      const existing = makeEmployee({ phone: "PHONE-SECRET" });
+      repository.findOne.mockResolvedValue(existing);
+      // TypeORM clears the id of a removed entity.
+      repository.remove.mockImplementation(async (entity) => {
+        callOrder.push("remove");
+        (entity as { id?: string }).id = undefined;
+        return entity;
+      });
+
+      await service.remove("1", actor);
+
+      const [usedManager, record] = auditRepo.create.mock.calls[0] ?? [];
+      expect(usedManager).toBe(manager);
+      expect(record).toMatchObject({
+        action: "remove",
+        entityId: "1",
+        entityType: "empleado",
+        module: "personal",
+        result: AUDIT_RESULTS.SUCCESS,
+        employee: { id: "9" },
+        detalle: { email: "maria@transmetro.gt", roleId: "2" },
+      });
+      expect(JSON.stringify(record?.detalle)).not.toContain("PHONE-SECRET");
+      expect(callOrder).toEqual(["remove", "audit"]);
     });
   });
 });

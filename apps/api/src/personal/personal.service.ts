@@ -4,8 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
+import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 import {
+  DataSource,
+  type EntityManager,
   ILike,
   Not,
   QueryFailedError,
@@ -13,15 +15,24 @@ import {
   Repository,
 } from "typeorm";
 
+import { AUDIT_RESULTS } from "../authentication/entities/audit-log.entity.js";
 import {
   EMPLOYEE_STATUSES,
   EmployeeEntity,
 } from "../authentication/entities/employee.entity.js";
 import { RoleEntity } from "../authentication/entities/role.entity.js";
+import { AuditRepository } from "../authentication/infrastructure/audit.repository.js";
+import type { AuditActor } from "../fleet/shared/fleet.contracts.js";
 import type { CreateEmployeeDto } from "./dto/create-employee.dto.js";
 import { EmployeeResponseDto } from "./dto/employee-response.dto.js";
 import type { QueryEmployeesDto } from "./dto/query-employees.dto.js";
 import type { UpdateEmployeeDto } from "./dto/update-employee.dto.js";
+import {
+  PERSONAL_AUDIT_ACTIONS,
+  PERSONAL_ENTITY_TYPE,
+  PERSONAL_MODULE,
+  type PersonalAuditAction,
+} from "./personal.constants.js";
 
 /** Pure mapper from an entity (with its `role` relation loaded) to the API response. */
 export function toEmployeeResponse(entity: EmployeeEntity): EmployeeResponseDto {
@@ -81,9 +92,12 @@ export class PersonalService {
     private readonly employeeRepository: Repository<EmployeeEntity>,
     @InjectRepository(RoleEntity)
     private readonly roleRepository: Repository<RoleEntity>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+    private readonly auditRepo: AuditRepository,
   ) {}
 
-  async create(dto: CreateEmployeeDto): Promise<EmployeeResponseDto> {
+  async create(dto: CreateEmployeeDto, actor: AuditActor): Promise<EmployeeResponseDto> {
     const { roleId, email, status, ...rest } = dto;
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -97,7 +111,18 @@ export class PersonalService {
       status: status ?? EMPLOYEE_STATUSES.ACTIVE,
       role: { id: roleId },
     });
-    const saved = await this.saveTranslatingConflicts(employee);
+    const saved = await this.translatingUniqueConflicts(() =>
+      this.dataSource.transaction(async (manager) => {
+        const persisted = await manager.getRepository(EmployeeEntity).save(employee);
+        // Never audit PII (dpi, phone, address, licence, education, languages).
+        await this.recordAudit(manager, actor, PERSONAL_AUDIT_ACTIONS.CREATE, persisted.id, {
+          email: normalizedEmail,
+          roleId,
+          status: employee.status,
+        });
+        return persisted;
+      }),
+    );
     return toEmployeeResponse(await this.loadEntity(saved.id));
   }
 
@@ -131,7 +156,11 @@ export class PersonalService {
     return toEmployeeResponse(await this.loadEntity(id));
   }
 
-  async update(id: string, dto: UpdateEmployeeDto): Promise<EmployeeResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateEmployeeDto,
+    actor: AuditActor,
+  ): Promise<EmployeeResponseDto> {
     const employee = await this.loadEntity(id);
     const { roleId, email, ...rest } = dto;
 
@@ -153,6 +182,8 @@ export class PersonalService {
     // Apply only the fields that were actually provided. `@IsOptional()` (added
     // by PartialType) lets an explicit `null` through validation, so required
     // columns such as dpi must also ignore null to never be cleared.
+    const previousStatus = employee.status;
+    const changedFields: string[] = [];
     for (const [key, value] of Object.entries(rest)) {
       if (value === undefined) {
         continue;
@@ -160,27 +191,64 @@ export class PersonalService {
       if (value === null && NON_NULLABLE_FIELDS.has(key)) {
         continue;
       }
-      (employee as unknown as Record<string, unknown>)[key] = value;
+      const record = employee as unknown as Record<string, unknown>;
+      if (record[key] !== value) {
+        changedFields.push(key);
+      }
+      record[key] = value;
     }
     if (normalizedEmail !== undefined) {
+      if (employee.email !== normalizedEmail) {
+        changedFields.push("email");
+      }
       employee.email = normalizedEmail;
     }
+    const previousRoleId = employee.role.id;
     if (roleId !== undefined && roleId !== null) {
+      if (roleChanged) {
+        changedFields.push("roleId");
+      }
       employee.role = { id: roleId } as EmployeeEntity["role"];
     }
 
-    await this.saveTranslatingConflicts(employee);
+    // Only field names and status/role transitions are audited, never values
+    // of PII columns (dpi, phone, address, licence, education, languages).
+    const detalle: Record<string, unknown> = { changedFields };
+    if (employee.status !== previousStatus) {
+      detalle.status = { from: previousStatus, to: employee.status };
+    }
+    if (roleChanged) {
+      detalle.roleId = { from: previousRoleId, to: roleId };
+    }
+
+    await this.translatingUniqueConflicts(() =>
+      this.dataSource.transaction(async (manager) => {
+        await manager.getRepository(EmployeeEntity).save(employee);
+        await this.recordAudit(manager, actor, PERSONAL_AUDIT_ACTIONS.UPDATE, id, detalle);
+      }),
+    );
     return toEmployeeResponse(await this.loadEntity(id));
   }
 
-  async remove(id: string, actorEmployeeId: string): Promise<void> {
+  async remove(id: string, actor: AuditActor): Promise<void> {
     const employee = await this.loadEntity(id);
-    if (id === actorEmployeeId) {
+    if (id === actor.employeeId) {
       throw new ConflictException("No puede eliminar su propio usuario");
     }
 
+    // Captured before the delete: TypeORM clears the id of a removed entity, and
+    // the audit row must describe the employee as it was.
+    const { email, roleId } = { email: employee.email, roleId: employee.role.id };
+
     try {
-      await this.employeeRepository.remove(employee);
+      await this.dataSource.transaction(async (manager) => {
+        await manager.getRepository(EmployeeEntity).remove(employee);
+        // The removed id is the route id, not the (now cleared) entity id.
+        await this.recordAudit(manager, actor, PERSONAL_AUDIT_ACTIONS.REMOVE, id, {
+          email,
+          roleId,
+        });
+      });
     } catch (error) {
       if (isPgError(error, PG_FOREIGN_KEY_VIOLATION)) {
         throw new ConflictException(
@@ -221,10 +289,32 @@ export class PersonalService {
     return role;
   }
 
-  /** Saves the employee, mapping a racing unique violation to a 409. */
-  private async saveTranslatingConflicts(employee: EmployeeEntity): Promise<EmployeeEntity> {
+  /** Writes the audit row inside the caller's transaction (actor = who performed the change). */
+  private async recordAudit(
+    manager: EntityManager,
+    actor: AuditActor,
+    action: PersonalAuditAction,
+    entityId: string,
+    detalle: Record<string, unknown>,
+  ): Promise<void> {
+    const actorEntity = await manager
+      .getRepository(EmployeeEntity)
+      .findOneOrFail({ where: { id: actor.employeeId } });
+    await this.auditRepo.create(manager, {
+      action,
+      employee: actorEntity,
+      entityId,
+      entityType: PERSONAL_ENTITY_TYPE,
+      module: PERSONAL_MODULE,
+      result: AUDIT_RESULTS.SUCCESS,
+      detalle,
+    });
+  }
+
+  /** Runs the (transactional) write, mapping a racing unique violation to a 409. */
+  private async translatingUniqueConflicts<T>(work: () => Promise<T>): Promise<T> {
     try {
-      return await this.employeeRepository.save(employee);
+      return await work();
     } catch (error) {
       if (isPgError(error, PG_UNIQUE_VIOLATION)) {
         throw new ConflictException(uniqueViolationMessage(error));
