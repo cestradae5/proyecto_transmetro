@@ -35,7 +35,7 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
 ## Tasks
 - [x] T1 Diagnose auth spec drift (googleVerifier, guard Bearer contract, RED markers)
 - [x] T2 `authentication-foundation.spec.ts`: 4-arg constructor, real `googleVerifier` stub, JWT assertions, drop `sessionHash`/session-repo expectations
-- [ ] T3 `authentication.guard.spec.ts` + `security.spec.ts`: Bearer + `verifyToken`, drop cookie-extraction blocks, delete `SESSION_COOKIE_FLAGS_*` and `expect(true)` placeholders
+- [x] T3 `authentication.guard.spec.ts` + `security.spec.ts`: Bearer + `verifyToken`, drop cookie-extraction blocks, delete `SESSION_COOKIE_FLAGS_*` and `expect(true)` placeholders
 - [ ] T4 `parada.service.spec.ts` + `estacion.service.spec.ts`: numeric id expectations, fix the 0-call `remove` case
 - [ ] T5 `authentication.e2e-spec.ts`: drop un-implemented CORS / `X-Transmetro-Request` expectations, keep and fix real ones
 - [ ] T6 Full green run: `npm test`, `npm run test:e2e`, `npm run build -w @transmetro/api`
@@ -87,6 +87,54 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
   - `npm test` → `Test Suites: 4 failed, 31 passed, 35 total` / `Tests: 19 failed, 407 passed, 426 total` (was 5 failed / 25 failed). Exactly the 6 foundation failures cleared.
   - `npx cross-env NODE_OPTIONS=--experimental-vm-modules npx jest authentication-foundation` → `Test Suites: 1 passed, 1 total` / `Tests: 22 passed, 22 total`.
 
+### T3 — `authentication.guard.spec.ts` + `security.spec.ts`
+- `authentication.guard.spec.ts`: the mock service exposes `verifyToken(token)`
+  instead of `me(hash)`, and every context is built with
+  `headers: { authorization: "Bearer <token>" }`. Kept the allow/deny and
+  `ForbiddenException` assertions — they encode correct behavior — and added the
+  `expect(verifyToken).not.toHaveBeenCalled()` guard that proves an unauthenticated
+  request never reaches token verification.
+- Replaced the `cookie extraction` describe with `Authorization header extraction`,
+  preserving both original intents against the header contract: the token is read from
+  `Authorization` even when a stale session cookie is present, and a non-`Bearer`
+  scheme is rejected before verification.
+- `security.spec.ts`: the 3 permission-denial tests moved to
+  `verifyToken` + `Bearer` and keep their `ForbiddenException` assertions.
+- **17 tests deleted, each with its reason:**
+  1. `sets __Host-transmetro_admin_session with HttpOnly flag (HTTPS/production)` —
+     `SESSION_COOKIE_FLAGS_SECURE` is not exported anywhere; no cookie is ever set.
+  2. `... with Secure flag (HTTPS/production)` — same.
+  3. `... with SameSite=None (HTTPS/production)` — same.
+  4. `... with Path=/ (HTTPS/production)` — same.
+  5. `... with Max-Age=43200 (12 hours)` — same.
+  6. `uses plain cookie name without __Host- prefix for HTTP dev` —
+     `SESSION_COOKIE_FLAGS_INSECURE` is not exported anywhere.
+  7. `Trusted Origin validation > rejects requests with untrusted Origin header` —
+     self-admittedly inert: instantiated the controller and asserted
+     `expect(controller).toBeDefined()`, with a comment admitting `isOriginAllowed`
+     is private and never called. No subject, no assertion.
+  8. `Trusted Origin validation > rejects requests with missing Origin header` —
+     `expect(true).toBe(true)` placeholder.
+  9. `Trusted Origin validation > rejects requests with null Origin header` —
+     `expect(true).toBe(true)` placeholder.
+  10. `Required X-Transmetro-Request header > rejects login without X-Transmetro-Request header` — `expect(true).toBe(true)` placeholder.
+  11. `... rejects login with wrong X-Transmetro-Request value` — `expect(true).toBe(true)` placeholder.
+  12. `... rejects logout without X-Transmetro-Request header` — `expect(true).toBe(true)` placeholder.
+  13. `... requires X-Transmetro-Request: admin-web for login` — `expect(true).toBe(true)` placeholder.
+  14. `POST-only logout endpoint > rejects GET /authentication/logout` — `expect(true).toBe(true)` placeholder. The real behavior stays covered by the e2e suite's `GET /authentication/logout returns 404`.
+  15. `... rejects DELETE /authentication/logout` — `expect(true).toBe(true)` placeholder.
+  16. `... rejects PUT /authentication/logout` — `expect(true).toBe(true)` placeholder.
+  17. `... accepts only POST /authentication/logout` — `expect(true).toBe(true)` placeholder.
+- Retitled `Exact CORS policy (task 1.2)` → `Admin web origin configuration` and
+  documented at the top of the file that these 4 tests cover origin *configuration
+  parsing*, not HTTP CORS enforcement, which does not exist.
+- Known gap left in place (not added, per the "no new coverage" constraint): the
+  guard's non-`Bearer`-scheme rejection is now covered, but there is no test for
+  `@Permissions` requiring **multiple** permissions where only some are held.
+- Evidence:
+  - `npx cross-env NODE_OPTIONS=--experimental-vm-modules npx jest authentication.guard security` → `Test Suites: 2 passed, 2 total` / `Tests: 16 passed, 16 total`.
+  - `npm test` → `Test Suites: 2 failed, 33 passed, 35 total` / `Tests: 4 failed, 405 passed, 409 total` (was 4 failed / 19 failed). Suite count for this pair is now 0 failed.
+
 ### Documented gaps (not defects, not implemented scope)
 - **Cookie-session design is entirely absent from production**: no `sessionHash` in
   `LoginResult`, no `SessionRepository` use in `login`, no
@@ -101,4 +149,4 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
   that parsing is covered, HTTP enforcement is not implemented.
 
 ## Next step
-T3.
+T4.
