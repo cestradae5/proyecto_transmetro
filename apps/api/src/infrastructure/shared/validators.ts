@@ -3,7 +3,14 @@ import { Repository, ObjectLiteral } from "typeorm";
 
 /**
  * Validates that a foreign key exists in the referenced table.
- * Throws NotFoundException if not found.
+ *
+ * One existence query against the caller-supplied `fieldName`, which is the real
+ * primary key of the referenced entity (`idParada`, `idEstacion`, `idParqueo`)
+ * and is the same value interpolated into the error message. A previous version
+ * ran `count` and then a redundant `findOne` with an identical `where` clause,
+ * costing a second round trip on every rejection for no extra information.
+ *
+ * Throws NotFoundException naming the referenced entity if not found.
  */
 export async function validateForeignKey<T extends ObjectLiteral>(
   repository: Repository<T>,
@@ -11,13 +18,9 @@ export async function validateForeignKey<T extends ObjectLiteral>(
   fieldName: string,
   entityName: string
 ): Promise<void> {
-  const count = await repository.count({ where: { [fieldName]: id } as any });
-  
-  if (count === 0) {
-    // Try with the primary key directly
-    const entity = await repository.findOne({ where: { [fieldName]: id } as any });
-    if (!entity) {
-      throw new NotFoundException(`${entityName} con ID ${id} no encontrada`);
-    }
+  const matches = await repository.count({ where: { [fieldName]: id } as any });
+
+  if (matches === 0) {
+    throw new NotFoundException(`${entityName} con ID ${id} no encontrada`);
   }
 }

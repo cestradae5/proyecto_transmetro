@@ -39,6 +39,9 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
 - [x] T4 `parada.service.spec.ts` + `estacion.service.spec.ts`: numeric id expectations, fix the 0-call `remove` case
 - [x] T5 `authentication.e2e-spec.ts`: drop un-implemented CORS / `X-Transmetro-Request` expectations, keep and fix real ones
 - [ ] T6 Full green run: `npm test`, `npm run test:e2e`, `npm run build -w @transmetro/api`
+- [x] T7 `authentication.controller.ts`: rewrite the header comment — it claimed cookies HttpOnly-Secure, exact-origin validation and an enforced `X-Transmetro-Request` header, none of which exist
+- [x] T8 `shared/validators.ts`: drop the redundant `findOne` that re-ran the identical `where` after `count` returned 0; add real FK-validation coverage
+- [x] T9 `infrastructure/README.md`: item 6 documented dead code that no longer exists (and a literal `'id'` fallback the code never had); describe the real remaining issue
 
 ## Route declaration
 - T1: delegated reader (diagnosis), parent verified the decision with the user.
@@ -221,6 +224,73 @@ isolation: `jest --config test/jest-e2e.json test/unidad.e2e-spec.ts` → `6 pas
   - `npm test` → `Test Suites: 35 passed, 35 total` / `Tests: 409 passed, 409 total`, exit code 0.
   - `npm run build` → exit code 0, no output (clean `nest build`).
 
+### T7 — `authentication.controller.ts` header comment
+The stale header claimed *"Expone 3 endpoints (login/me/logout) con cookies HttpOnly-Secure,
+validación de origen exacto y header X-Transmetro-Request"*. Every clause was wrong, and the
+wrongness was verifiable line by line:
+- **"3 endpoints (login/me/logout)"** — there is no `login` route. The controller declares
+  exactly **four** handlers: `GET google`, `GET google/callback`, `GET me`, `POST logout`.
+  (`Options` is imported from `@nestjs/common` but no `@Options` handler exists.)
+- **"cookies HttpOnly-Secure"** — the controller never calls `response.cookie`. The JWT
+  reaches the admin-web in the **redirect query string**
+  (`${FRONTEND_URL}/login?token=…`), and `me` reads it from `Authorization: Bearer`.
+- **"validación de origen exacto"** — no request-time origin check exists.
+  `readAuthenticationEnvironment()` does parse and validate the `ADMIN_WEB_ORIGINS`
+  *configuration value*, but the controller consumes only `googleWebClientId` from it and
+  never compares an `Origin` header against the result.
+- **"header X-Transmetro-Request"** — the string does not appear anywhere in the controller
+  or the auth module.
+
+Rewritten as a description of the four real routes and the stateless Bearer contract.
+**Comment-only change** — no runtime code touched.
+
+### T8 — `shared/validators.ts` double query
+`validateForeignKey` ran `count`, and when it returned 0 ran a second `findOne` with the
+**identical** `where` clause. The `findOne` could never disagree with the `count`, so the
+"Try with the primary key directly" branch was a wasted round trip on every rejected FK.
+Reduced to one query; error type (`NotFoundException`), message shape
+(`"<entityName> con ID <id> no encontrada"`) and signature
+(`repository, id, fieldName, entityName`) are unchanged, so all 13 call sites are untouched.
+
+**Kept `count`, did not switch to `findOne`.** The other direction was rejected on evidence:
+`afectacion`, `estacion`, `linea` and `parqueo` specs all assert the FK lookup through
+`count` — e.g. `expect(paradaRepository.count).toHaveBeenCalledWith({ where: { idParada: "5" } })`
+(`afectacion.service.spec.ts:95`, `estacion.service.spec.ts:111`, `parqueo.service.spec.ts:93`,
+`linea.service.spec.ts:110,252`). Keeping `count` reaches the one-query target with **zero**
+spec rewrites and no assertion weakened, and `COUNT(*)` is the cheaper query for an
+existence check than hydrating a full row. No *caller* relied on the two-query behavior —
+the four services only observe throw/no-throw — so nothing was blocked.
+
+**Caller `fieldName` values verified correct** (against the entity `@PrimaryGeneratedColumn`
+declarations): `idParada` (`tbl_parada.id_parada`), `idEstacion` (`tbl_estacion.id_estacion`),
+`idParqueo` (`tbl_parqueo.id_parqueo`). The old README claim that a fallback queries a literal
+`'id'` that these entities do not have is **false** — both the old and the new implementation
+use the `fieldName` argument. See T9.
+
+**Coverage added** — `src/infrastructure/shared/validators.spec.ts` (new, 7 tests) covers both
+paths and pins the contract that was previously untested: resolves when the row exists; throws
+`NotFoundException` with exactly `Parada con ID 99 no encontrada`; `count` called **once**
+with `{ where: { idParada: "5" } }`; `findOne` **never** called on either path; `fieldName`
+used instead of a literal `id`; the message follows the `entityName` argument; numeric ids
+render unchanged. `afectacion.service.spec.ts` gains the sibling-entity case: a missing
+`idParada` must report `Parada con ID 999 no encontrada` and a missing `idEstacion` must
+report `Estación con ID 999 no encontrada`, each with the other repository untouched.
+
+Regression guard proven, not assumed: reverting only `validators.ts` to the old body makes
+**4 of the 7** new tests fail.
+
+### T9 — `infrastructure/README.md` item 6
+The item claimed dead code — *"validateForeignKey's fallback path queries a literal `'id'`
+field that doesn't exist on `Parada`/`Estacion`"*. Verified: **the code never queried a
+literal `'id'`**; both queries used `{ [fieldName]: id }`. And after T8 there is no fallback
+branch left to be dead. Replaced with the real remaining issue: three same-named
+`validateForeignKey` helpers with **different contracts** —
+`infrastructure/shared/validators.ts` (Nest `NotFoundException`, `"… no encontrada"`,
+caller-supplied FK name, 4 args) versus the byte-identical
+`infrastructure/shared/validators/fk-validation.helper.ts` and
+`shared/validators/fk-validation.helper.ts` (domain `NotFoundError`, `"… no existe."`,
+hardcoded `{ id }` PK, 3 args). Consolidation is deliberately left undecided.
+
 ### Documented gaps (not defects, not implemented scope)
 - **Cookie-session design is entirely absent from production**: no `sessionHash` in
   `LoginResult`, no `SessionRepository` use in `login`, no
@@ -237,12 +307,19 @@ isolation: `jest --config test/jest-e2e.json test/unidad.e2e-spec.ts` → `6 pas
 ## Summary of results (writer-verified)
 | Command | Before | After |
 |---|---|---|
-| `npm test` (apps/api) | 5 failed suites / 25 failed / 401 passed / 426 total | **35 passed suites / 409 passed / 409 total**, exit 0 |
-| `npm run test:e2e` (apps/api, `.env` exported) | 1 failed suite / 10 failed / 50 passed / 60 total | **6 passed suites / 54 passed / 54 total**, exit 0 |
-| `npm run build` (apps/api) | not run at baseline | exit 0, clean `nest build` |
+| `npm test` (apps/api) | 5 failed suites / 25 failed / 401 passed / 426 total | **36 passed suites / 417 passed / 417 total**, exit 0 |
+| `npm run test:e2e` (apps/api, `.env` exported) | 1 failed suite / 10 failed / 50 passed / 60 total | **6 passed suites / 54 passed / 54 total**, exit 0 (last run under T5; not re-run for T7-T9, which touch no runtime behavior) |
+| `npm run build` (apps/api) | not run at baseline | exit 0, clean `nest build` (re-run after T8) |
 
-Production code changed: **none**. All five commits touch only `*.spec.ts` /
-`*.e2e-spec.ts` and this document.
+Test count moved 409 → 417 across T8: **+8** (7 new in
+`src/infrastructure/shared/validators.spec.ts`, 1 new sibling-entity case in
+`afectacion.service.spec.ts`). Suite count 35 → 36. No existing assertion was
+weakened, deleted or reworded.
+
+Production code changed: **one production file**, in T8 only —
+`src/infrastructure/shared/validators.ts`, and only to delete the redundant
+`findOne`. T7 is comment-only and T9 is documentation-only. T1-T5 touched only
+`*.spec.ts` / `*.e2e-spec.ts` and this document.
 
 ## Next step
-T6 — re-verify the baseline comparison from a clean checkout.
+Delivery decision (PR).
