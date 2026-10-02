@@ -29,7 +29,7 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
 - [x] P1 FE: types + `PilotHasNoUnitAssigned`/location errors in `fleet-errors.ts` + `use-mi-unidad` hook (load unit, load stops, report location) + tests
 - [x] P2 FE: `MiUnidadPage` (unit card, line, current stop + report time, empty state when no unit) + report-location dialog (POST-only) + tests
 - [x] P3 FE: route `/fleet/my-unit`; landing card routes PILOTO (no `FLOTA_GESTIONAR`) to it; `/fleet` redirects pilots; tests
-- [ ] P4 Full build/test pass + README note
+- [x] P4 Full build/test pass + README note
 
 ## Route declaration
 - B4: delegated writer (controller + service + specs).
@@ -72,5 +72,12 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
   - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
   - Runtime harness: N/A (no dev-server scenario exercised; routing is covered by the App-level spec driving the real router).
 
+- P4 commit: `docs(fleet): document the pilot view in the feature README`.
+  - `features/fleet/README.md`: both routes, the pilot-scoped endpoints, and why the pilot view must avoid `/infrastructure/lineas*` and `FLOTA_GESTIONAR` calls.
+  - `npm test -w @transmetro/admin-web`: 31 files / 225 tests pass.
+  - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
+  - `npm run build -w @transmetro/api`: OK (nest build).
+  - Runtime harness: N/A (no dev-server or browser scenario available in this environment; the operator flow is covered by the existing fleet specs, all passing).
+
 ## Next step
-P4.
+Delivery decision (PR).
