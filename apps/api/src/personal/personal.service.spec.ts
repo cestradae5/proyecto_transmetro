@@ -1,4 +1,4 @@
-// PersonalService unit tests (mocked repository, direct instantiation).
+﻿// PersonalService unit tests (mocked repository, direct instantiation).
 
 import { jest } from "@jest/globals";
 import { NotFoundException } from "@nestjs/common";
@@ -18,6 +18,7 @@ type MockRepository = {
   find: jest.MockedFunction<(options: unknown) => Promise<EmployeeEntity[]>>;
   findOne: jest.MockedFunction<(options: unknown) => Promise<EmployeeEntity | null>>;
   remove: jest.MockedFunction<(entity: EmployeeEntity) => Promise<EmployeeEntity>>;
+  count: jest.MockedFunction<(options: unknown) => Promise<number>>;
 };
 
 function makeMockRepository(): MockRepository {
@@ -27,6 +28,7 @@ function makeMockRepository(): MockRepository {
     find: jest.fn(),
     findOne: jest.fn(),
     remove: jest.fn(),
+    count: jest.fn<(options: unknown) => Promise<number>>().mockResolvedValue(0),
   };
 }
 
@@ -44,7 +46,7 @@ function makeEmployee(overrides: Partial<EmployeeEntity> = {}): EmployeeEntity {
     dpi: "2456789012301",
     hireDate: null,
     address: null,
-    licenseNumber: null,
+    licenseNumber: "LIC-1",
     educationHistory: null,
     languages: null,
     role: makeRole(),
@@ -71,7 +73,7 @@ describe("toEmployeeResponse", () => {
   });
 
   it("returns null for nullable fields that are null or undefined", () => {
-    const entity = makeEmployee({ dpi: null });
+    const entity = makeEmployee({ dpi: null, licenseNumber: null });
     (entity as unknown as Record<string, unknown>).address = undefined;
 
     const result = toEmployeeResponse(entity);
@@ -85,11 +87,16 @@ describe("toEmployeeResponse", () => {
 
 describe("PersonalService", () => {
   let repository: MockRepository;
+  let roleRepository: { findOne: jest.MockedFunction<(options: unknown) => Promise<RoleEntity | null>> };
   let service: PersonalService;
 
   beforeEach(() => {
     repository = makeMockRepository();
-    service = new PersonalService(repository as unknown as Repository<EmployeeEntity>);
+    roleRepository = { findOne: jest.fn<(options: unknown) => Promise<RoleEntity | null>>().mockResolvedValue(makeRole()) };
+    service = new PersonalService(
+      repository as unknown as Repository<EmployeeEntity>,
+      roleRepository as unknown as Repository<RoleEntity>,
+    );
   });
 
   describe("create", () => {
@@ -98,6 +105,7 @@ describe("PersonalService", () => {
       email: "  Maria@Transmetro.GT ",
       roleId: "2",
       dpi: "2456789012301",
+      licenseNumber: "LIC-1",
     };
 
     it("lowercases the email, defaults status to ACTIVO and sets the role", async () => {
@@ -210,6 +218,7 @@ describe("PersonalService", () => {
 
   describe("update", () => {
     it("applies only provided fields, lowercases email and maps roleId", async () => {
+      roleRepository.findOne.mockResolvedValue(makeRole({ id: "5", code: "ADMIN" }));
       const existing = makeEmployee({ phone: "5555-1234" });
       repository.findOne
         .mockResolvedValueOnce(existing)
@@ -275,7 +284,7 @@ describe("PersonalService", () => {
       repository.findOne.mockResolvedValue(existing);
       repository.remove.mockResolvedValue(existing);
 
-      await expect(service.remove("1")).resolves.toBeUndefined();
+      await expect(service.remove("1", "9")).resolves.toBeUndefined();
 
       expect(repository.remove).toHaveBeenCalledWith(existing);
       expect(repository.save).not.toHaveBeenCalled();
@@ -284,7 +293,7 @@ describe("PersonalService", () => {
     it("throws NotFoundException when the employee does not exist", async () => {
       repository.findOne.mockResolvedValue(null);
 
-      await expect(service.remove("99")).rejects.toThrow(NotFoundException);
+      await expect(service.remove("99", "9")).rejects.toThrow(NotFoundException);
       expect(repository.remove).not.toHaveBeenCalled();
     });
   });
