@@ -2,9 +2,9 @@
 // AuthProvider restores session from localStorage on mount, so each scenario
 // seeds it directly instead of mocking useAuth().
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach } from "vitest";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "../../features/authentication/auth-context";
 import { LandingPage } from "../../features/authentication/landing-page";
 
@@ -81,6 +81,28 @@ describe("LandingPage card filtering (task 5)", () => {
     for (const title of ALL_MODULE_TITLES) {
       expect(screen.getByText(title)).toBeInTheDocument();
     }
+  });
+
+  it("navigates to /fleet when the Flota card is clicked and marks it clickable", async () => {
+    seedSession(["fleet", "audit_log"]);
+    render(
+      <MemoryRouter initialEntries={["/landing"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/fleet" element={<div>Fleet destination</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const fleetCard = (await screen.findByText("Flota")).closest("div[class*='border']") as HTMLElement;
+    expect(fleetCard.className).toContain("cursor-pointer");
+    const auditCard = screen.getByText("Auditoría").closest("div[class*='border']") as HTMLElement;
+    expect(auditCard.className).not.toContain("cursor-pointer");
+
+    fireEvent.click(fleetCard);
+    expect(await screen.findByText("Fleet destination")).toBeInTheDocument();
   });
 
   it("renders no module cards but keeps the title and sign-out section when scope.modules is empty", async () => {
