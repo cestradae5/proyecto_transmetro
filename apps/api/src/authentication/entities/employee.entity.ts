@@ -34,6 +34,27 @@ export class EmployeeEntity {
   @Column({ length: 254, name: "correo_emple", type: "varchar" })
   email!: string;
 
+  @Column({ length: 20, name: "telefono_emple", nullable: true, type: "varchar" })
+  phone!: string | null;
+
+  @Column({ length: 13, name: "dpi_emple", nullable: true, type: "varchar" })
+  dpi!: string | null;
+
+  @Column({ name: "fecha_ingreso_emple", nullable: true, type: "date" })
+  hireDate!: string | null;
+
+  @Column({ length: 255, name: "direccion_emple", nullable: true, type: "varchar" })
+  address!: string | null;
+
+  @Column({ length: 30, name: "licencia_emple", nullable: true, type: "varchar" })
+  licenseNumber!: string | null;
+
+  @Column({ name: "historial_educativo_emple", nullable: true, type: "text" })
+  educationHistory!: string | null;
+
+  @Column({ name: "idiomas_emple", nullable: true, type: "text" })
+  languages!: string | null;
+
   @ManyToOne(() => RoleEntity, (role) => role.employees, { nullable: false })
   @JoinColumn({ name: "id_rol" })
   role!: Relation<RoleEntity>;
