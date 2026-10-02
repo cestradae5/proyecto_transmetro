@@ -309,6 +309,64 @@ describe("AsignacionUnidad line-assignment and location (e2e)", () => {
     });
   });
 
+  it("GET /fleet/units/:id and GET /fleet/units expose the reported stop (id, date, real name) only after a location report", async () => {
+    const unitId = await createUnit();
+    await request(app.getHttpServer())
+      .post(`/fleet/units/${unitId}/line-assignment`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ idLinea: lineaBId })
+      .expect(201);
+
+    const keys = ["idLineaParadaActual", "fechaReporteUbicacion", "nombreParadaActual"];
+    const findInList = async (): Promise<Record<string, unknown>> => {
+      const list = await request(app.getHttpServer())
+        .get("/fleet/units")
+        .set("Authorization", `Bearer ${token}`)
+        .expect(200);
+      const found = (list.body as Record<string, unknown>[]).find((u) => u.idUnidad === unitId);
+      expect(found).toBeDefined();
+      return found!;
+    };
+
+    // Before any report: none of the keys are present.
+    const beforeOne = await request(app.getHttpServer())
+      .get(`/fleet/units/${unitId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const beforeList = await findInList();
+    for (const key of keys) {
+      expect(beforeOne.body).not.toHaveProperty(key);
+      expect(beforeList).not.toHaveProperty(key);
+    }
+
+    await request(app.getHttpServer())
+      .post(`/fleet/units/${unitId}/location`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ idLineaParada: lineaParadaB1Id })
+      .expect(200);
+
+    // The stop's real name straight from the DB, not a fixture literal.
+    const nameRows = (await dataSource.query(
+      `SELECT p.nombre_parada AS "nombre"
+       FROM tbl_linea_parada lp JOIN tbl_parada p ON p.id_parada = lp.id_parada
+       WHERE lp.id_linea_parada = $1`,
+      [lineaParadaB1Id],
+    )) as { nombre: string }[];
+    const expectedName = nameRows[0]!.nombre;
+    expect(expectedName).toBeTruthy();
+
+    const afterOne = await request(app.getHttpServer())
+      .get(`/fleet/units/${unitId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const afterList = await findInList();
+    for (const body of [afterOne.body as Record<string, unknown>, afterList]) {
+      expect(body.idLineaParadaActual).toBe(lineaParadaB1Id);
+      expect(body.fechaReporteUbicacion).toBeDefined();
+      expect(body.nombreParadaActual).toBe(expectedName);
+    }
+  });
+
   it("POST .../line-assignment with a non-existent line returns 404", async () => {
     const unitId = await createUnit();
 

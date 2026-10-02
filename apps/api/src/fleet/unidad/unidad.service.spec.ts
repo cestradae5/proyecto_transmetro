@@ -6,6 +6,7 @@ import { EmployeeEntity } from "../../authentication/entities/employee.entity.js
 import type { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
 import type { LineaService } from "../../infrastructure/linea/linea.service.js";
 import type { ParqueoService } from "../../infrastructure/parqueo/parqueo.service.js";
+import { LineaParadaEntity } from "../../infrastructure/linea/linea-parada.entity.js";
 import { AsignacionUnidadEntity } from "../asignacion-unidad/asignacion-unidad.entity.js";
 import { FLEET_AUDIT_ACTIONS, FLEET_MODULE } from "../shared/fleet.constants.js";
 import {
@@ -79,6 +80,7 @@ describe("UnidadService", () => {
   let employeeRepo: { findOneOrFail: AnyMock };
   let asignacionUnidadRepo: { findOne: AnyMock };
   let txAsignacionUnidadRepo: { findOne: AnyMock };
+  let lineaParadaRepo: { findOne: AnyMock };
   let manager: { getRepository: AnyMock; query: AnyMock };
   let dataSource: { getRepository: AnyMock; query: AnyMock; transaction: AnyMock };
   let auditRepo: { create: AnyMock };
@@ -102,6 +104,7 @@ describe("UnidadService", () => {
     // reconciliation note on makePilotQueryDispatcher above).
     asignacionUnidadRepo = { findOne: jest.fn(async () => null) };
     txAsignacionUnidadRepo = { findOne: jest.fn(async () => null) };
+    lineaParadaRepo = { findOne: jest.fn(async () => null) };
     auditRepo = { create: jest.fn(async () => ({})) };
     lineaService = { findOne: jest.fn() };
     parqueoService = { findOne: jest.fn() };
@@ -111,6 +114,7 @@ describe("UnidadService", () => {
         if (entity === UnidadEntity) return txUnidadRepo;
         if (entity === EmployeeEntity) return employeeRepo;
         if (entity === AsignacionUnidadEntity) return txAsignacionUnidadRepo;
+        if (entity === LineaParadaEntity) return lineaParadaRepo;
         throw new Error(`unexpected repository requested: ${String(entity)}`);
       }),
       // Default: no pilot assignment found for any unit.
@@ -120,6 +124,7 @@ describe("UnidadService", () => {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === UnidadEntity) return unidadRepo;
         if (entity === AsignacionUnidadEntity) return asignacionUnidadRepo;
+        if (entity === LineaParadaEntity) return lineaParadaRepo;
         throw new Error(`unexpected repository requested: ${String(entity)}`);
       }),
       query: makePilotQueryDispatcher({}),
