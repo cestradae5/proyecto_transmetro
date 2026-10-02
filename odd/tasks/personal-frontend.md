@@ -41,7 +41,7 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 ## Tasks
 - [x] F1 API roles endpoint: `GET /personal/roles` (active roles: id, code, name), permission-guarded, Swagger, unit tests.
 - [x] F2 Web foundation: types, `permissions.ts`, API error mapping, roles + employees hooks (`use-empleados`, `use-roles`), specs.
-- [ ] F3 Employee list UI: page, table with search/status/role filters (server-side), loading/error/empty states, route `/personal` + landing card navigation, specs.
+- [x] F3 Employee list UI: page, table with search/status/role filters (server-side), loading/error/empty states, route `/personal` + landing card navigation, specs.
 - [ ] F4 Create/edit form + dialog: all fields, manual validation (DPI 13 digits, phone, email, date), 409/400 error display, specs.
 - [ ] F5 Delete + status flow: confirm, 409 "deactivate instead" message, permission-gated actions, specs.
 - [ ] F6 E2E + docs: Playwright path if feasible against preview, feature README.
@@ -62,10 +62,12 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 - Exploration: delegated (mapping across 4+ files: API contract, front pattern, routing, tests).
 - F1: delegated writer (7 files). Parent read controller and service diff and re-ran the focused tests.
 - F2: delegated writer (9 files). Parent read the main hook and re-ran tests and tsc.
+- F3: delegated writer (9 files). Parent read the page and routing diff and re-ran tests and tsc.
 - 2026-10-02 F2 done, commit `7a4e516` on `feature/personal-frontend-02-web-foundation` (+684, 9 files: ~247 source, ~437 specs). Checks: `npm test -w @transmetro/admin-web -- personal` 4 files / 30 tests (writer + parent re-run); full web suite 35 files / 255 tests; `npx tsc -b` exit 0 (parent re-run; writer fixed one TS2532 in its own spec). Notes: `permissions.ts` reuses `hasPermission` from fleet; `getPersonalErrorMessage` exported next to `mapPersonalError`; `search` is trimmed and omitted when blank; request-id guard ignores stale responses; `EmpleadoPayload` split into Create/Update types. Parent read `use-empleados.ts` in full. RDD: not run.
+- 2026-10-02 F3 done, commit `6be8e62` on `feature/personal-frontend-03-list-ui` (+535/-1, 9 files, mostly specs; over the ~400 heuristic, nothing trimmed). Checks: `npm test -w @transmetro/admin-web -- personal` 7 files / 45 tests (writer); full web suite 38 files / 271 tests and `npx tsc -b` exit 0 (parent re-run); `npm run build -w @transmetro/admin-web` ok (writer). Notes: search debounced 300 ms before reaching the hook; roles failure disables the role filter with a non-blocking notice; hire date shown DD/MM/YYYY by string split (no Date, no TZ shift); page spec mocks `apiClient` so the debounce test asserts the real URL. Parent read `index.tsx` in full and the routing/landing diff. RDD: not run.
 
 ## Key learnings
 - The backend ODD (`personal-backend`) listed role administration as out of scope and validated `roleId` server-side (exists and active), but never asked how a client discovers valid role IDs. It was a client-contract gap that only surfaced when the first consumer (this frontend) was explored.
 
 ## Next step
-F3 on `feature/personal-frontend-03-list-ui` (branched from the F2 branch).
+F4 on `feature/personal-frontend-04-form` (branched from the F3 branch).
