@@ -3,6 +3,17 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { UnidadesTable } from "../../features/fleet/components/unidades/unidades-table";
 import { EstadoUnidad, type Unidad } from "../../features/fleet/types/fleet.types";
 
+vi.mock("../../features/infrastructure/hooks/use-linea-paradas", () => ({
+  useLineaParadas: () => ({
+    lineaParadas: [
+      { idLineaParada: "101", orden: 1, minutosHastaSiguiente: 3, idParada: "p1", idLinea: "4", parada: { nombreParada: "Terminal" } },
+    ],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+  }),
+}));
+
 function unit(overrides: Partial<Unidad>): Unidad {
   return {
     idUnidad: "1",
@@ -33,9 +44,13 @@ function renderTable(props: Partial<Parameters<typeof UnidadesTable>[0]> = {}) {
   const onAssignPilot = vi.fn().mockResolvedValue(undefined);
   const onReassignPilot = vi.fn().mockResolvedValue(undefined);
   const onUnassignPilot = vi.fn().mockResolvedValue(undefined);
+  const onReportLocation = vi.fn().mockResolvedValue(undefined);
+  const onCorrectLocation = vi.fn().mockResolvedValue(undefined);
   render(
     <UnidadesTable
       unidades={UNITS}
+      onReportLocation={onReportLocation}
+      onCorrectLocation={onCorrectLocation}
       canManage
       onUpdate={onUpdate}
       onDelete={onDelete}
@@ -48,7 +63,7 @@ function renderTable(props: Partial<Parameters<typeof UnidadesTable>[0]> = {}) {
       {...props}
     />
   );
-  return { onUpdate, onDelete, onAssignLine, onReassignLine, onUnassignLine, onAssignPilot, onReassignPilot, onUnassignPilot };
+  return { onUpdate, onDelete, onAssignLine, onReassignLine, onUnassignLine, onAssignPilot, onReassignPilot, onUnassignPilot, onReportLocation, onCorrectLocation };
 }
 
 function rowOf(placa: string) {
@@ -175,6 +190,8 @@ describe("UnidadesTable", () => {
       onAssignPilot: vi.fn(),
       onReassignPilot: vi.fn(),
       onUnassignPilot: vi.fn(),
+      onReportLocation: vi.fn(),
+      onCorrectLocation: vi.fn(),
     };
     const { rerender } = render(<UnidadesTable unidades={UNITS} {...props} />);
     fireEvent.change(screen.getByPlaceholderText(/Buscar/), { target: { value: "merc" } });
@@ -188,8 +205,65 @@ describe("UnidadesTable", () => {
     expect(screen.queryByText("P-001")).not.toBeInTheDocument();
   });
 
+  it("shows the report time next to the last stop id when present", () => {
+    renderTable({
+      unidades: [unit({ idUnidad: "9", numeroPlaca: "P-009", idLinea: "4", idLineaParadaActual: "33", fechaReporteUbicacion: "2026-01-02T10:00:00Z" })],
+    });
+    const row = within(rowOf("P-009"));
+    expect(row.getByText("33")).toBeInTheDocument();
+    expect(row.getByText(new Date("2026-01-02T10:00:00Z").toLocaleString("es-GT"))).toBeInTheDocument();
+  });
+
+  it("shows the last stop name instead of the id when nombreParadaActual is present", () => {
+    renderTable({
+      unidades: [
+        unit({
+          idUnidad: "8",
+          numeroPlaca: "P-008",
+          idLinea: "4",
+          idLineaParadaActual: "33",
+          nombreParadaActual: "Plaza Italia",
+          fechaReporteUbicacion: "2026-01-02T10:00:00Z",
+        }),
+      ],
+    });
+    const row = within(rowOf("P-008"));
+    expect(row.getByText("Plaza Italia")).toBeInTheDocument();
+    expect(row.queryByText("33")).not.toBeInTheDocument();
+    expect(row.getByText(new Date("2026-01-02T10:00:00Z").toLocaleString("es-GT"))).toBeInTheDocument();
+  });
+
+  it("disables the location action for units without a line", () => {
+    renderTable();
+    expect(within(rowOf("P-002")).getByRole("button", { name: "Ubicación" })).toBeDisabled();
+    expect(within(rowOf("P-001")).getByRole("button", { name: "Ubicación" })).toBeEnabled();
+  });
+
+  it("opens the location dialog and reports a stop", async () => {
+    const { onReportLocation } = renderTable({
+      unidades: [unit({ idUnidad: "8", numeroPlaca: "P-008", idLinea: "4" })],
+    });
+    fireEvent.click(within(rowOf("P-008")).getByRole("button", { name: "Ubicación" }));
+    expect(screen.getByText("Ubicación de la unidad")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Parada"), { target: { value: "101" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reportar ubicación" }));
+    await waitFor(() => expect(onReportLocation).toHaveBeenCalledWith("8", "101"));
+    await waitFor(() => expect(screen.queryByText("Ubicación de la unidad")).not.toBeInTheDocument());
+  });
+
+  it("opens the location dialog in correction mode and corrects the stop", async () => {
+    const { onCorrectLocation } = renderTable();
+    fireEvent.click(within(rowOf("P-001")).getByRole("button", { name: "Ubicación" }));
+
+    fireEvent.change(screen.getByLabelText("Nueva parada"), { target: { value: "101" } });
+    fireEvent.click(screen.getByRole("button", { name: "Corregir ubicación" }));
+    await waitFor(() => expect(onCorrectLocation).toHaveBeenCalledWith("1", "101"));
+  });
+
   it("is read-only without canManage", () => {
     renderTable({ canManage: false });
+    expect(screen.queryByRole("button", { name: "Ubicación" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Piloto" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Línea" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
