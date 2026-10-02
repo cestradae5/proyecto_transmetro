@@ -28,7 +28,7 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
 - [x] B4 Backend: `GET /fleet/units/my-unit/stops` (`UNIDAD_ASIGNADA_CONSULTAR`) -> ordered stops of the pilot's assigned line `{idLineaParada, idParada, nombre, orden}`; `my-unit` response adds `nombreLinea`; unit + e2e/spec tests
 - [x] P1 FE: types + `PilotHasNoUnitAssigned`/location errors in `fleet-errors.ts` + `use-mi-unidad` hook (load unit, load stops, report location) + tests
 - [x] P2 FE: `MiUnidadPage` (unit card, line, current stop + report time, empty state when no unit) + report-location dialog (POST-only) + tests
-- [ ] P3 FE: route `/fleet/my-unit`; landing card routes PILOTO (no `FLOTA_GESTIONAR`) to it; `/fleet` redirects pilots; tests
+- [x] P3 FE: route `/fleet/my-unit`; landing card routes PILOTO (no `FLOTA_GESTIONAR`) to it; `/fleet` redirects pilots; tests
 - [ ] P4 Full build/test pass + README note
 
 ## Route declaration
@@ -63,5 +63,14 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
   - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
   - Runtime harness: N/A (page not routed yet; wiring is P3).
 
+- P3 commit: `feat(admin-web): route the pilot view and gate the operator fleet view`.
+  - `app/app.tsx`: `/fleet/my-unit` with `requiredModule="fleet"` (PILOTO gets `fleet` from `UNIDAD_ASIGNADA_CONSULTAR`, so the module check passes for pilots); `/fleet` now wraps `FleetPage` in `OperatorOnlyRoute`.
+  - `features/fleet/operator-only-route.tsx`: without `FLOTA_GESTIONAR` the operator view would 403 on every call, so it redirects to `/fleet/my-unit`. Null user also redirects (defensive).
+  - `features/authentication/landing-page.tsx`: the Flota card navigates to `/fleet/my-unit` when the user lacks `FLOTA_GESTIONAR`, else `/fleet`. Card label/description unchanged (it describes the module, not the role).
+  - `npx vitest run src/test/fleet src/test/authentication`: 19 files / 151 tests pass.
+  - `npm test -w @transmetro/admin-web`: 31 files / 225 tests pass.
+  - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
+  - Runtime harness: N/A (no dev-server scenario exercised; routing is covered by the App-level spec driving the real router).
+
 ## Next step
-P3.
+P4.
