@@ -1,7 +1,11 @@
 // Controlador HTTP de autenticación administrativa con Google.
-// Expone 3 endpoints (login/me/logout) con cookies HttpOnly-Secure,
-// validación de origen exacto y header X-Transmetro-Request.
-// No contiene lógica de negocio; delega toda la orquestación a AuthenticationService.
+// Rutas reales: GET google (302 al consent de Google), GET google/callback
+// (canje del código, login y redirect al frontend con el JWT en la query),
+// GET me (verifica el JWT del header Authorization: Bearer) y POST logout (204).
+// Contrato sin estado: no emite cookies, no valida el origen de la petición ni exige
+// el header X-Transmetro-Request, y logout solo responde 204 porque no hay sesión
+// que revocar en el servidor.
+// No contiene lógica de negocio; delega la orquestación a AuthenticationService.
 
 import { Controller, Post, Get, Options, Req, Res, HttpStatus } from "@nestjs/common";
 import { OAuth2Client } from "google-auth-library";
