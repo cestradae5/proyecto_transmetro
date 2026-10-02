@@ -190,10 +190,19 @@ future readers aren't surprised — not blocking, just not yet fixed):
 5. **`force` hard-delete asymmetry**: `ParadaService.remove()` accepts a
    `force` query param for a hard delete; `EstacionService.remove()` and
    `LineaService.remove()` do not expose the same option.
-6. **Dead code in `shared/validators.ts`**: `validateForeignKey`'s fallback
-   path queries a literal `'id'` field that doesn't exist on `Parada`/
-   `Estacion` (their PKs are `idParada`/`idEstacion`). Harmless — the
-   fallback is never reached in practice — but confusing to read.
+6. **`validateForeignKey` is triplicated with divergent contracts**:
+   `shared/validators.ts` (Nest `NotFoundException`, `"… no encontrada"`, FK
+   name supplied by the caller, 4 args) and the two byte-identical
+   `fk-validation.helper.ts` files under `shared/` and
+   `infrastructure/shared/` (domain `NotFoundError`, `"… no existe."`,
+   hardcoded `{ id }` primary key, 3 args). The helper in `shared/validators.ts`
+   is the only one the services actually use; the other two hardcode `id`,
+   which is *not* a primary key on `Parada`/`Estacion`/`Parqueo` (`idParada`/
+   `idEstacion`/`idParqueo`), so they only work against entities that really do
+   have a plain `id`. All four services import only `shared/validators.ts`; the
+   `infrastructure/shared/validators/` copy has no importer at all. Merging them
+   is a separate decision — it changes the exception type and message, so it is
+   a behavior change, not a refactor.
 
 See the `infraestructura-hardening` SDD change history for the full PR-by-PR
 breakdown (PR#1 permissions, PR#2 Parada/Estación/Parqueo tests, PR#3 Línea
