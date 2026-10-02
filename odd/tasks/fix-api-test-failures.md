@@ -36,7 +36,7 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
 - [x] T1 Diagnose auth spec drift (googleVerifier, guard Bearer contract, RED markers)
 - [x] T2 `authentication-foundation.spec.ts`: 4-arg constructor, real `googleVerifier` stub, JWT assertions, drop `sessionHash`/session-repo expectations
 - [x] T3 `authentication.guard.spec.ts` + `security.spec.ts`: Bearer + `verifyToken`, drop cookie-extraction blocks, delete `SESSION_COOKIE_FLAGS_*` and `expect(true)` placeholders
-- [ ] T4 `parada.service.spec.ts` + `estacion.service.spec.ts`: numeric id expectations, fix the 0-call `remove` case
+- [x] T4 `parada.service.spec.ts` + `estacion.service.spec.ts`: numeric id expectations, fix the 0-call `remove` case
 - [ ] T5 `authentication.e2e-spec.ts`: drop un-implemented CORS / `X-Transmetro-Request` expectations, keep and fix real ones
 - [ ] T6 Full green run: `npm test`, `npm run test:e2e`, `npm run build -w @transmetro/api`
 
@@ -135,6 +135,29 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
   - `npx cross-env NODE_OPTIONS=--experimental-vm-modules npx jest authentication.guard security` → `Test Suites: 2 passed, 2 total` / `Tests: 16 passed, 16 total`.
   - `npm test` → `Test Suites: 2 failed, 33 passed, 35 total` / `Tests: 4 failed, 405 passed, 409 total` (was 4 failed / 19 failed). Suite count for this pair is now 0 failed.
 
+### T4 — `parada.service.spec.ts` + `estacion.service.spec.ts`
+**Investigation of the `remove` case that recorded 0 calls — no production defect.**
+`ParadaService.remove(id, force = false)` (`src/infrastructure/parada/parada.service.ts:43-52`)
+soft-deletes by loading the entity, assigning `parada.estadoParada = EstadoParada.CERRADA`,
+and persisting it with `this.paradaRepository.save(parada)`. It never calls
+`paradaRepository.update(...)` and never calls `paradaRepository.remove(...)` on the
+soft path. The spec asserted `repository.update` had been called, so the count was 0.
+The *intent* of the test — "soft-deletes by setting estadoParada to CERRADA when force
+is false" — is exactly what production does; only the asserted persistence mechanism was
+wrong. Not a defect, so no production change.
+- `findOne` / `update`: the service parses the route id with `Number(id)` because
+  `id_parada` is a `bigint` column. Specs expected the raw string `"1"`; corrected to `1`.
+- `remove` soft-delete: now asserts `repository.save` received the loaded entity with
+  `estadoParada: CERRADA`, and that **neither** `update` nor `remove` was called — the
+  hard-delete path is now also pinned by asserting `save` is not called when `force` is true.
+- `estacion.service.spec.ts`: same `Number(id)` correction for `findOne`
+  (`{ where: { idEstacion: 1 } }`).
+- No tests deleted in this task; none had a missing subject or an empty assertion.
+- Evidence:
+  - `npm test` → `Test Suites: 35 passed, 35 total` / `Tests: 409 passed, 409 total`, exit code 0.
+  - Unit baseline was `5 failed suites / 25 failed tests / 401 passed`; now `0 / 0 / 409`.
+    Total test count dropped 426 → 409 purely from the 17 deliberate deletions in T3.
+
 ### Documented gaps (not defects, not implemented scope)
 - **Cookie-session design is entirely absent from production**: no `sessionHash` in
   `LoginResult`, no `SessionRepository` use in `login`, no
@@ -149,4 +172,4 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
   that parsing is covered, HTTP enforcement is not implemented.
 
 ## Next step
-T4.
+T5.

@@ -150,7 +150,8 @@ describe("EstacionService", () => {
 
       const result = await service.findOne("1");
 
-      expect(estacionRepository.findOne).toHaveBeenCalledWith({ where: { idEstacion: "1" } });
+      // The service parses the route id to a number: id_estacion is a bigint column.
+      expect(estacionRepository.findOne).toHaveBeenCalledWith({ where: { idEstacion: 1 } });
       expect(result).toEqual(
         expect.objectContaining({ idEstacion: "1", nombreEstacion: "Estación Central" }),
       );

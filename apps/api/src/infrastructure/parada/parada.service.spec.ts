@@ -97,7 +97,8 @@ describe("ParadaService", () => {
 
       const result = await service.findOne("1");
 
-      expect(repository.findOne).toHaveBeenCalledWith({ where: { idParada: "1" } });
+      // The service parses the route id to a number: id_parada is a bigint column.
+      expect(repository.findOne).toHaveBeenCalledWith({ where: { idParada: 1 } });
       expect(result).toEqual(parada);
     });
 
@@ -121,7 +122,8 @@ describe("ParadaService", () => {
       const dto: UpdateParadaDto = { nombreParada: "Parada Renombrada" };
       const result = await service.update("1", dto);
 
-      expect(repository.update).toHaveBeenCalledWith({ idParada: "1" }, dto);
+      // The service parses the route id to a number: id_parada is a bigint column.
+      expect(repository.update).toHaveBeenCalledWith({ idParada: 1 }, dto);
       expect(result).toEqual(updated);
     });
 
@@ -139,14 +141,16 @@ describe("ParadaService", () => {
     it("soft-deletes by setting estadoParada to CERRADA when force is false", async () => {
       const existing = makeParada();
       repository.findOne.mockResolvedValue(existing);
-      repository.update.mockResolvedValue({ affected: 1 });
+      repository.save.mockResolvedValue(existing);
 
       await service.remove("1");
 
-      expect(repository.update).toHaveBeenCalledWith(
-        { idParada: "1" },
-        { estadoParada: EstadoParada.CERRADA },
+      // Soft delete mutates the loaded entity and persists it with save(); it
+      // deliberately does not go through update() or remove().
+      expect(repository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ estadoParada: EstadoParada.CERRADA }),
       );
+      expect(repository.update).not.toHaveBeenCalled();
       expect(repository.remove).not.toHaveBeenCalled();
     });
 
@@ -159,6 +163,7 @@ describe("ParadaService", () => {
 
       expect(repository.remove).toHaveBeenCalledWith(existing);
       expect(repository.update).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when removing a parada that does not exist", async () => {
