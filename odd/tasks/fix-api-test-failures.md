@@ -321,5 +321,24 @@ Production code changed: **one production file**, in T8 only —
 `findOne`. T7 is comment-only and T9 is documentation-only. T1-T5 touched only
 `*.spec.ts` / `*.e2e-spec.ts` and this document.
 
+## Outstanding gap found while fixing this (not in this branch)
+`authentication.controller.ts` passes the JWT to the admin-web in the **redirect query
+string** (`${FRONTEND_URL}/login?token=…`). An inline comment near that line claims the
+token goes in the URL *fragment*, so the comment is wrong the same way the old header was.
+The query string is the actual security concern: it lands in access logs, `Referer` headers
+and browser history, where the fragment does not. Not fixed here — same defect class as T7
+but a real security decision, so it needs its own change.
+
+## Environment note (2026-10-02, Engram)
+Engram memory writes failed for this whole session with "could not confirm Engram session
+registration" while reads and `mem_doctor` stayed healthy (9/9 checks ok, WAL, no lock
+contention). Diagnosis: the runtime never registered a session ID for this OpenCode session,
+and `mem_save` requires a confirmed one. **Not** store corruption. `engram` was 2.2.1 with
+3.0.0 available; upgraded to 3.0.0 — which required the `/v3` Go module path
+(`github.com/Gentleman-Programming/engram/v3/cmd/engram@latest`), since `/v2@latest` still
+resolves to 2.2.1. This document is the recovery surface for the session's findings because
+memory writes were unavailable. Restart the agent runtime after upgrading so the MCP
+re-registers against the new binary.
+
 ## Next step
 Delivery decision (PR).
