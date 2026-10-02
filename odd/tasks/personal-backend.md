@@ -48,7 +48,7 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 | 4 | `feature/personal-backend-04-audit-e2e-docs` | PR 3 branch | E5 |
 
 ## Tasks
-- [ ] E1 Schema + entity: add 7 columns to `tbl_empleado` in `init.sql` (idempotent ALTER, partial unique index on DPI) and map them in `EmployeeEntity`; test.
+- [x] E1 Schema + entity: add 7 columns to `tbl_empleado` in `init.sql` (idempotent ALTER, partial unique index on DPI) and map them in `EmployeeEntity`; test.
 - [ ] E2 DTOs + service: Create/Update/Query/Response DTOs (DPI required, 13 digits); `PersonalService` create, findAll (filters: search, status, roleId), findOne, update, remove (physical delete); unit tests.
 - [ ] E3 Business rules: 409 on duplicate email/DPI, role must exist and be active, licence required when role is PILOTO (create + update + role change), cannot delete yourself, delete blocked by FK -> 409 with "deactivate instead" message; unit tests.
 - [ ] E4 Controller + module + wiring: `personal/empleados` routes with `@Permissions("EMPLEADOS_PERFILES_ADMINISTRAR")`, Swagger docs, `PersonalModule` imported in `AppModule`; controller tests.
@@ -65,8 +65,11 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 - 2026-10-02: feature doc created; exploration done (pattern: `infrastructure/parada`; seed grants the permission to OPERADOR_CENTRAL and ADMINISTRADOR_SISTEMA; 7 tables FK to `tbl_empleado`).
 - 2026-10-02: user decisions applied (hard delete, DPI mandatory, licence mandatory for PILOTO, feature-branch-chain).
 
+- 2026-10-02 E1 done, commit `51f7edc` on `feature/personal-backend-01-schema` (+93 lines: init.sql 16, entity 21, spec 56). Checks: `npm test -w @transmetro/api -- employee.entity` 15/15; full `npm test -w @transmetro/api` 37/37 suites, 432/432 tests (writer); `npm run build -w @transmetro/api` passed (writer); focused test re-run by parent after amend: 15/15. Not run: `init.sql` against a real database (covered later by E5 e2e). RDD: off (global), no native review.
+- Running authored count: ~93 lines (E1).
+
 ## Route declaration
-(filled per task as work proceeds)
+- E1: delegated writer (3 files: init.sql, entity, spec; writer trigger). Parent spot-checked diff and re-ran the focused test.
 
 ## Next step
-Create PR 1 branch and start E1.
+E2 on `feature/personal-backend-02-service` (branch from the E1 branch).
