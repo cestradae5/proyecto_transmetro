@@ -5,6 +5,7 @@ import { DataSource, type EntityManager } from "typeorm";
 import { AUDIT_RESULTS } from "../../authentication/entities/audit-log.entity.js";
 import { EmployeeEntity } from "../../authentication/entities/employee.entity.js";
 import { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
+import { LineaParadaEntity } from "../../infrastructure/linea/linea-parada.entity.js";
 import { LineaService } from "../../infrastructure/linea/linea.service.js";
 import { ParqueoService } from "../../infrastructure/parqueo/parqueo.service.js";
 import { AsignacionUnidadEntity } from "../asignacion-unidad/asignacion-unidad.entity.js";
@@ -277,6 +278,19 @@ export class UnidadService {
 
     if (lineAssignment) {
       response.idLinea = lineAssignment.idLinea;
+      response.idLineaParadaActual = lineAssignment.idLineaParadaActual ?? undefined;
+      response.fechaReporteUbicacion = lineAssignment.fechaReporteUbicacion ?? undefined;
+      if (lineAssignment.idLineaParadaActual) {
+        // One narrow joined query per unit with a current stop (acceptable
+        // per-unit composition cost, same as the line/parqueo lookups).
+        const stop = await queryable.getRepository(LineaParadaEntity).findOne({
+          where: { idLineaParada: lineAssignment.idLineaParadaActual },
+          relations: { parada: true },
+        });
+        if (stop?.parada?.nombreParada) {
+          response.nombreParadaActual = stop.parada.nombreParada;
+        }
+      }
       const linea = await this.lineaService.findOne(lineAssignment.idLinea);
       response.parqueo = await this.parqueoService.findOne(linea.idParqueo);
     }

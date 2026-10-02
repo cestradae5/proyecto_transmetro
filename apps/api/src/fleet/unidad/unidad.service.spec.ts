@@ -6,6 +6,7 @@ import { EmployeeEntity } from "../../authentication/entities/employee.entity.js
 import type { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
 import type { LineaService } from "../../infrastructure/linea/linea.service.js";
 import type { ParqueoService } from "../../infrastructure/parqueo/parqueo.service.js";
+import { LineaParadaEntity } from "../../infrastructure/linea/linea-parada.entity.js";
 import { AsignacionUnidadEntity } from "../asignacion-unidad/asignacion-unidad.entity.js";
 import { FLEET_AUDIT_ACTIONS, FLEET_MODULE } from "../shared/fleet.constants.js";
 import {
@@ -79,6 +80,7 @@ describe("UnidadService", () => {
   let employeeRepo: { findOneOrFail: AnyMock };
   let asignacionUnidadRepo: { findOne: AnyMock };
   let txAsignacionUnidadRepo: { findOne: AnyMock };
+  let lineaParadaRepo: { findOne: AnyMock };
   let manager: { getRepository: AnyMock; query: AnyMock };
   let dataSource: { getRepository: AnyMock; query: AnyMock; transaction: AnyMock };
   let auditRepo: { create: AnyMock };
@@ -102,6 +104,7 @@ describe("UnidadService", () => {
     // reconciliation note on makePilotQueryDispatcher above).
     asignacionUnidadRepo = { findOne: jest.fn(async () => null) };
     txAsignacionUnidadRepo = { findOne: jest.fn(async () => null) };
+    lineaParadaRepo = { findOne: jest.fn(async () => null) };
     auditRepo = { create: jest.fn(async () => ({})) };
     lineaService = { findOne: jest.fn() };
     parqueoService = { findOne: jest.fn() };
@@ -111,6 +114,7 @@ describe("UnidadService", () => {
         if (entity === UnidadEntity) return txUnidadRepo;
         if (entity === EmployeeEntity) return employeeRepo;
         if (entity === AsignacionUnidadEntity) return txAsignacionUnidadRepo;
+        if (entity === LineaParadaEntity) return lineaParadaRepo;
         throw new Error(`unexpected repository requested: ${String(entity)}`);
       }),
       // Default: no pilot assignment found for any unit.
@@ -120,6 +124,7 @@ describe("UnidadService", () => {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === UnidadEntity) return unidadRepo;
         if (entity === AsignacionUnidadEntity) return asignacionUnidadRepo;
+        if (entity === LineaParadaEntity) return lineaParadaRepo;
         throw new Error(`unexpected repository requested: ${String(entity)}`);
       }),
       query: makePilotQueryDispatcher({}),
@@ -373,6 +378,45 @@ describe("UnidadService", () => {
       expect(result.parqueo).toEqual(
         expect.objectContaining({ idParqueo: "5", nombreParqueo: "Parqueo Central" }),
       );
+    });
+
+    it("exposes idLineaParadaActual and fechaReporteUbicacion when the assignment has a current stop", async () => {
+      const reportDate = new Date("2026-02-03T10:00:00Z");
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+      asignacionUnidadRepo.findOne.mockResolvedValue({
+        ...makeAsignacionUnidad("10"),
+        idLineaParadaActual: "77",
+        fechaReporteUbicacion: reportDate,
+      });
+      lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: "5" });
+      parqueoService.findOne.mockResolvedValue({ idParqueo: "5", nombreParqueo: "Central" });
+
+      const result = await service.findOne("1");
+
+      expect(result.idLineaParadaActual).toBe("77");
+      expect(result.fechaReporteUbicacion).toEqual(reportDate);
+    });
+
+    it("leaves current stop fields undefined when the assignment has a null stop", async () => {
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+      asignacionUnidadRepo.findOne.mockResolvedValue(makeAsignacionUnidad("10"));
+      lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: "5" });
+      parqueoService.findOne.mockResolvedValue({ idParqueo: "5", nombreParqueo: "Central" });
+
+      const result = await service.findOne("1");
+
+      expect(result.idLinea).toBe("10");
+      expect(result.idLineaParadaActual).toBeUndefined();
+      expect(result.fechaReporteUbicacion).toBeUndefined();
+    });
+
+    it("leaves current stop fields undefined when the unit has no line assignment", async () => {
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+
+      const result = await service.findOne("1");
+
+      expect(result.idLineaParadaActual).toBeUndefined();
+      expect(result.fechaReporteUbicacion).toBeUndefined();
     });
 
     it("includes the derived idEmpleadoPiloto when the unit has a pilot assignment", async () => {

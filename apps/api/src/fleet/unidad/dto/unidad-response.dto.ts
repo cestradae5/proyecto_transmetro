@@ -9,8 +9,9 @@ import { EstadoUnidad } from "../unidad.entity.js";
 // (raw SQL against the baseline tables, not their Slice 3/4 TypeORM
 // entities) and composes `parqueo` via LineaService/ParqueoService
 // (design.md Decision 8). `idLineaParadaActual`/`fechaReporteUbicacion`
-// stay `undefined` (omitted from JSON, not `null`) until Slice 3 adds the
-// location-reporting columns on AsignacionUnidadEntity.
+// stay `undefined` (omitted from JSON, not `null`) until a location is
+// reported; `nombreParadaActual` is the resolved stop name (omitted when the
+// stop row is missing).
 export class UnidadResponseDto {
   @ApiProperty({ description: "ID de la unidad" })
   idUnidad!: string;
@@ -50,6 +51,9 @@ export class UnidadResponseDto {
 
   @ApiPropertyOptional({ description: "ID de la última parada reportada (si existe)" })
   idLineaParadaActual?: string;
+
+  @ApiPropertyOptional({ description: "Nombre de la última parada reportada (si existe)" })
+  nombreParadaActual?: string;
 
   @ApiPropertyOptional({ description: "Fecha del último reporte de ubicación" })
   fechaReporteUbicacion?: Date;
