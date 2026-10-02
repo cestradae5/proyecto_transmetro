@@ -443,4 +443,20 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
 
 ALTER TABLE tbl_bitacora ADD COLUMN IF NOT EXISTS detalle JSONB;
 
+-- tbl_empleado: perfil de RR. HH. del módulo Personal. Todas las columnas son
+-- nullable para que las filas existentes (p. ej. el admin del seed) sigan
+-- funcionando. La API exige el DPI como obligatorio; la columna queda nullable
+-- solo por compatibilidad con filas legacy. El índice único parcial garantiza
+-- que el DPI no se repita cuando está presente.
+
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS telefono_emple VARCHAR(20);
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS dpi_emple VARCHAR(13);
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS fecha_ingreso_emple DATE;
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS direccion_emple VARCHAR(255);
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS licencia_emple VARCHAR(30);
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS historial_educativo_emple TEXT;
+ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS idiomas_emple TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_empleado_dpi ON tbl_empleado (dpi_emple) WHERE dpi_emple IS NOT NULL;
+
 COMMIT;
