@@ -26,6 +26,7 @@ import type { AuditActor } from "../fleet/shared/fleet.contracts.js";
 import type { CreateEmployeeDto } from "./dto/create-employee.dto.js";
 import { EmployeeResponseDto } from "./dto/employee-response.dto.js";
 import type { QueryEmployeesDto } from "./dto/query-employees.dto.js";
+import type { RoleResponseDto } from "./dto/role-response.dto.js";
 import type { UpdateEmployeeDto } from "./dto/update-employee.dto.js";
 import {
   PERSONAL_AUDIT_ACTIONS,
@@ -150,6 +151,15 @@ export class PersonalService {
       order: { name: "ASC" },
     });
     return employees.map(toEmployeeResponse);
+  }
+
+  /** Active roles only, ordered by name; lets clients discover valid `roleId` values. */
+  async findRoles(): Promise<RoleResponseDto[]> {
+    const roles = await this.roleRepository.find({
+      where: { active: true },
+      order: { name: "ASC" },
+    });
+    return roles.map(({ id, code, name }) => ({ id, code, name }));
   }
 
   async findOne(id: string): Promise<EmployeeResponseDto> {
