@@ -39,7 +39,7 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 - Branch: `feature/personal-frontend` (from `main` 46c0ffa).
 
 ## Tasks
-- [ ] F1 API roles endpoint: `GET /personal/roles` (active roles: id, code, name), permission-guarded, Swagger, unit tests.
+- [x] F1 API roles endpoint: `GET /personal/roles` (active roles: id, code, name), permission-guarded, Swagger, unit tests.
 - [ ] F2 Web foundation: types, `permissions.ts`, API error mapping, roles + employees hooks (`use-empleados`, `use-roles`), specs.
 - [ ] F3 Employee list UI: page, table with search/status/role filters (server-side), loading/error/empty states, route `/personal` + landing card navigation, specs.
 - [ ] F4 Create/edit form + dialog: all fields, manual validation (DPI 13 digits, phone, email, date), 409/400 error display, specs.
@@ -56,11 +56,14 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 ## Progress / evidence
 - 2026-10-02: feature doc created after exploration (pattern mapped from `fleet` and `infrastructure`; roles lookup gap found; user chose a new endpoint).
 
+- 2026-10-02 F1 done, commit `f01b82e` on `feature/personal-frontend-01-roles-endpoint` (+166/-4, 7 files). Separate `PersonalRolesController` at `personal/roles` so `GET :id` can never capture it. Checks: `npm test -w @transmetro/api -- personal` 5 suites / 85 tests (writer + parent re-run); full api suite 42 suites / 517 tests; `npm run build -w @transmetro/api` ok (writer). Not done: e2e extension (needs real Postgres test DB); parent read controller and service diff. RDD: not run (candidate not assessed).
+
 ## Route declaration
 - Exploration: delegated (mapping across 4+ files: API contract, front pattern, routing, tests).
+- F1: delegated writer (7 files). Parent read controller and service diff and re-ran the focused tests.
 
 ## Key learnings
 - The backend ODD (`personal-backend`) listed role administration as out of scope and validated `roleId` server-side (exists and active), but never asked how a client discovers valid role IDs. It was a client-contract gap that only surfaced when the first consumer (this frontend) was explored.
 
 ## Next step
-Start F1 on `feature/personal-frontend-01-roles-endpoint`.
+F2 on `feature/personal-frontend-02-web-foundation` (branched from the F1 branch).
