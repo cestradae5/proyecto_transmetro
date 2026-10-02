@@ -37,7 +37,7 @@ Un-implemented cookie-session scope, now a documented gap rather than a broken t
 - [x] T2 `authentication-foundation.spec.ts`: 4-arg constructor, real `googleVerifier` stub, JWT assertions, drop `sessionHash`/session-repo expectations
 - [x] T3 `authentication.guard.spec.ts` + `security.spec.ts`: Bearer + `verifyToken`, drop cookie-extraction blocks, delete `SESSION_COOKIE_FLAGS_*` and `expect(true)` placeholders
 - [x] T4 `parada.service.spec.ts` + `estacion.service.spec.ts`: numeric id expectations, fix the 0-call `remove` case
-- [ ] T5 `authentication.e2e-spec.ts`: drop un-implemented CORS / `X-Transmetro-Request` expectations, keep and fix real ones
+- [x] T5 `authentication.e2e-spec.ts`: drop un-implemented CORS / `X-Transmetro-Request` expectations, keep and fix real ones
 - [ ] T6 Full green run: `npm test`, `npm run test:e2e`, `npm run build -w @transmetro/api`
 
 ## Route declaration
@@ -158,6 +158,69 @@ wrong. Not a defect, so no production change.
   - Unit baseline was `5 failed suites / 25 failed tests / 401 passed`; now `0 / 0 / 409`.
     Total test count dropped 426 → 409 purely from the 17 deliberate deletions in T3.
 
+### T5 — `test/authentication.e2e-spec.ts`
+**How `.env` must be loaded (exact, Windows PowerShell, from `apps/api`):**
+```powershell
+Get-Content .env | Where-Object { $_ -match '^\s*[^#\s][^=]*=' } |
+  ForEach-Object { $k,$v = $_ -split '=',2; Set-Item -Path "Env:$($k.Trim())" -Value $v.Trim() }
+npm run test:e2e
+```
+`node --env-file=.env` is **not** usable here: Node rejects `--env-file` inside
+`NODE_OPTIONS` (`--env-file= is not allowed in NODE_OPTIONS`, verified on Node v24.16.0),
+and `npm run test:e2e` sets `NODE_OPTIONS` itself. `test/jest-e2e.json` has no dotenv
+`setupFiles`, so the shell must supply the variables.
+
+**This is not optional.** Measured, with the baseline `main` code:
+- without `.env`: `Test Suites: 5 failed, 1 passed, 6 total` / `Tests: 51 failed, 9 passed, 60 total`
+- with `.env`: `Test Suites: 1 failed, 5 passed, 6 total` / `Tests: 10 failed, 50 passed, 60 total`
+The four extra red suites (`unidad`, `piloto`, `asignacion-unidad`, `asignacion-piloto`)
+were **not** spec drift: they already send `Authorization: Bearer`, and their 401s came
+from `JWT_SECRET` falling back to the hard-coded default while `ConfigModule.forRoot()`
+loaded the real secret from `.env`. All 4 pass once `.env` is exported. Verified in
+isolation: `jest --config test/jest-e2e.json test/unidad.e2e-spec.ts` → `6 passed`.
+
+**Spec changes.** The mock service now exposes `verifyToken(token)` instead of
+`me(hash)`, and requests carry `Authorization: Bearer`.
+- Kept and now meaningful: `/me` 401 without a header (with a session cookie deliberately
+  attached, proving cookies are ignored), `/me` 401 for an invalid token,
+  `POST /logout` 204 idempotent, `GET /logout` 404 (POST-only).
+- Rewritten against the real surface: `GET /authentication/google` now asserts the
+  **302 to `accounts.google.com/o/oauth2/v2/auth`** with `client_id`, `response_type=code`,
+  `scope=openid+email+profile`, `access_type=offline`, `prompt=select_account` and the
+  `/authentication/google/callback` redirect_uri (it previously POSTed to a route that
+  only answers `GET`, hence a 404); `GET /authentication/google/callback` without a
+  `code` asserts the real `302 → <frontend>/login?error=denied`;
+  `/me` with a valid token asserts the exact `MeResult` body.
+- `POST /authentication/logout` now asserts **204 with no `Set-Cookie`** — the honest
+  stateless contract, replacing a `Max-Age=0` cookie-clearing expectation.
+- **8 tests deleted, each with its reason:**
+  1. `POST /authentication/google returns 200 with Set-Cookie header` — there is no
+     `POST /authentication/google` route (the controller declares `@Get("google")`), and
+     no cookie is ever set. Returned 404 against a real controller.
+  2. `POST /authentication/google returns sessionHash as SHA-256 only` — no `sessionHash`
+     exists in `LoginResult`. Returned 404.
+  3. `POST /authentication/google returns 403 for forbidden origin` — no Origin
+     enforcement is implemented. Returned 404.
+  4. `POST /authentication/google returns 403 when X-Transmetro-Request header is missing` —
+     no `X-Transmetro-Request` enforcement. Returned 404.
+  5. `POST /authentication/google returns 503 when verifier fails` — the whole test
+     exercised a route that does not exist; it built a second Nest app and a failing
+     service mock to assert a 503 that production cannot produce. Returned 404.
+  6. `OPTIONS /authentication/google returns 204 with CORS headers` — no CORS middleware
+     is wired; returned 404.
+  7. `OPTIONS /authentication/google returns 403 for non-allowed origin preflight` — same.
+  8. `POST /authentication/logout without X-Transmetro-Request header returns 403` — no
+     such enforcement; the route returns 204.
+- **2 tests merged as exact duplicates:** the suite asserted `GET /me` without a cookie
+  twice (old L259 and L320) and `GET /me` with an invalid session twice (old L267 and
+  L328). One honest assertion each survives, now on the Bearer contract.
+- No assertion was weakened to reach green: every surviving test asserts a status code
+  and a body/header value that the real controller produces.
+- Evidence (with `.env` loaded):
+  - `npm run test:e2e` → `Test Suites: 6 passed, 6 total` / `Tests: 54 passed, 54 total`, exit code 0.
+  - `npm test` → `Test Suites: 35 passed, 35 total` / `Tests: 409 passed, 409 total`, exit code 0.
+  - `npm run build` → exit code 0, no output (clean `nest build`).
+
 ### Documented gaps (not defects, not implemented scope)
 - **Cookie-session design is entirely absent from production**: no `sessionHash` in
   `LoginResult`, no `SessionRepository` use in `login`, no
@@ -171,5 +234,15 @@ wrong. Not a defect, so no production change.
   `ADMIN_WEB_ORIGINS` *configuration value* (exact http/https origins, no wildcard);
   that parsing is covered, HTTP enforcement is not implemented.
 
+## Summary of results (writer-verified)
+| Command | Before | After |
+|---|---|---|
+| `npm test` (apps/api) | 5 failed suites / 25 failed / 401 passed / 426 total | **35 passed suites / 409 passed / 409 total**, exit 0 |
+| `npm run test:e2e` (apps/api, `.env` exported) | 1 failed suite / 10 failed / 50 passed / 60 total | **6 passed suites / 54 passed / 54 total**, exit 0 |
+| `npm run build` (apps/api) | not run at baseline | exit 0, clean `nest build` |
+
+Production code changed: **none**. All five commits touch only `*.spec.ts` /
+`*.e2e-spec.ts` and this document.
+
 ## Next step
-T5.
+T6 — re-verify the baseline comparison from a clean checkout.
