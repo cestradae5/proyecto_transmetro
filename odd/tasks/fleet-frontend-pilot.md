@@ -27,7 +27,7 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
 ## Tasks
 - [x] B4 Backend: `GET /fleet/units/my-unit/stops` (`UNIDAD_ASIGNADA_CONSULTAR`) -> ordered stops of the pilot's assigned line `{idLineaParada, idParada, nombre, orden}`; `my-unit` response adds `nombreLinea`; unit + e2e/spec tests
 - [x] P1 FE: types + `PilotHasNoUnitAssigned`/location errors in `fleet-errors.ts` + `use-mi-unidad` hook (load unit, load stops, report location) + tests
-- [ ] P2 FE: `MiUnidadPage` (unit card, line, current stop + report time, empty state when no unit) + report-location dialog (POST-only) + tests
+- [x] P2 FE: `MiUnidadPage` (unit card, line, current stop + report time, empty state when no unit) + report-location dialog (POST-only) + tests
 - [ ] P3 FE: route `/fleet/my-unit`; landing card routes PILOTO (no `FLOTA_GESTIONAR`) to it; `/fleet` redirects pilots; tests
 - [ ] P4 Full build/test pass + README note
 
@@ -53,5 +53,15 @@ Operator view is merged (PR chain #27-#35). Pilot self-service was the explicit 
   - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
   - Runtime harness: N/A (hook only, no UI consumer yet).
 
+- P2 commit: `feat(admin-web): add pilot MiUnidadPage and POST-only location dialog`.
+  - `components/mi-unidad/mi-unidad-page.tsx`: unit card (placa, marca/modelo, año, estado badge, capacidad), line name, current stop + `Reportada el <fecha>`; empty state for `noUnit` (no alert), amber status + hidden report action when the unit has no line, retryable alert on load error, non-blocking alert on refresh error, back to `/landing`.
+  - Report action gated by `FLEET_REPORT_LOCATION_PERMISSION` (`METRICAS_UNIDAD_REPORTAR`) in `permissions.ts`.
+  - `components/mi-unidad/reportar-ubicacion-dialog.tsx`: POST-only, stops come from the pilot hook (`GET my-unit/stops`), current stop disabled, no "Corregir ubicación" action.
+  - Fix applied while finishing P2: the new pilot components imported `formatReportDate` from the operator `components/unidades/ubicacion-dialog`, which would have dragged `useLineaParadas` (and `/infrastructure/lineas*`, forbidden in the pilot path) into the pilot view. Extracted to `features/fleet/utils/format.ts`; `ubicacion-dialog` and `unidades-table` now import from there. Operator behavior unchanged (same function body, same call sites).
+  - `npx vitest run src/test/fleet`: 15 files / 131 tests pass.
+  - `npm test -w @transmetro/admin-web`: 29 files / 214 tests pass.
+  - `npm run build -w @transmetro/admin-web`: OK (tsc + vite).
+  - Runtime harness: N/A (page not routed yet; wiring is P3).
+
 ## Next step
-P2.
+P3.
