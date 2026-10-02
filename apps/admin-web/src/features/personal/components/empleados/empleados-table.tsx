@@ -3,6 +3,9 @@ import { displayValue, formatHireDate } from "../../utils/format";
 
 interface EmpleadosTableProps {
   empleados: Empleado[];
+  /** When true and `onEdit` is provided, an actions column is shown. */
+  canManage?: boolean;
+  onEdit?: (empleado: Empleado) => void;
 }
 
 const STATUS_BADGE: Record<EmployeeStatus, { label: string; className: string }> = {
@@ -13,7 +16,8 @@ const STATUS_BADGE: Record<EmployeeStatus, { label: string; className: string }>
 const TH = "px-4 py-3 text-left text-sm font-semibold text-slate-700";
 const TD = "px-4 py-3 text-sm text-slate-700";
 
-export function EmpleadosTable({ empleados }: EmpleadosTableProps) {
+export function EmpleadosTable({ empleados, canManage = false, onEdit }: EmpleadosTableProps) {
+  const showActions = canManage && !!onEdit;
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse">
@@ -26,6 +30,7 @@ export function EmpleadosTable({ empleados }: EmpleadosTableProps) {
             <th scope="col" className={TH}>Teléfono</th>
             <th scope="col" className={TH}>Fecha de ingreso</th>
             <th scope="col" className={TH}>Estado</th>
+            {showActions && <th scope="col" className={TH}>Acciones</th>}
           </tr>
         </thead>
         <tbody>
@@ -48,6 +53,17 @@ export function EmpleadosTable({ empleados }: EmpleadosTableProps) {
                     {badge?.label ?? empleado.status}
                   </span>
                 </td>
+                {showActions && (
+                  <td className={TD}>
+                    <button
+                      onClick={() => onEdit(empleado)}
+                      aria-label={`Editar ${empleado.name}`}
+                      className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Editar
+                    </button>
+                  </td>
+                )}
               </tr>
             );
           })}

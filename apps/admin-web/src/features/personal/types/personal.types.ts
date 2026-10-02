@@ -33,8 +33,22 @@ export interface CreateEmpleadoPayload {
   languages?: string;
 }
 
-/** Payload for updating an employee: every field is optional. The DPI is never cleared. */
-export type UpdateEmpleadoPayload = Partial<CreateEmpleadoPayload>;
+/** Optional columns that the API stores as nullable and clears when it receives `null`. */
+type ClearableField =
+  | "phone"
+  | "hireDate"
+  | "address"
+  | "licenseNumber"
+  | "educationHistory"
+  | "languages";
+
+/**
+ * Payload for updating an employee: every field is optional. The DPI is never
+ * cleared. Nullable optional columns accept `null` to clear the stored value.
+ */
+export type UpdateEmpleadoPayload = Partial<Omit<CreateEmpleadoPayload, ClearableField>> & {
+  [K in ClearableField]?: string | null;
+};
 
 /** Create and update payload (update = partial). */
 export type EmpleadoPayload = CreateEmpleadoPayload | UpdateEmpleadoPayload;

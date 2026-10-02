@@ -2,8 +2,18 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useEmpleados } from "./hooks/use-empleados";
 import { useRoles } from "./hooks/use-roles";
+import { useAuth } from "../authentication/auth-context";
+import { canManageEmpleados } from "./permissions";
 import { EmpleadosTable } from "./components/empleados/empleados-table";
-import type { EmployeeStatus } from "./types/personal.types";
+import { EmpleadoDialog } from "./components/empleados/empleado-dialog";
+import type {
+  CreateEmpleadoPayload,
+  Empleado,
+  EmployeeStatus,
+  UpdateEmpleadoPayload,
+} from "./types/personal.types";
+
+type DialogState = { mode: "create" } | { mode: "edit"; empleado: Empleado } | null;
 
 const SEARCH_DEBOUNCE_MS = 300;
 const CONTROL =
@@ -11,6 +21,9 @@ const CONTROL =
 
 export function PersonalPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canManage = canManageEmpleados(user);
+  const [dialog, setDialog] = useState<DialogState>(null);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState<"" | EmployeeStatus>("");
@@ -22,7 +35,7 @@ export function PersonalPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const { items, loading, error, refresh } = useEmpleados({
+  const { items, loading, error, refresh, create, update } = useEmpleados({
     search: debouncedSearch || undefined,
     status: status || undefined,
     roleId: roleId || undefined,
@@ -30,6 +43,16 @@ export function PersonalPage() {
   const { roles, error: rolesError } = useRoles();
 
   const hasActiveFilters = Boolean(debouncedSearch.trim() || status || roleId);
+
+  // Errors thrown here reach the form, which shows them and keeps the dialog open.
+  const handleSave = async (payload: CreateEmpleadoPayload | UpdateEmpleadoPayload) => {
+    if (dialog?.mode === "edit") {
+      await update(dialog.empleado.id, payload);
+    } else {
+      await create(payload as CreateEmpleadoPayload);
+    }
+    setDialog(null);
+  };
 
   return (
     <div className="min-h-screen bg-[#fafbfc]">
@@ -48,6 +71,14 @@ export function PersonalPage() {
             <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight">
               Personal ({items.length})
             </h1>
+            {canManage && (
+              <button
+                onClick={() => setDialog({ mode: "create" })}
+                className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90"
+              >
+                Nuevo empleado
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3 mb-4">
@@ -115,9 +146,23 @@ export function PersonalPage() {
                 : "Aún no hay empleados registrados"}
             </div>
           ) : (
-            <EmpleadosTable empleados={items} />
+            <EmpleadosTable
+              empleados={items}
+              canManage={canManage}
+              onEdit={(empleado) => setDialog({ mode: "edit", empleado })}
+            />
           )}
         </div>
+
+        {canManage && dialog && (
+          <EmpleadoDialog
+            empleado={dialog.mode === "edit" ? dialog.empleado : undefined}
+            roles={roles}
+            rolesError={rolesError}
+            onSave={handleSave}
+            onClose={() => setDialog(null)}
+          />
+        )}
       </main>
     </div>
   );
