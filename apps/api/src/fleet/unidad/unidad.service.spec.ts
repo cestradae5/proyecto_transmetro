@@ -375,6 +375,45 @@ describe("UnidadService", () => {
       );
     });
 
+    it("exposes idLineaParadaActual and fechaReporteUbicacion when the assignment has a current stop", async () => {
+      const reportDate = new Date("2026-02-03T10:00:00Z");
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+      asignacionUnidadRepo.findOne.mockResolvedValue({
+        ...makeAsignacionUnidad("10"),
+        idLineaParadaActual: "77",
+        fechaReporteUbicacion: reportDate,
+      });
+      lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: "5" });
+      parqueoService.findOne.mockResolvedValue({ idParqueo: "5", nombreParqueo: "Central" });
+
+      const result = await service.findOne("1");
+
+      expect(result.idLineaParadaActual).toBe("77");
+      expect(result.fechaReporteUbicacion).toEqual(reportDate);
+    });
+
+    it("leaves current stop fields undefined when the assignment has a null stop", async () => {
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+      asignacionUnidadRepo.findOne.mockResolvedValue(makeAsignacionUnidad("10"));
+      lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: "5" });
+      parqueoService.findOne.mockResolvedValue({ idParqueo: "5", nombreParqueo: "Central" });
+
+      const result = await service.findOne("1");
+
+      expect(result.idLinea).toBe("10");
+      expect(result.idLineaParadaActual).toBeUndefined();
+      expect(result.fechaReporteUbicacion).toBeUndefined();
+    });
+
+    it("leaves current stop fields undefined when the unit has no line assignment", async () => {
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+
+      const result = await service.findOne("1");
+
+      expect(result.idLineaParadaActual).toBeUndefined();
+      expect(result.fechaReporteUbicacion).toBeUndefined();
+    });
+
     it("includes the derived idEmpleadoPiloto when the unit has a pilot assignment", async () => {
       unidadRepo.findOne.mockResolvedValue(makeUnidad());
       dataSource.query = makePilotQueryDispatcher({ pilotRow: { idEmpleado: "emp-9" } });

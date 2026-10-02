@@ -277,6 +277,8 @@ export class UnidadService {
 
     if (lineAssignment) {
       response.idLinea = lineAssignment.idLinea;
+      response.idLineaParadaActual = lineAssignment.idLineaParadaActual ?? undefined;
+      response.fechaReporteUbicacion = lineAssignment.fechaReporteUbicacion ?? undefined;
       const linea = await this.lineaService.findOne(lineAssignment.idLinea);
       response.parqueo = await this.parqueoService.findOne(linea.idParqueo);
     }
