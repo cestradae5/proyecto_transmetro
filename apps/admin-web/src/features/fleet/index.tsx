@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../authentication/auth-context';
 import { useUnidades } from './hooks/use-unidades';
 import { FLEET_MANAGE_PERMISSION, hasPermission } from './permissions';
+import { useLineas } from '../infrastructure/hooks/use-lineas';
+import { useAsignacionUnidad } from './hooks/use-asignacion-unidad';
 import { UnidadesTable } from './components/unidades/unidades-table';
 import { UnidadDialog } from './components/unidades/unidad-dialog';
 import type { CreateUnidadDto } from './types/fleet.types';
@@ -14,6 +16,24 @@ export function FleetPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const { items, loading, error, refresh, createUnidad, updateUnidad, deleteUnidad } = useUnidades();
+  const { lineas, error: lineasError } = useLineas();
+  const { assignLine, reassignLine, unassignLine } = useAsignacionUnidad();
+
+  // Assignment mutations do not refetch; refresh units after each success.
+  const handleAssignLine = async (unitId: string, idLinea: string) => {
+    await assignLine(unitId, idLinea);
+    await refresh();
+  };
+
+  const handleReassignLine = async (unitId: string, idLinea: string) => {
+    await reassignLine(unitId, idLinea);
+    await refresh();
+  };
+
+  const handleUnassignLine = async (unitId: string) => {
+    await unassignLine(unitId);
+    await refresh();
+  };
 
   const handleCreate = async (data: CreateUnidadDto) => {
     await createUnidad(data);
@@ -47,6 +67,12 @@ export function FleetPage() {
             )}
           </div>
 
+          {lineasError && (
+            <div role="status" className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+              No se pudieron cargar las líneas: {lineasError}. Se mostrarán los identificadores y no podrá asignar líneas.
+            </div>
+          )}
+
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-slate-500">Cargando...</div>
@@ -61,9 +87,13 @@ export function FleetPage() {
           ) : (
             <UnidadesTable
               unidades={items}
+              lineas={lineas}
               canManage={canManage}
               onUpdate={updateUnidad}
               onDelete={deleteUnidad}
+              onAssignLine={handleAssignLine}
+              onReassignLine={handleReassignLine}
+              onUnassignLine={handleUnassignLine}
             />
           )}
         </div>

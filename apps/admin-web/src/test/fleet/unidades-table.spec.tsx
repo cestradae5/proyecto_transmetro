@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { UnidadesTable } from "../../features/fleet/components/unidades/unidades-table";
 import { EstadoUnidad, type Unidad } from "../../features/fleet/types/fleet.types";
@@ -27,8 +27,22 @@ const UNITS: Unidad[] = [
 function renderTable(props: Partial<Parameters<typeof UnidadesTable>[0]> = {}) {
   const onUpdate = vi.fn().mockResolvedValue(undefined);
   const onDelete = vi.fn().mockResolvedValue(undefined);
-  render(<UnidadesTable unidades={UNITS} canManage onUpdate={onUpdate} onDelete={onDelete} {...props} />);
-  return { onUpdate, onDelete };
+  const onAssignLine = vi.fn().mockResolvedValue(undefined);
+  const onReassignLine = vi.fn().mockResolvedValue(undefined);
+  const onUnassignLine = vi.fn().mockResolvedValue(undefined);
+  render(
+    <UnidadesTable
+      unidades={UNITS}
+      canManage
+      onUpdate={onUpdate}
+      onDelete={onDelete}
+      onAssignLine={onAssignLine}
+      onReassignLine={onReassignLine}
+      onUnassignLine={onUnassignLine}
+      {...props}
+    />
+  );
+  return { onUpdate, onDelete, onAssignLine, onReassignLine, onUnassignLine };
 }
 
 function rowOf(placa: string) {
@@ -100,8 +114,32 @@ describe("UnidadesTable", () => {
     expect(screen.getByText("Editar Unidad")).toBeInTheDocument();
   });
 
+  it("shows the line name when lines are loaded, falling back to the id", () => {
+    renderTable({ lineas: [{ idLinea: "4", numeroLinea: "L4", nombreLinea: "Norte" } as never] });
+    expect(within(rowOf("P-001")).getByText("Norte")).toBeInTheDocument();
+    expect(within(rowOf("P-001")).queryByText("4")).not.toBeInTheDocument();
+
+    cleanup();
+    renderTable({ lineas: [] });
+    expect(within(rowOf("P-001")).getByText("4")).toBeInTheDocument();
+  });
+
+  it("opens the line assignment dialog from the row action and assigns", async () => {
+    const { onAssignLine } = renderTable({
+      lineas: [{ idLinea: "7", numeroLinea: "L7", nombreLinea: "Oriente" } as never],
+    });
+    fireEvent.click(within(rowOf("P-002")).getByRole("button", { name: "Línea" }));
+    expect(screen.getByText("Asignación de línea")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Línea", { selector: "select" }), { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Asignar" }));
+    await waitFor(() => expect(onAssignLine).toHaveBeenCalledWith("2", "7"));
+    await waitFor(() => expect(screen.queryByText("Asignación de línea")).not.toBeInTheDocument());
+  });
+
   it("is read-only without canManage", () => {
     renderTable({ canManage: false });
+    expect(screen.queryByRole("button", { name: "Línea" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dar de baja" })).not.toBeInTheDocument();
     expect(screen.queryByText("Acciones")).not.toBeInTheDocument();
