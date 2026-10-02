@@ -30,6 +30,9 @@ function renderTable(props: Partial<Parameters<typeof UnidadesTable>[0]> = {}) {
   const onAssignLine = vi.fn().mockResolvedValue(undefined);
   const onReassignLine = vi.fn().mockResolvedValue(undefined);
   const onUnassignLine = vi.fn().mockResolvedValue(undefined);
+  const onAssignPilot = vi.fn().mockResolvedValue(undefined);
+  const onReassignPilot = vi.fn().mockResolvedValue(undefined);
+  const onUnassignPilot = vi.fn().mockResolvedValue(undefined);
   render(
     <UnidadesTable
       unidades={UNITS}
@@ -39,10 +42,13 @@ function renderTable(props: Partial<Parameters<typeof UnidadesTable>[0]> = {}) {
       onAssignLine={onAssignLine}
       onReassignLine={onReassignLine}
       onUnassignLine={onUnassignLine}
+      onAssignPilot={onAssignPilot}
+      onReassignPilot={onReassignPilot}
+      onUnassignPilot={onUnassignPilot}
       {...props}
     />
   );
-  return { onUpdate, onDelete, onAssignLine, onReassignLine, onUnassignLine };
+  return { onUpdate, onDelete, onAssignLine, onReassignLine, onUnassignLine, onAssignPilot, onReassignPilot, onUnassignPilot };
 }
 
 function rowOf(placa: string) {
@@ -137,8 +143,54 @@ describe("UnidadesTable", () => {
     await waitFor(() => expect(screen.queryByText("Asignación de línea")).not.toBeInTheDocument());
   });
 
+  it("shows the pilot name when pilots are loaded, falling back to the id", () => {
+    renderTable({ pilotos: [{ idEmpleado: "emp-9", nombre: "Ana Pérez" }] });
+    expect(within(rowOf("P-001")).getByText("Ana Pérez")).toBeInTheDocument();
+    expect(within(rowOf("P-001")).queryByText("emp-9")).not.toBeInTheDocument();
+
+    cleanup();
+    renderTable({ pilotos: [] });
+    expect(within(rowOf("P-001")).getByText("emp-9")).toBeInTheDocument();
+  });
+
+  it("opens the pilot assignment dialog from the row action and assigns", async () => {
+    const { onAssignPilot } = renderTable({ pilotos: [{ idEmpleado: "e5", nombre: "Luis" }] });
+    fireEvent.click(within(rowOf("P-002")).getByRole("button", { name: "Piloto" }));
+    expect(screen.getByText("Asignación de piloto")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Piloto", { selector: "select" }), { target: { value: "e5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Asignar" }));
+    await waitFor(() => expect(onAssignPilot).toHaveBeenCalledWith("2", "e5"));
+    await waitFor(() => expect(screen.queryByText("Asignación de piloto")).not.toBeInTheDocument());
+  });
+
+  it("keeps search and estado filter state when the units prop is refreshed", () => {
+    const props = {
+      canManage: true,
+      onUpdate: vi.fn(),
+      onDelete: vi.fn(),
+      onAssignLine: vi.fn(),
+      onReassignLine: vi.fn(),
+      onUnassignLine: vi.fn(),
+      onAssignPilot: vi.fn(),
+      onReassignPilot: vi.fn(),
+      onUnassignPilot: vi.fn(),
+    };
+    const { rerender } = render(<UnidadesTable unidades={UNITS} {...props} />);
+    fireEvent.change(screen.getByPlaceholderText(/Buscar/), { target: { value: "merc" } });
+    fireEvent.change(screen.getByLabelText("Filtrar por estado"), { target: { value: "DISPONIBLE" } });
+
+    rerender(<UnidadesTable unidades={UNITS.map((u) => ({ ...u }))} {...props} />);
+
+    expect(screen.getByPlaceholderText(/Buscar/)).toHaveValue("merc");
+    expect(screen.getByLabelText("Filtrar por estado")).toHaveValue("DISPONIBLE");
+    expect(screen.getByText("P-002")).toBeInTheDocument();
+    expect(screen.queryByText("P-001")).not.toBeInTheDocument();
+  });
+
   it("is read-only without canManage", () => {
     renderTable({ canManage: false });
+    expect(screen.queryByRole("button", { name: "Piloto" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Línea" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Editar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Dar de baja" })).not.toBeInTheDocument();

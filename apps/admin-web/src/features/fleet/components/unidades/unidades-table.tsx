@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { EstadoUnidad } from '../../types/fleet.types';
-import type { CreateUnidadDto, Unidad } from '../../types/fleet.types';
+import type { CreateUnidadDto, Piloto, Unidad } from '../../types/fleet.types';
 import type { Linea } from '../../../infrastructure/types/infrastructure.types';
 import { UnidadDialog } from './unidad-dialog';
 import { AsignacionLineaDialog } from './asignacion-linea-dialog';
+import { AsignacionPilotoDialog } from './asignacion-piloto-dialog';
 
 interface UnidadesTableProps {
   unidades: Unidad[];
   /** Lines used to show names and to pick an assignment. Empty if unavailable. */
   lineas?: Linea[];
+  /** Pilots used to show names and to pick an assignment. Empty if unavailable. */
+  pilotos?: Piloto[];
   /** When false the table is read-only (no actions column). */
   canManage: boolean;
   onUpdate: (id: string, data: CreateUnidadDto) => Promise<unknown>;
@@ -16,6 +19,9 @@ interface UnidadesTableProps {
   onAssignLine: (unitId: string, idLinea: string) => Promise<unknown>;
   onReassignLine: (unitId: string, idLinea: string) => Promise<unknown>;
   onUnassignLine: (unitId: string) => Promise<unknown>;
+  onAssignPilot: (unitId: string, idEmpleado: string) => Promise<unknown>;
+  onReassignPilot: (unitId: string, idEmpleado: string) => Promise<unknown>;
+  onUnassignPilot: (unitId: string) => Promise<unknown>;
 }
 
 const ESTADO_BADGE: Record<EstadoUnidad, string> = {
@@ -30,21 +36,30 @@ const TH = 'px-4 py-3 text-left text-sm font-semibold text-slate-700';
 export function UnidadesTable({
   unidades,
   lineas = [],
+  pilotos = [],
   canManage,
   onUpdate,
   onDelete,
   onAssignLine,
   onReassignLine,
   onUnassignLine,
+  onAssignPilot,
+  onReassignPilot,
+  onUnassignPilot,
 }: UnidadesTableProps) {
   const [search, setSearch] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<'' | EstadoUnidad>('');
   const [editingUnidad, setEditingUnidad] = useState<Unidad | null>(null);
   const [assigningUnidad, setAssigningUnidad] = useState<Unidad | null>(null);
+  const [assigningPilotoUnidad, setAssigningPilotoUnidad] = useState<Unidad | null>(null);
 
   const lineaLabel = (idLinea?: string | null) => {
     if (!idLinea) return '-';
     return lineas.find((l) => l.idLinea === idLinea)?.nombreLinea ?? idLinea;
+  };
+  const pilotoLabel = (idEmpleado?: string | null) => {
+    if (!idEmpleado) return '-';
+    return pilotos.find((p) => p.idEmpleado === idEmpleado)?.nombre ?? idEmpleado;
   };
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -133,7 +148,7 @@ export function UnidadesTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">{lineaLabel(unidad.idLinea)}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{unidad.idEmpleadoPiloto || '-'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{pilotoLabel(unidad.idEmpleadoPiloto)}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{unidad.idLineaParadaActual || '-'}</td>
                 {canManage && (
                   <td className="px-4 py-3">
@@ -148,6 +163,12 @@ export function UnidadesTable({
                       className="px-3 py-1 text-sm text-slate-600 hover:text-slate-900 font-medium mr-2"
                     >
                       Línea
+                    </button>
+                    <button
+                      onClick={() => setAssigningPilotoUnidad(unidad)}
+                      className="px-3 py-1 text-sm text-slate-600 hover:text-slate-900 font-medium mr-2"
+                    >
+                      Piloto
                     </button>
                     {unidad.estadoUnidad !== EstadoUnidad.FUERA_DE_SERVICIO && (
                       <button
@@ -177,6 +198,17 @@ export function UnidadesTable({
           onReassign={onReassignLine}
           onUnassign={onUnassignLine}
           onClose={() => setAssigningUnidad(null)}
+        />
+      )}
+      {assigningPilotoUnidad && (
+        <AsignacionPilotoDialog
+          unit={assigningPilotoUnidad}
+          pilotos={pilotos}
+          unidades={unidades}
+          onAssign={onAssignPilot}
+          onReassign={onReassignPilot}
+          onUnassign={onUnassignPilot}
+          onClose={() => setAssigningPilotoUnidad(null)}
         />
       )}
     </div>

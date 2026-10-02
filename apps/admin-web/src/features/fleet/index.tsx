@@ -5,6 +5,8 @@ import { useUnidades } from './hooks/use-unidades';
 import { FLEET_MANAGE_PERMISSION, hasPermission } from './permissions';
 import { useLineas } from '../infrastructure/hooks/use-lineas';
 import { useAsignacionUnidad } from './hooks/use-asignacion-unidad';
+import { usePilotos } from './hooks/use-pilotos';
+import { useAsignacionPiloto } from './hooks/use-asignacion-piloto';
 import { UnidadesTable } from './components/unidades/unidades-table';
 import { UnidadDialog } from './components/unidades/unidad-dialog';
 import type { CreateUnidadDto } from './types/fleet.types';
@@ -18,6 +20,8 @@ export function FleetPage() {
   const { items, loading, error, refresh, createUnidad, updateUnidad, deleteUnidad } = useUnidades();
   const { lineas, error: lineasError } = useLineas();
   const { assignLine, reassignLine, unassignLine } = useAsignacionUnidad();
+  const { items: pilotos, error: pilotosError, refresh: refreshPilotos } = usePilotos();
+  const { assignPilot, reassignPilot, unassignPilot } = useAsignacionPiloto();
 
   // Assignment mutations do not refetch; refresh units after each success.
   const handleAssignLine = async (unitId: string, idLinea: string) => {
@@ -33,6 +37,26 @@ export function FleetPage() {
   const handleUnassignLine = async (unitId: string) => {
     await unassignLine(unitId);
     await refresh();
+  };
+
+  // Pilot mutations change both the unit and the pilot's current unit: refresh both.
+  const refreshAll = async () => {
+    await Promise.all([refresh(), refreshPilotos()]);
+  };
+
+  const handleAssignPilot = async (unitId: string, idEmpleado: string) => {
+    await assignPilot(unitId, idEmpleado);
+    await refreshAll();
+  };
+
+  const handleReassignPilot = async (unitId: string, idEmpleado: string) => {
+    await reassignPilot(unitId, idEmpleado);
+    await refreshAll();
+  };
+
+  const handleUnassignPilot = async (unitId: string) => {
+    await unassignPilot(unitId);
+    await refreshAll();
   };
 
   const handleCreate = async (data: CreateUnidadDto) => {
@@ -73,11 +97,23 @@ export function FleetPage() {
             </div>
           )}
 
-          {loading ? (
+          {pilotosError && (
+            <div role="status" className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+              No se pudieron cargar los pilotos: {pilotosError}. Se mostrarán los identificadores y no podrá asignar pilotos.
+            </div>
+          )}
+
+          {error && items.length > 0 && (
+            <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              No se pudo actualizar la lista: {error}
+            </div>
+          )}
+
+          {loading && items.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-slate-500">Cargando...</div>
             </div>
-          ) : error ? (
+          ) : error && items.length === 0 ? (
             <div role="alert" className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center justify-between gap-4">
               <span>{error}</span>
               <button onClick={() => refresh()} className="px-3 py-1 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-100">
@@ -88,12 +124,16 @@ export function FleetPage() {
             <UnidadesTable
               unidades={items}
               lineas={lineas}
+              pilotos={pilotos}
               canManage={canManage}
               onUpdate={updateUnidad}
               onDelete={deleteUnidad}
               onAssignLine={handleAssignLine}
               onReassignLine={handleReassignLine}
               onUnassignLine={handleUnassignLine}
+              onAssignPilot={handleAssignPilot}
+              onReassignPilot={handleReassignPilot}
+              onUnassignPilot={handleUnassignPilot}
             />
           )}
         </div>
