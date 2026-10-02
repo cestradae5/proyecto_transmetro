@@ -44,6 +44,13 @@ export interface AsignacionPiloto {
   fechaActualizacion: string;
 }
 
+/** Eligible pilot from `GET /fleet/pilots`; `idUnidad` is the unit they are assigned to. */
+export interface Piloto {
+  idEmpleado: string;
+  nombre: string;
+  idUnidad?: string;
+}
+
 export interface CreateUnidadDto {
   numeroPlaca: string;
   marca: string;

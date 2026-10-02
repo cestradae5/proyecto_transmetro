@@ -142,6 +142,61 @@ describe("useUnidades", () => {
     expect(mockGet).toHaveBeenCalledTimes(2);
   });
 
+  it("refresh and mutations after the first load never render loading=true", async () => {
+    mockGet.mockResolvedValue([SAMPLE_UNIDAD]);
+    mockPost.mockResolvedValue({ ...SAMPLE_UNIDAD, idUnidad: "2" });
+    const renders: boolean[] = [];
+    const { result } = renderHook(() => {
+      const value = useUnidades();
+      renders.push(value.loading);
+      return value;
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const afterFirstLoad = renders.length;
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    await act(async () => {
+      await result.current.createUnidad({
+        numeroPlaca: "P-999ZZZ",
+        marca: "Volvo",
+        modelo: "B8R",
+        anio: 2024,
+        capacidadPasajeros: 150,
+      });
+    });
+
+    expect(mockGet).toHaveBeenCalledTimes(3);
+    expect(renders.slice(afterFirstLoad).every((l) => l === false)).toBe(true);
+  });
+
+  it("shows loading again on retry when the initial load failed", async () => {
+    mockGet.mockRejectedValueOnce(new ApiError(500, "boom", {}));
+    const renders: boolean[] = [];
+    const { result } = renderHook(() => {
+      const value = useUnidades();
+      renders.push(value.loading);
+      return value;
+    });
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    const before = renders.length;
+
+    let release: (v: Unidad[]) => void = () => {};
+    mockGet.mockReturnValue(new Promise<Unidad[]>((r) => (release = r)));
+    let pending: Promise<void> = Promise.resolve();
+    await act(async () => {
+      pending = result.current.refresh();
+    });
+    expect(result.current.loading).toBe(true);
+    await act(async () => {
+      release([SAMPLE_UNIDAD]);
+      await pending;
+    });
+    expect(result.current.loading).toBe(false);
+    expect(renders.slice(before)).toContain(true);
+    expect(result.current.items).toEqual([SAMPLE_UNIDAD]);
+  });
   it("createUnidad rejects with translated message and skips refresh", async () => {
     const { result } = await renderLoaded();
     mockPost.mockRejectedValue(

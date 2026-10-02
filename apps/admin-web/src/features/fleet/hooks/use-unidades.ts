@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../../../lib/api-client';
 import type {
   Unidad,
@@ -22,12 +22,17 @@ export function useUnidades(): UseUnidadesResult {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Once data has loaded, later refetches are silent (loading stays false) so
+  // consumers do not unmount the table and lose its search/filter state.
+  const hasLoaded = useRef(false);
+
   const fetchUnidades = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoaded.current) setLoading(true);
     setError(null);
     try {
       const data = await apiClient.get<Unidad[]>('/fleet/units');
       setItems(data);
+      hasLoaded.current = true;
     } catch (err: unknown) {
       setError(getFleetErrorMessage(err));
     } finally {
