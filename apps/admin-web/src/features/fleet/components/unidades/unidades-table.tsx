@@ -5,6 +5,7 @@ import type { Linea } from '../../../infrastructure/types/infrastructure.types';
 import { UnidadDialog } from './unidad-dialog';
 import { AsignacionLineaDialog } from './asignacion-linea-dialog';
 import { AsignacionPilotoDialog } from './asignacion-piloto-dialog';
+import { UbicacionDialog, formatReportDate } from './ubicacion-dialog';
 
 interface UnidadesTableProps {
   unidades: Unidad[];
@@ -22,6 +23,8 @@ interface UnidadesTableProps {
   onAssignPilot: (unitId: string, idEmpleado: string) => Promise<unknown>;
   onReassignPilot: (unitId: string, idEmpleado: string) => Promise<unknown>;
   onUnassignPilot: (unitId: string) => Promise<unknown>;
+  onReportLocation: (unitId: string, idLineaParada: string) => Promise<unknown>;
+  onCorrectLocation: (unitId: string, idLineaParada: string) => Promise<unknown>;
 }
 
 const ESTADO_BADGE: Record<EstadoUnidad, string> = {
@@ -46,12 +49,15 @@ export function UnidadesTable({
   onAssignPilot,
   onReassignPilot,
   onUnassignPilot,
+  onReportLocation,
+  onCorrectLocation,
 }: UnidadesTableProps) {
   const [search, setSearch] = useState('');
   const [estadoFilter, setEstadoFilter] = useState<'' | EstadoUnidad>('');
   const [editingUnidad, setEditingUnidad] = useState<Unidad | null>(null);
   const [assigningUnidad, setAssigningUnidad] = useState<Unidad | null>(null);
   const [assigningPilotoUnidad, setAssigningPilotoUnidad] = useState<Unidad | null>(null);
+  const [locatingUnidad, setLocatingUnidad] = useState<Unidad | null>(null);
 
   const lineaLabel = (idLinea?: string | null) => {
     if (!idLinea) return '-';
@@ -131,7 +137,7 @@ export function UnidadesTable({
               <th className={TH}>Estado</th>
               <th className={TH}>Línea</th>
               <th className={TH}>Piloto</th>
-              <th className={TH}>Última parada reportada</th>
+              <th className={TH}>Última parada</th>
               {canManage && <th className={TH}>Acciones</th>}
             </tr>
           </thead>
@@ -149,7 +155,13 @@ export function UnidadesTable({
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">{lineaLabel(unidad.idLinea)}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{pilotoLabel(unidad.idEmpleadoPiloto)}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">{unidad.idLineaParadaActual || '-'}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">
+                  {/* Stop names are only loaded in the open dialog (no N+1); show the id here. */}
+                  <div>{unidad.idLineaParadaActual || '-'}</div>
+                  {unidad.idLineaParadaActual && formatReportDate(unidad.fechaReporteUbicacion) && (
+                    <div className="text-xs text-slate-500">{formatReportDate(unidad.fechaReporteUbicacion)}</div>
+                  )}
+                </td>
                 {canManage && (
                   <td className="px-4 py-3">
                     <button
@@ -169,6 +181,14 @@ export function UnidadesTable({
                       className="px-3 py-1 text-sm text-slate-600 hover:text-slate-900 font-medium mr-2"
                     >
                       Piloto
+                    </button>
+                    <button
+                      onClick={() => setLocatingUnidad(unidad)}
+                      disabled={!unidad.idLinea}
+                      title={unidad.idLinea ? undefined : 'La unidad no tiene una línea asignada'}
+                      className="px-3 py-1 text-sm text-slate-600 hover:text-slate-900 font-medium mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Ubicación
                     </button>
                     {unidad.estadoUnidad !== EstadoUnidad.FUERA_DE_SERVICIO && (
                       <button
@@ -209,6 +229,14 @@ export function UnidadesTable({
           onReassign={onReassignPilot}
           onUnassign={onUnassignPilot}
           onClose={() => setAssigningPilotoUnidad(null)}
+        />
+      )}
+      {locatingUnidad && (
+        <UbicacionDialog
+          unit={locatingUnidad}
+          onReport={onReportLocation}
+          onCorrect={onCorrectLocation}
+          onClose={() => setLocatingUnidad(null)}
         />
       )}
     </div>

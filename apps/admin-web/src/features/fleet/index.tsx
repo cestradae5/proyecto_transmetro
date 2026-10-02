@@ -7,6 +7,7 @@ import { useLineas } from '../infrastructure/hooks/use-lineas';
 import { useAsignacionUnidad } from './hooks/use-asignacion-unidad';
 import { usePilotos } from './hooks/use-pilotos';
 import { useAsignacionPiloto } from './hooks/use-asignacion-piloto';
+import { useUbicacionUnidad } from './hooks/use-ubicacion-unidad';
 import { UnidadesTable } from './components/unidades/unidades-table';
 import { UnidadDialog } from './components/unidades/unidad-dialog';
 import type { CreateUnidadDto } from './types/fleet.types';
@@ -22,6 +23,7 @@ export function FleetPage() {
   const { assignLine, reassignLine, unassignLine } = useAsignacionUnidad();
   const { items: pilotos, error: pilotosError, refresh: refreshPilotos } = usePilotos();
   const { assignPilot, reassignPilot, unassignPilot } = useAsignacionPiloto();
+  const { reportLocation, correctLocation } = useUbicacionUnidad();
 
   // Assignment mutations do not refetch; refresh units after each success.
   const handleAssignLine = async (unitId: string, idLinea: string) => {
@@ -57,6 +59,16 @@ export function FleetPage() {
   const handleUnassignPilot = async (unitId: string) => {
     await unassignPilot(unitId);
     await refreshAll();
+  };
+
+  const handleReportLocation = async (unitId: string, idLineaParada: string) => {
+    await reportLocation(unitId, idLineaParada);
+    await refresh();
+  };
+
+  const handleCorrectLocation = async (unitId: string, idLineaParada: string) => {
+    await correctLocation(unitId, idLineaParada);
+    await refresh();
   };
 
   const handleCreate = async (data: CreateUnidadDto) => {
@@ -134,6 +146,8 @@ export function FleetPage() {
               onAssignPilot={handleAssignPilot}
               onReassignPilot={handleReassignPilot}
               onUnassignPilot={handleUnassignPilot}
+              onReportLocation={handleReportLocation}
+              onCorrectLocation={handleCorrectLocation}
             />
           )}
         </div>
