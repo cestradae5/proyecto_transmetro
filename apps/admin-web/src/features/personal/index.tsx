@@ -6,6 +6,7 @@ import { useAuth } from "../authentication/auth-context";
 import { canManageEmpleados } from "./permissions";
 import { EmpleadosTable } from "./components/empleados/empleados-table";
 import { EmpleadoDialog } from "./components/empleados/empleado-dialog";
+import { ConfirmDeleteDialog } from "./components/empleados/confirm-delete-dialog";
 import type {
   CreateEmpleadoPayload,
   Empleado,
@@ -35,7 +36,7 @@ export function PersonalPage() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  const { items, loading, error, refresh, create, update } = useEmpleados({
+  const { items, loading, error, refresh, create, update, delete: remove } = useEmpleados({
     search: debouncedSearch || undefined,
     status: status || undefined,
     roleId: roleId || undefined,
@@ -43,6 +44,41 @@ export function PersonalPage() {
   const { roles, error: rolesError } = useRoles();
 
   const hasActiveFilters = Boolean(debouncedSearch.trim() || status || roleId);
+
+  // Quick status toggle: rows with a request in flight are disabled; failures show a page banner.
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set());
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Empleado | null>(null);
+
+  const handleToggleStatus = async (empleado: Empleado) => {
+    const next: EmployeeStatus = empleado.status === "ACTIVO" ? "INACTIVO" : "ACTIVO";
+    setToggleError(null);
+    setPendingIds((prev) => new Set(prev).add(empleado.id));
+    try {
+      await update(empleado.id, { status: next });
+    } catch (err: unknown) {
+      setToggleError(err instanceof Error ? err.message : "No se pudo cambiar el estado del empleado");
+    } finally {
+      setPendingIds((prev) => {
+        const rest = new Set(prev);
+        rest.delete(empleado.id);
+        return rest;
+      });
+    }
+  };
+
+  // Errors thrown here reach the confirm dialog, which shows them and stays open.
+  const handleConfirmDelete = async () => {
+    if (!deleting) return;
+    await remove(deleting.id);
+    setDeleting(null);
+  };
+
+  const handleDeactivateInstead = async () => {
+    if (!deleting) return;
+    await update(deleting.id, { status: "INACTIVO" });
+    setDeleting(null);
+  };
 
   // Errors thrown here reach the form, which shows them and keeps the dialog open.
   const handleSave = async (payload: CreateEmpleadoPayload | UpdateEmpleadoPayload) => {
@@ -128,6 +164,19 @@ export function PersonalPage() {
             </div>
           )}
 
+          {toggleError && (
+            <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center justify-between gap-4">
+              <span>{toggleError}</span>
+              <button
+                onClick={() => setToggleError(null)}
+                aria-label="Cerrar aviso"
+                className="px-2 py-1 text-sm font-medium text-red-700 hover:bg-red-100 rounded-lg"
+              >
+                Cerrar
+              </button>
+            </div>
+          )}
+
           {loading && items.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-slate-500">Cargando...</div>
@@ -150,6 +199,9 @@ export function PersonalPage() {
               empleados={items}
               canManage={canManage}
               onEdit={(empleado) => setDialog({ mode: "edit", empleado })}
+              onDelete={(empleado) => setDeleting(empleado)}
+              onToggleStatus={handleToggleStatus}
+              pendingIds={pendingIds}
             />
           )}
         </div>
@@ -161,6 +213,14 @@ export function PersonalPage() {
             rolesError={rolesError}
             onSave={handleSave}
             onClose={() => setDialog(null)}
+          />
+        )}
+        {canManage && deleting && (
+          <ConfirmDeleteDialog
+            empleado={deleting}
+            onConfirm={handleConfirmDelete}
+            onDeactivate={handleDeactivateInstead}
+            onClose={() => setDeleting(null)}
           />
         )}
       </main>
