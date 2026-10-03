@@ -37,6 +37,18 @@ Operations staff (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) need to manage the wo
 ## Mode
 - TDD: not configured; API runner `jest` (`npm test -w @transmetro/api`), web runner `vitest` (`npm test -w @transmetro/admin-web`). Ordinary functional checks + `npm run build -w @transmetro/api` + `npx tsc -b` in admin-web.
 - Branch: `feature/personal-frontend` (from `main` 46c0ffa).
+## Slices (feature-branch-chain)
+| PR | Branch | Targets | Task | Lines |
+|----|--------|---------|------|-------|
+| Tracker (no merge) | `feature/personal-frontend` | `main` | feature doc only | docs only |
+| 1 | `feature/personal-frontend-01-roles-endpoint` | tracker | F1 | +232/-4 |
+| 2 | `feature/personal-frontend-02-web-foundation` | PR 1 | F2 | +684 |
+| 3 | `feature/personal-frontend-03-list-ui` | PR 2 | F3 | +535/-1 |
+| 4 | `feature/personal-frontend-04-form` | PR 3 | F4 | +941/-6 |
+| 5 | `feature/personal-frontend-05-delete` | PR 4 | F5 | +564/-10 |
+| 6 | `feature/personal-frontend-06-e2e-docs` | PR 5 | F6 | +783 |
+
+Total authored: ~3,739 lines. RDD: `off` (decided by global) for the whole feature, so no native review was run or attempted.
 
 ## Tasks
 - [x] F1 API roles endpoint: `GET /personal/roles` (active roles: id, code, name), permission-guarded, Swagger, unit tests.
