@@ -28,7 +28,7 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 - [x] B1 Entities `AsignacionEstacionEntity` + `EstacionLineaEntity` (+ station-line service/controller CRUD under `/infrastructure/stations/:id/lines`) + tests
 - [x] B2 Station-operator assignment endpoints `/fleet/station-assignments` (list, POST, PATCH reassign, DELETE unassign) + eligibility lookup + audit + tests
 - [x] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
-- [ ] F1 Types + hooks for station assignments and my-station (+ tests)
+- [x] F1 Types + hooks for station assignments and my-station (+ tests)
 - [ ] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
 - [ ] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
 - [ ] F4 Full build/test pass + docs note
@@ -49,5 +49,7 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 
 - B3 done. Evidence: npm test -- src/fleet src/authentication 28 suites/306 tests pass; nest build ok. init.sql seed idempotent (ON CONFLICT). Not run: test/assignment-scope.integration-spec.ts (needs DB).
 
+- F1 done. Evidence: vitest fleet 21 files/169 tests pass; tsc -b exit 0. Reuse useEstaciones from infrastructure.
+
 ## Next step
-F1 (frontend types + hooks).
+F2 (Flota section: operators <-> stations + station-line UI).

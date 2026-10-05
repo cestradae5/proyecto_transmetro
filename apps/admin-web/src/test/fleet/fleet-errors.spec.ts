@@ -43,6 +43,12 @@ const CASES: Array<[string, string]> = [
   ["UnitEnServicioCannotReassignPilot", "No se puede reasignar el piloto de una unidad En servicio"],
   ["UnitEnServicioCannotUnassignPilot", "No se puede quitar el piloto a una unidad En servicio"],
   ["PilotHasNoUnitAssigned", "No tiene una unidad asignada"],
+  ["StationNotFound", "La estación no existe"],
+  ["AssignmentNotFound", "El operador no tiene una asignación de estación activa"],
+  ["EmployeeNotStationOperator", "El empleado seleccionado no es un operador de estación activo"],
+  ["OperatorAlreadyAssigned", "El operador ya tiene una estación asignada"],
+  ["OperatorHasNoStation", "No tiene una estación asignada"],
+  ["ESTACION_LINEA_DUPLICATE", "La línea ya está vinculada a esta estación"],
 ];
 
 describe("getFleetErrorCode", () => {
