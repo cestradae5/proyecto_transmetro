@@ -30,8 +30,8 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 - [x] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
 - [x] F1 Types + hooks for station assignments and my-station (+ tests)
 - [x] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
-- [ ] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
-- [ ] F4 Full build/test pass + docs note
+- [x] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
+- [x] F4 Full build/test pass + docs note
 
 ## Route declaration
 - B1/B2/B3: delegated writer each (2+ non-trivial files).
@@ -53,5 +53,9 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 
 - F2 done. Evidence: vitest fleet 24 files/184 tests pass; tsc -b exit 0. Tabs in FleetPage; operators section lazy-fetches.
 
+- F3 done. Evidence: vitest full 53 files/367 tests pass; tsc -b exit 0.
+
+- F4 done. Evidence: api jest 49 suites/567 tests pass, nest build ok; admin-web 367 tests pass, tsc ok. Not run: test/assignment-scope.integration-spec.ts (needs DB). No pushes/PR made; review/delivery pending user.
+
 ## Next step
-F3 (Mi estacion view + route + landing).
+User decides: push + PR slicing (~2400 lines total, chained), manual DB check.

@@ -41,6 +41,7 @@ function renderRoute() {
           }
         />
         <Route path="/fleet/my-unit" element={<div>Mi unidad</div>} />
+        <Route path="/fleet/my-station" element={<div>Mi estación</div>} />
         <Route path="/landing" element={<div>Landing Page</div>} />
       </Routes>
     </MemoryRouter>,
@@ -78,6 +79,22 @@ describe("OperatorOnlyRoute", () => {
     renderRoute();
 
     expect(screen.getByText("Mi unidad")).toBeInTheDocument();
+    expect(screen.queryByText("Fleet operator view")).not.toBeInTheDocument();
+  });
+
+  it("redirects a station operator without FLOTA_GESTIONAR to /fleet/my-station", () => {
+    mockedUseAuth.mockReturnValue({
+      user: user(["FLOTA_ESTACION_CONSULTAR"]),
+      token: "fake-jwt",
+      isAuthenticated: true,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+    });
+
+    renderRoute();
+
+    expect(screen.getByText("Mi estación")).toBeInTheDocument();
     expect(screen.queryByText("Fleet operator view")).not.toBeInTheDocument();
   });
 

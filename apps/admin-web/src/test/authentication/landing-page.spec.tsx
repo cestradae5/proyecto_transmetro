@@ -128,6 +128,28 @@ describe("LandingPage card filtering (task 5)", () => {
     expect(screen.queryByText("Fleet destination")).not.toBeInTheDocument();
   });
 
+  it("routes the Flota card to /fleet/my-station for a station operator", async () => {
+    seedSession(["fleet", "self_profile"], ["FLOTA_ESTACION_CONSULTAR"]);
+    render(
+      <MemoryRouter initialEntries={["/landing"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/fleet" element={<div>Fleet destination</div>} />
+            <Route path="/fleet/my-unit" element={<div>Mi unidad destination</div>} />
+            <Route path="/fleet/my-station" element={<div>Mi estacion destination</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const fleetCard = (await screen.findByText("Flota")).closest("div[class*='border']") as HTMLElement;
+    fireEvent.click(fleetCard);
+
+    expect(await screen.findByText("Mi estacion destination")).toBeInTheDocument();
+    expect(screen.queryByText("Mi unidad destination")).not.toBeInTheDocument();
+  });
+
   it("navigates to /personal when the Personal card is clicked and marks it clickable", async () => {
     seedSession(["personnel", "audit_log"]);
     render(
