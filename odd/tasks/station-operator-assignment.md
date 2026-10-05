@@ -25,9 +25,9 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 - Delivery strategy: `ask-on-risk`, ~400 authored changed lines per slice (planning heuristic only).
 
 ## Tasks
-- [ ] B1 Entities `AsignacionEstacionEntity` + `EstacionLineaEntity` (+ station-line service/controller CRUD under `/infrastructure/stations/:id/lines`) + tests
-- [ ] B2 Station-operator assignment endpoints `/fleet/station-assignments` (list, POST, PATCH reassign, DELETE unassign) + eligibility lookup + audit + tests
-- [ ] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
+- [x] B1 Entities `AsignacionEstacionEntity` + `EstacionLineaEntity` (+ station-line service/controller CRUD under `/infrastructure/stations/:id/lines`) + tests
+- [x] B2 Station-operator assignment endpoints `/fleet/station-assignments` (list, POST, PATCH reassign, DELETE unassign) + eligibility lookup + audit + tests
+- [x] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
 - [ ] F1 Types + hooks for station assignments and my-station (+ tests)
 - [ ] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
 - [ ] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
@@ -42,6 +42,12 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 
 ## Progress / evidence
 - Branch: `feature/station-operator-assignment`
+- B1 done, commit f3e5404. Evidence: `npm test -- src/infrastructure/estacion/estacion-linea` 11/11 pass; `nest build` ok. Pre-existing tsc errors in unrelated specs. Review tier: not assessed yet.
+- Note: infra services use Nest HttpException (no DomainExceptionFilter, no audit); station-line routes at `/infrastructure/stations/:id/lines`.
+
+- B2 done (see commit below). Evidence: npm test -- src/fleet 16 suites/185 tests pass; nest build ok. Operator reassign = PATCH same row; unassign = INACTIVA; reassign after history inserts new row.
+
+- B3 done. Evidence: npm test -- src/fleet src/authentication 28 suites/306 tests pass; nest build ok. init.sql seed idempotent (ON CONFLICT). Not run: test/assignment-scope.integration-spec.ts (needs DB).
 
 ## Next step
-B1.
+F1 (frontend types + hooks).
