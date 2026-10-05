@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
-import { FLEET_MANAGE_PERMISSION, hasPermission } from "../fleet/permissions";
+import { FLEET_MANAGE_PERMISSION, FLEET_STATION_VIEW_PERMISSION, hasPermission } from "../fleet/permissions";
 
 // Keys MUST match PERMISSION_TO_MODULE values in
 // apps/api/src/authentication/authentication.service.ts — a mismatch here
@@ -44,14 +44,19 @@ export function LandingPage() {
               const info = MODULE_LABELS[module];
               if (!info) return null;
               
-              // PILOTO reaches the fleet module through UNIDAD_ASIGNADA_CONSULTAR
-              // but has no FLOTA_GESTIONAR, so the operator view would 403:
-              // send them to their own unit view instead.
+              // Without FLOTA_GESTIONAR the operator view would 403. A station
+              // operator (FLOTA_ESTACION_CONSULTAR) goes to their station view;
+              // a PILOTO (UNIDAD_ASIGNADA_CONSULTAR) goes to their unit view.
+              const fleetDestination = () => {
+                if (hasPermission(user, FLEET_MANAGE_PERMISSION)) return '/fleet';
+                if (hasPermission(user, FLEET_STATION_VIEW_PERMISSION)) return '/fleet/my-station';
+                return '/fleet/my-unit';
+              };
               const handleClick = () => {
                 if (module === 'infrastructure') {
                   navigate('/infrastructure');
                 } else if (module === 'fleet') {
-                  navigate(hasPermission(user, FLEET_MANAGE_PERMISSION) ? '/fleet' : '/fleet/my-unit');
+                  navigate(fleetDestination());
                 } else if (module === 'personnel') {
                   navigate('/personal');
                 }
