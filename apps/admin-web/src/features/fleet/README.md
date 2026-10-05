@@ -31,3 +31,11 @@ Pilot view (`/fleet/my-unit`) â€” identity from the token, no unit id:
 - The list has no pagination or server-side filtering; search and filters run on the client.
 - The pilot view never calls `/infrastructure/lineas*` or any `FLOTA_GESTIONAR` endpoint: pilots have neither `INFRAESTRUCTURA_GESTIONAR` nor fleet-management grants, so both would 403. The line name and the stops come from the pilot-scoped `my-unit` endpoints instead.
 - Pilots reach module `fleet` through `UNIDAD_ASIGNADA_CONSULTAR` (see `PERMISSION_TO_MODULE`), which is why the landing Flota card must branch on `FLOTA_GESTIONAR` rather than on the module being present.
+
+## Station operators
+
+- Flota page has a second tab, **Operadores de estación**: assign, reassign and unassign operators (role OPERADOR_ESTACION) to existing stations, and manage each station's lines (	bl_estacion_linea). Requires FLOTA_GESTIONAR.
+- Operators with FLOTA_ESTACION_CONSULTAR land on /fleet/my-station: station, stops per line, assigned units, status and last reported position (refreshed every 30s).
+- Backend: /fleet/station-assignments, /fleet/station-operators, /fleet/my-station, /infrastructure/stations/:id/lines.
+- Existing databases must re-run database/init.sql to get the new permission seed (idempotent).
+
