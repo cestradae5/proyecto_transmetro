@@ -27,6 +27,7 @@ export const PERMISSION_TO_MODULE: Record<string, string> = {
 
   FLOTA_GESTIONAR: "fleet",
   FLOTA_ESTACION_SOLICITAR: "fleet",
+  FLOTA_ESTACION_CONSULTAR: "fleet",
   UNIDAD_ASIGNADA_CONSULTAR: "fleet",
 
   EMPLEADOS_PERFILES_ADMINISTRAR: "personnel",

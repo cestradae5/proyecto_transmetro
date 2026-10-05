@@ -4,6 +4,8 @@ import { AuthenticationModule } from "../authentication/authentication.module.js
 import { InfrastructureModule } from "../infrastructure/infrastructure.module.js";
 import { AsignacionEstacionController } from "./asignacion-estacion/asignacion-estacion.controller.js";
 import { AsignacionEstacionService } from "./asignacion-estacion/asignacion-estacion.service.js";
+import { EstacionOperadorController } from "./estacion-operador/estacion-operador.controller.js";
+import { EstacionOperadorService } from "./estacion-operador/estacion-operador.service.js";
 import { OperadorEstacionController } from "./operador-estacion/operador-estacion.controller.js";
 import { OperadorEstacionService } from "./operador-estacion/operador-estacion.service.js";
 import { AsignacionPilotoController } from "./asignacion-piloto/asignacion-piloto.controller.js";
@@ -47,6 +49,7 @@ import { UnidadService } from "./unidad/unidad.service.js";
   controllers: [
     AsignacionEstacionController,
     OperadorEstacionController,
+    EstacionOperadorController,
     AsignacionPilotoController,
     AsignacionUnidadController,
     PilotoController,
@@ -56,6 +59,7 @@ import { UnidadService } from "./unidad/unidad.service.js";
     PilotEligibilityLookup,
     AsignacionEstacionService,
     OperadorEstacionService,
+    EstacionOperadorService,
     PilotoService,
     UnidadService,
     AsignacionUnidadService,

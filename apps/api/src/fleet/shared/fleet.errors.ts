@@ -74,6 +74,13 @@ export class AssignmentNotFound extends NotFoundError {
   }
 }
 
+export class OperatorHasNoStation extends NotFoundError {
+  constructor() {
+    super("El operador no tiene una estación asignada actualmente.");
+    this.name = "OperatorHasNoStation";
+  }
+}
+
 // ── 409 Conflict ─────────────────────────────────────────────────────────
 
 export class EmployeeNotStationOperator extends ConflictError {
