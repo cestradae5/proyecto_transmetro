@@ -60,7 +60,35 @@ export class PilotHasNoUnitAssigned extends NotFoundError {
   }
 }
 
+export class StationNotFound extends NotFoundError {
+  constructor(id: string) {
+    super(`Estación con ID ${id} no existe.`);
+    this.name = "StationNotFound";
+  }
+}
+
+export class AssignmentNotFound extends NotFoundError {
+  constructor(id: string) {
+    super(`Asignación de estación con ID ${id} no existe o no está activa.`);
+    this.name = "AssignmentNotFound";
+  }
+}
+
 // ── 409 Conflict ─────────────────────────────────────────────────────────
+
+export class EmployeeNotStationOperator extends ConflictError {
+  constructor() {
+    super("Solo empleados activos con rol OPERADOR_ESTACION pueden ser asignados.");
+    this.name = "EmployeeNotStationOperator";
+  }
+}
+
+export class OperatorAlreadyAssigned extends ConflictError {
+  constructor() {
+    super("El operador ya tiene una estación asignada.");
+    this.name = "OperatorAlreadyAssigned";
+  }
+}
 
 export class DuplicatePlate extends ConflictError {
   constructor(placa: string) {
