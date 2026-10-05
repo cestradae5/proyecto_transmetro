@@ -25,13 +25,13 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 - Delivery strategy: `ask-on-risk`, ~400 authored changed lines per slice (planning heuristic only).
 
 ## Tasks
-- [ ] B1 Entities `AsignacionEstacionEntity` + `EstacionLineaEntity` (+ station-line service/controller CRUD under `/infrastructure/stations/:id/lines`) + tests
-- [ ] B2 Station-operator assignment endpoints `/fleet/station-assignments` (list, POST, PATCH reassign, DELETE unassign) + eligibility lookup + audit + tests
-- [ ] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
-- [ ] F1 Types + hooks for station assignments and my-station (+ tests)
-- [ ] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
-- [ ] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
-- [ ] F4 Full build/test pass + docs note
+- [x] B1 Entities `AsignacionEstacionEntity` + `EstacionLineaEntity` (+ station-line service/controller CRUD under `/infrastructure/stations/:id/lines`) + tests
+- [x] B2 Station-operator assignment endpoints `/fleet/station-assignments` (list, POST, PATCH reassign, DELETE unassign) + eligibility lookup + audit + tests
+- [x] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
+- [x] F1 Types + hooks for station assignments and my-station (+ tests)
+- [x] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
+- [x] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
+- [x] F4 Full build/test pass + docs note
 
 ## Route declaration
 - B1/B2/B3: delegated writer each (2+ non-trivial files).
@@ -42,6 +42,20 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 
 ## Progress / evidence
 - Branch: `feature/station-operator-assignment`
+- B1 done, commit f3e5404. Evidence: `npm test -- src/infrastructure/estacion/estacion-linea` 11/11 pass; `nest build` ok. Pre-existing tsc errors in unrelated specs. Review tier: not assessed yet.
+- Note: infra services use Nest HttpException (no DomainExceptionFilter, no audit); station-line routes at `/infrastructure/stations/:id/lines`.
+
+- B2 done (see commit below). Evidence: npm test -- src/fleet 16 suites/185 tests pass; nest build ok. Operator reassign = PATCH same row; unassign = INACTIVA; reassign after history inserts new row.
+
+- B3 done. Evidence: npm test -- src/fleet src/authentication 28 suites/306 tests pass; nest build ok. init.sql seed idempotent (ON CONFLICT). Not run: test/assignment-scope.integration-spec.ts (needs DB).
+
+- F1 done. Evidence: vitest fleet 21 files/169 tests pass; tsc -b exit 0. Reuse useEstaciones from infrastructure.
+
+- F2 done. Evidence: vitest fleet 24 files/184 tests pass; tsc -b exit 0. Tabs in FleetPage; operators section lazy-fetches.
+
+- F3 done. Evidence: vitest full 53 files/367 tests pass; tsc -b exit 0.
+
+- F4 done. Evidence: api jest 49 suites/567 tests pass, nest build ok; admin-web 367 tests pass, tsc ok. Not run: test/assignment-scope.integration-spec.ts (needs DB). No pushes/PR made; review/delivery pending user.
 
 ## Next step
-B1.
+User decides: push + PR slicing (~2400 lines total, chained), manual DB check.

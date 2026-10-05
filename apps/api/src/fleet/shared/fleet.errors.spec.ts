@@ -7,6 +7,10 @@
 
 import { ConflictError, NotFoundError } from "../../shared/errors/domain-exception.filter.js";
 import {
+  AssignmentNotFound,
+  EmployeeNotStationOperator,
+  OperatorAlreadyAssigned,
+  StationNotFound,
   DuplicatePlate,
   EmployeeNotFound,
   EnServicioRequiresBothAssignments,
@@ -39,6 +43,8 @@ describe("Fleet domain errors", () => {
     ["LineAssignmentNotFound", new LineAssignmentNotFound("1"), "LineAssignmentNotFound"],
     ["PilotAssignmentNotFound", new PilotAssignmentNotFound("1"), "PilotAssignmentNotFound"],
     ["PilotHasNoUnitAssigned", new PilotHasNoUnitAssigned(), "PilotHasNoUnitAssigned"],
+    ["StationNotFound", new StationNotFound("1"), "StationNotFound"],
+    ["AssignmentNotFound", new AssignmentNotFound("1"), "AssignmentNotFound"],
   ])("%s extends the shared NotFoundError with a stable name", (_label, error, name) => {
     expect(error).toBeInstanceOf(NotFoundError);
     expect(error.name).toBe(name);
@@ -61,6 +67,8 @@ describe("Fleet domain errors", () => {
     ["PilotAssignmentUnchanged", new PilotAssignmentUnchanged(), "PilotAssignmentUnchanged"],
     ["UnitEnServicioCannotReassignPilot", new UnitEnServicioCannotReassignPilot(), "UnitEnServicioCannotReassignPilot"],
     ["UnitEnServicioCannotUnassignPilot", new UnitEnServicioCannotUnassignPilot(), "UnitEnServicioCannotUnassignPilot"],
+    ["EmployeeNotStationOperator", new EmployeeNotStationOperator(), "EmployeeNotStationOperator"],
+    ["OperatorAlreadyAssigned", new OperatorAlreadyAssigned(), "OperatorAlreadyAssigned"],
   ])("%s extends the shared ConflictError with a stable name", (_label, error, name) => {
     expect(error).toBeInstanceOf(ConflictError);
     expect(error.name).toBe(name);

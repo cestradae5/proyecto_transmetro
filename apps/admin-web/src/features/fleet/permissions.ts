@@ -4,6 +4,9 @@ export const FLEET_MANAGE_PERMISSION = 'FLOTA_GESTIONAR';
 /** Lets a pilot report the location of their assigned unit. */
 export const FLEET_REPORT_LOCATION_PERMISSION = 'METRICAS_UNIDAD_REPORTAR';
 
+/** Lets a station operator view their assigned station. */
+export const FLEET_STATION_VIEW_PERMISSION = 'FLOTA_ESTACION_CONSULTAR';
+
 export function hasPermission(user: Pick<User, 'permissions'> | null | undefined, code: string): boolean {
   return Array.isArray(user?.permissions) && user.permissions.includes(code);
 }

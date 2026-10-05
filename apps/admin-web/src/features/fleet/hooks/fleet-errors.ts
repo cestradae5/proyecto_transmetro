@@ -27,12 +27,20 @@ const FLEET_ERROR_MESSAGES: Record<string, string> = {
   UnitEnServicioCannotUnassignPilot:
     'No se puede quitar el piloto a una unidad En servicio',
   PilotHasNoUnitAssigned: 'No tiene una unidad asignada',
+  StationNotFound: 'La estación no existe',
+  AssignmentNotFound: 'El operador no tiene una asignación de estación activa',
+  EmployeeNotStationOperator:
+    'El empleado seleccionado no es un operador de estación activo',
+  OperatorAlreadyAssigned: 'El operador ya tiene una estación asignada',
+  OperatorHasNoStation: 'No tiene una estación asignada',
+  ESTACION_LINEA_DUPLICATE: 'La línea ya está vinculada a esta estación',
 };
 
 /** Backend error class names, for callers that branch on a specific error. */
 export const FLEET_ERROR_CODES = {
   PILOT_HAS_NO_UNIT_ASSIGNED: 'PilotHasNoUnitAssigned',
   UNIT_HAS_NO_LINE_ASSIGNMENT: 'UnitHasNoLineAssignment',
+  OPERATOR_HAS_NO_STATION: 'OperatorHasNoStation',
 } as const;
 
 /** Returns the backend error class name of an API error, if any. */
