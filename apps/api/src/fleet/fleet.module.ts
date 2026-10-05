@@ -2,6 +2,10 @@ import { Module } from "@nestjs/common";
 
 import { AuthenticationModule } from "../authentication/authentication.module.js";
 import { InfrastructureModule } from "../infrastructure/infrastructure.module.js";
+import { AsignacionEstacionController } from "./asignacion-estacion/asignacion-estacion.controller.js";
+import { AsignacionEstacionService } from "./asignacion-estacion/asignacion-estacion.service.js";
+import { OperadorEstacionController } from "./operador-estacion/operador-estacion.controller.js";
+import { OperadorEstacionService } from "./operador-estacion/operador-estacion.service.js";
 import { AsignacionPilotoController } from "./asignacion-piloto/asignacion-piloto.controller.js";
 import { AsignacionPilotoService } from "./asignacion-piloto/asignacion-piloto.service.js";
 import { AsignacionUnidadController } from "./asignacion-unidad/asignacion-unidad.controller.js";
@@ -41,6 +45,8 @@ import { UnidadService } from "./unidad/unidad.service.js";
 @Module({
   imports: [AuthenticationModule, InfrastructureModule],
   controllers: [
+    AsignacionEstacionController,
+    OperadorEstacionController,
     AsignacionPilotoController,
     AsignacionUnidadController,
     PilotoController,
@@ -48,6 +54,8 @@ import { UnidadService } from "./unidad/unidad.service.js";
   ],
   providers: [
     PilotEligibilityLookup,
+    AsignacionEstacionService,
+    OperadorEstacionService,
     PilotoService,
     UnidadService,
     AsignacionUnidadService,
