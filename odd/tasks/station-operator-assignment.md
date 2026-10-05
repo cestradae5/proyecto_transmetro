@@ -29,7 +29,7 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 - [x] B2 Station-operator assignment endpoints `/fleet/station-assignments` (list, POST, PATCH reassign, DELETE unassign) + eligibility lookup + audit + tests
 - [x] B3 Permission `FLOTA_ESTACION_CONSULTAR` seed + `GET /fleet/my-station` (station, stops, lines, units with status + position, scoped by active assignment) + tests
 - [x] F1 Types + hooks for station assignments and my-station (+ tests)
-- [ ] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
+- [x] F2 Flota "Operadores de estación" section: assign / reassign / unassign (+ station-line management UI) (+ tests)
 - [ ] F3 Operator "Mi estación" view (state, stops, lines, units, positions) + route/landing (+ tests)
 - [ ] F4 Full build/test pass + docs note
 
@@ -51,5 +51,7 @@ Inside Flota, add a section to assign station operators (role `OPERADOR_ESTACION
 
 - F1 done. Evidence: vitest fleet 21 files/169 tests pass; tsc -b exit 0. Reuse useEstaciones from infrastructure.
 
+- F2 done. Evidence: vitest fleet 24 files/184 tests pass; tsc -b exit 0. Tabs in FleetPage; operators section lazy-fetches.
+
 ## Next step
-F2 (Flota section: operators <-> stations + station-line UI).
+F3 (Mi estacion view + route + landing).
