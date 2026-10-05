@@ -10,9 +10,18 @@ import { useAsignacionPiloto } from './hooks/use-asignacion-piloto';
 import { useUbicacionUnidad } from './hooks/use-ubicacion-unidad';
 import { UnidadesTable } from './components/unidades/unidades-table';
 import { UnidadDialog } from './components/unidades/unidad-dialog';
+import { OperadoresEstacionSection } from './components/estaciones/operadores-estacion-section';
 import type { CreateUnidadDto } from './types/fleet.types';
 
+type FleetTab = 'unidades' | 'estaciones';
+
+const TABS: { id: FleetTab; label: string }[] = [
+  { id: 'unidades', label: 'Unidades' },
+  { id: 'estaciones', label: 'Operadores de estación' },
+];
+
 export function FleetPage() {
+  const [tab, setTab] = useState<FleetTab>('unidades');
   const navigate = useNavigate();
   const { user } = useAuth();
   const canManage = hasPermission(user, FLEET_MANAGE_PERMISSION);
@@ -89,6 +98,33 @@ export function FleetPage() {
 
       <main className="pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-7xl mx-auto">
         <div className="bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04)] p-6 sm:p-11">
+          <div role="tablist" aria-label="Secciones de flota" className="flex gap-2 mb-6 border-b border-slate-200">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${
+                  tab === t.id ? 'border-primary text-primary' : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'estaciones' && (
+            <div role="tabpanel">
+              <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight mb-6">
+                Operadores de estación
+              </h1>
+              <OperadoresEstacionSection canManage={canManage} />
+            </div>
+          )}
+
+          {tab === 'unidades' && (
+          <>
           <div className="flex items-center justify-between mb-6">
             <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight">
               Gestión de Flota ({items.length})
@@ -149,6 +185,8 @@ export function FleetPage() {
               onReportLocation={handleReportLocation}
               onCorrectLocation={handleCorrectLocation}
             />
+          )}
+          </>
           )}
         </div>
       </main>
