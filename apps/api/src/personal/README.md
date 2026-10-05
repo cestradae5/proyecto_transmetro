@@ -22,7 +22,8 @@ personal/
 │   ├── create-employee.dto.ts (+ .spec.ts)   # name, email, roleId, dpi mandatory
 │   ├── update-employee.dto.ts                # PartialType(CreateEmployeeDto)
 │   ├── query-employees.dto.ts                # search / status / roleId filters
-│   └── employee-response.dto.ts              # response shape (role relation inlined)
+│   ├── employee-response.dto.ts              # response shape (role relation inlined)
+│   └── role-response.dto.ts                  # { id, code, name } for GET /personal/roles
 ├── personal.service.ts (+ .spec.ts)          # CRUD, business rules, audit
 ├── personal.rules.spec.ts                    # rule-focused spec (E3)
 ├── personal.controller.ts (+ .spec.ts)       # routes, Swagger, actor extraction
@@ -75,6 +76,18 @@ There is no `/activate` or `/deactivate`. Both directions go through
 `PATCH /:id` with `{ "status": "ACTIVO" | "INACTIVO" }`, which keeps the audit
 trail uniform and means a status change is never a privileged side effect
 hidden inside `DELETE`.
+
+### Roles lookup: `GET /personal/roles`
+
+Served by `PersonalRolesController` (mounted at `personal/roles`, separate from
+`personal/empleados` so it can never be captured by `GET /:id`). Same
+protection as the employee routes: `AuthenticationGuard` +
+`EMPLEADOS_PERFILES_ADMINISTRAR`.
+
+It returns only **active** roles, ordered by `name`, as
+`RoleResponseDto[]` (`{ id, code, name }`; `id` is the bigint string). Clients
+use it to populate role selects and filters instead of hardcoding `roleId`.
+Errors: `401` no or invalid token, `403` missing permission.
 
 ## Business Rules
 

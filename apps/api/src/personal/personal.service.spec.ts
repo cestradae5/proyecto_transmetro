@@ -91,7 +91,10 @@ describe("toEmployeeResponse", () => {
 
 describe("PersonalService", () => {
   let repository: MockRepository;
-  let roleRepository: { findOne: jest.MockedFunction<(options: unknown) => Promise<RoleEntity | null>> };
+  let roleRepository: {
+    findOne: jest.MockedFunction<(options: unknown) => Promise<RoleEntity | null>>;
+    find: jest.MockedFunction<(options: unknown) => Promise<RoleEntity[]>>;
+  };
   let service: PersonalService;
   let manager: { getRepository: jest.Mock };
   let dataSource: { transaction: jest.Mock };
@@ -102,7 +105,10 @@ describe("PersonalService", () => {
 
   beforeEach(() => {
     repository = makeMockRepository();
-    roleRepository = { findOne: jest.fn<(options: unknown) => Promise<RoleEntity | null>>().mockResolvedValue(makeRole()) };
+    roleRepository = {
+      findOne: jest.fn<(options: unknown) => Promise<RoleEntity | null>>().mockResolvedValue(makeRole()),
+      find: jest.fn<(options: unknown) => Promise<RoleEntity[]>>().mockResolvedValue([]),
+    };
     callOrder = [];
     // The transactional manager hands out the same mocked employee repository.
     manager = { getRepository: jest.fn().mockReturnValue(repository) };
@@ -275,6 +281,35 @@ describe("PersonalService", () => {
       }
       // LIKE wildcards in the search term are escaped.
       expect(JSON.stringify(options.where[0]?.name)).toContain("50\\\\%\\\\_");
+    });
+  });
+
+  describe("findRoles", () => {
+    it("queries only active roles ordered by name", async () => {
+      await service.findRoles();
+
+      expect(roleRepository.find).toHaveBeenCalledWith({
+        where: { active: true },
+        order: { name: "ASC" },
+      });
+    });
+
+    it("maps each role to id, code and name only", async () => {
+      roleRepository.find.mockResolvedValue([
+        makeRole({ id: "3", code: "GUARDIA", name: "Guardia", active: true }),
+        makeRole({ id: "2", code: "PILOTO", name: "Piloto", active: true }),
+      ]);
+
+      const result = await service.findRoles();
+
+      expect(result).toEqual([
+        { id: "3", code: "GUARDIA", name: "Guardia" },
+        { id: "2", code: "PILOTO", name: "Piloto" },
+      ]);
+    });
+
+    it("returns an empty array when there are no active roles", async () => {
+      await expect(service.findRoles()).resolves.toEqual([]);
     });
   });
 

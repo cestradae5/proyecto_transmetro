@@ -5,6 +5,7 @@ import { GISPage } from "../features/authentication/gis-page";
 import { ProfilePage } from "../features/dashboard/profile-page";
 import { InfrastructurePage } from "../features/infrastructure";
 import { FleetPage } from "../features/fleet";
+import { PersonalPage } from "../features/personal";
 import { MiUnidadPage } from "../features/fleet/components/mi-unidad/mi-unidad-page";
 import { OperatorOnlyRoute } from "../features/fleet/operator-only-route";
 import { AuthProvider } from "../features/authentication/auth-context";
@@ -23,6 +24,7 @@ export function App() {
           <Route path="/infrastructure" element={<AuthenticationGuard requiredModule="infrastructure"><InfrastructurePage /></AuthenticationGuard>} />
           <Route path="/fleet" element={<AuthenticationGuard requiredModule="fleet"><OperatorOnlyRoute><FleetPage /></OperatorOnlyRoute></AuthenticationGuard>} />
           <Route path="/fleet/my-unit" element={<AuthenticationGuard requiredModule="fleet"><MiUnidadPage /></AuthenticationGuard>} />
+          <Route path="/personal" element={<AuthenticationGuard requiredModule="personnel"><PersonalPage /></AuthenticationGuard>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
