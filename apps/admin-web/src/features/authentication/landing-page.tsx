@@ -52,9 +52,11 @@ export function LandingPage() {
                   navigate('/infrastructure');
                 } else if (module === 'fleet') {
                   navigate(hasPermission(user, FLEET_MANAGE_PERMISSION) ? '/fleet' : '/fleet/my-unit');
+                } else if (module === 'personnel') {
+                  navigate('/personal');
                 }
               };
-              const isNavigable = module === 'infrastructure' || module === 'fleet';
+              const isNavigable = module === 'infrastructure' || module === 'fleet' || module === 'personnel';
               
               return (
                 <div

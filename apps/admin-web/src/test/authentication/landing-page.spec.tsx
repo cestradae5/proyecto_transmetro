@@ -128,6 +128,26 @@ describe("LandingPage card filtering (task 5)", () => {
     expect(screen.queryByText("Fleet destination")).not.toBeInTheDocument();
   });
 
+  it("navigates to /personal when the Personal card is clicked and marks it clickable", async () => {
+    seedSession(["personnel", "audit_log"]);
+    render(
+      <MemoryRouter initialEntries={["/landing"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/personal" element={<div>Personal destination</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const card = (await screen.findByText("Personal")).closest("div[class*='border']") as HTMLElement;
+    expect(card.className).toContain("cursor-pointer");
+
+    fireEvent.click(card);
+    expect(await screen.findByText("Personal destination")).toBeInTheDocument();
+  });
+
   it("renders no module cards but keeps the title and sign-out section when scope.modules is empty", async () => {
     seedSession([]);
     renderLandingPage();
