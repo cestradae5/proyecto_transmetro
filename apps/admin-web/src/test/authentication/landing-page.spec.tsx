@@ -14,8 +14,7 @@ const ALL_MODULE_TITLES = [
   "Personal",
   "Alertas Operativas",
   "Panel Operativo Central",
-  "Reportes Administrativos",
-  "Auditoría",
+  "Reportes",
   "Recarga",
   "Perfil",
 ];
@@ -50,28 +49,27 @@ describe("LandingPage card filtering (task 5)", () => {
   });
 
   it("renders exactly the cards present in scope.modules (partial access)", async () => {
-    seedSession(["fleet", "audit_log", "self_profile"]);
+    seedSession(["fleet", "reports", "self_profile"]);
     renderLandingPage();
 
     expect(await screen.findByText("Flota")).toBeInTheDocument();
-    expect(screen.getByText("Auditoría")).toBeInTheDocument();
+    expect(screen.getByText("Reportes")).toBeInTheDocument();
     expect(screen.getByText("Perfil")).toBeInTheDocument();
 
     for (const title of ALL_MODULE_TITLES) {
-      if (["Flota", "Auditoría", "Perfil"].includes(title)) continue;
+      if (["Flota", "Reportes", "Perfil"].includes(title)) continue;
       expect(screen.queryByText(title)).not.toBeInTheDocument();
     }
   });
 
-  it("renders all 9 cards for a user with full module access", async () => {
+  it("renders all 8 cards for a user with full module access", async () => {
     seedSession([
       "infrastructure",
       "fleet",
       "personnel",
       "operational_alerts",
       "central_operations_panel",
-      "administrative_reports",
-      "audit_log",
+      "reports",
       "recharge_reporting",
       "self_profile",
     ]);
@@ -84,7 +82,7 @@ describe("LandingPage card filtering (task 5)", () => {
   });
 
   it("navigates to /fleet when the Flota card is clicked and marks it clickable", async () => {
-    seedSession(["fleet", "audit_log"], ["FLOTA_GESTIONAR"]);
+    seedSession(["fleet", "reports"], ["FLOTA_GESTIONAR"]);
     render(
       <MemoryRouter initialEntries={["/landing"]}>
         <AuthProvider>
@@ -99,8 +97,8 @@ describe("LandingPage card filtering (task 5)", () => {
 
     const fleetCard = (await screen.findByText("Flota")).closest("div[class*='border']") as HTMLElement;
     expect(fleetCard.className).toContain("cursor-pointer");
-    const auditCard = screen.getByText("Auditoría").closest("div[class*='border']") as HTMLElement;
-    expect(auditCard.className).not.toContain("cursor-pointer");
+    const reportsCard = screen.getByText("Reportes").closest("div[class*='border']") as HTMLElement;
+    expect(reportsCard.className).not.toContain("cursor-pointer");
 
     fireEvent.click(fleetCard);
     expect(await screen.findByText("Fleet destination")).toBeInTheDocument();
@@ -151,7 +149,7 @@ describe("LandingPage card filtering (task 5)", () => {
   });
 
   it("navigates to /personal when the Personal card is clicked and marks it clickable", async () => {
-    seedSession(["personnel", "audit_log"]);
+    seedSession(["personnel", "reports"]);
     render(
       <MemoryRouter initialEntries={["/landing"]}>
         <AuthProvider>
