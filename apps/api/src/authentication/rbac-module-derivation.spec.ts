@@ -24,8 +24,7 @@ const FRONTEND_MODULES = [
   "personnel",
   "operational_alerts",
   "central_operations_panel",
-  "administrative_reports",
-  "audit_log",
+  "reports",
   "recharge_reporting",
   "self_profile",
 ] as const;
@@ -98,7 +97,16 @@ describe("RBAC module derivation (task 2.4)", () => {
     expect(deriveModulesFromPermissions(["PERMISO_INEXISTENTE"])).toEqual([]);
     expect(
       deriveModulesFromPermissions(["PERMISO_INEXISTENTE", "AUDITORIA_BITACORA_CONSULTAR"]),
-    ).toEqual(["audit_log"]);
+    ).toEqual(["reports"]);
+  });
+
+  it("merges administrative reports and audit log into a single reports module", () => {
+    expect(
+      deriveModulesFromPermissions([
+        "REPORTES_ADMINISTRATIVOS_CONSULTAR",
+        "AUDITORIA_BITACORA_CONSULTAR",
+      ]),
+    ).toEqual(["reports"]);
   });
 
   it("leaves ROLES_PERMISOS_ADMINISTRAR unmapped (admin-only, not a dashboard card)", () => {

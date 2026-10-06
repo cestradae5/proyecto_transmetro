@@ -19,8 +19,7 @@ const MODULES = [
   "personnel",
   "operational_alerts",
   "central_operations_panel",
-  "administrative_reports",
-  "audit_log",
+  "reports",
   "recharge_reporting",
 ] as const;
 

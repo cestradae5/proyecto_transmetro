@@ -146,6 +146,7 @@ export interface MiEstacionUnit {
   nombreParadaActual?: string;
   fechaReporteUbicacion?: string;
   pilotAssigned: boolean;
+  nombrePiloto?: string;
 }
 
 /** Response of `GET /fleet/my-station` (station operator self-service). */

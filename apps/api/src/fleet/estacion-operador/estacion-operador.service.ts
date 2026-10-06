@@ -44,6 +44,7 @@ interface UnitRow {
   nombreParadaActual: string | null;
   fechaReporteUbicacion: Date | null;
   pilotAssigned: boolean;
+  nombrePiloto: string | null;
 }
 
 // Read-only "my station" view for a station operator, scoped by the
@@ -179,12 +180,14 @@ export class EstacionOperadorService {
               au.id_linea_parada_actual AS "idLineaParadaActual",
               pa.nombre_parada AS "nombreParadaActual",
               au.fecha_reporte_ubicacion AS "fechaReporteUbicacion",
-              (ap.id_asignacion_piloto IS NOT NULL) AS "pilotAssigned"
+              (ap.id_asignacion_piloto IS NOT NULL) AS "pilotAssigned",
+              emp.nombre_emple AS "nombrePiloto"
          FROM tbl_asignacion_unidad au
          INNER JOIN tbl_unidad u ON u.id_unidad = au.id_unidad
          LEFT JOIN tbl_linea_parada lp ON lp.id_linea_parada = au.id_linea_parada_actual
          LEFT JOIN tbl_parada pa ON pa.id_parada = lp.id_parada
          LEFT JOIN tbl_asignacion_piloto ap ON ap.id_unidad = u.id_unidad
+         LEFT JOIN tbl_empleado emp ON emp.id_emple = ap.id_empleado
         WHERE au.id_linea = ANY($1::bigint[])
         ORDER BY au.id_linea ASC, u.numero_placa ASC`,
       [lineIds],
@@ -203,6 +206,9 @@ export class EstacionOperadorService {
       }
       if (row.nombreParadaActual) {
         unit.nombreParadaActual = row.nombreParadaActual;
+      }
+      if (row.nombrePiloto) {
+        unit.nombrePiloto = row.nombrePiloto;
       }
       if (row.fechaReporteUbicacion) {
         unit.fechaReporteUbicacion = row.fechaReporteUbicacion;

@@ -39,9 +39,9 @@ export const PERMISSION_TO_MODULE: Record<string, string> = {
 
   PANEL_OPERATIVO_CENTRAL_USAR: "central_operations_panel",
 
-  REPORTES_ADMINISTRATIVOS_CONSULTAR: "administrative_reports",
-
-  AUDITORIA_BITACORA_CONSULTAR: "audit_log",
+  // Administrative reports and the audit log are one "Reportes" module.
+  REPORTES_ADMINISTRATIVOS_CONSULTAR: "reports",
+  AUDITORIA_BITACORA_CONSULTAR: "reports",
 
   RECARGAS_REPORTES_CONSULTAR: "recharge_reporting",
 
@@ -57,8 +57,7 @@ const MODULE_ORDER = [
   "personnel",
   "operational_alerts",
   "central_operations_panel",
-  "administrative_reports",
-  "audit_log",
+  "reports",
   "recharge_reporting",
   "self_profile",
 ];

@@ -90,7 +90,7 @@ function UnitRow({ unit, lines }: { unit: MiEstacionUnit; lines: MiEstacionLine[
       <td className="py-2 pr-4">{line ? `${line.numeroLinea} - ${line.nombreLinea}` : unit.idLinea}</td>
       <td className="py-2 pr-4">{unit.idLineaParadaActual ? (unit.nombreParadaActual ?? unit.idLineaParadaActual) : 'Sin reporte'}</td>
       <td className="py-2 pr-4">{reportedAt ?? '—'}</td>
-      <td className="py-2">{unit.pilotAssigned ? 'Sí' : 'No'}</td>
+      <td className="py-2">{unit.pilotAssigned ? (unit.nombrePiloto ?? 'Sin nombre') : 'Sin piloto'}</td>
     </tr>
   );
 }
