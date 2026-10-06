@@ -45,6 +45,7 @@ const STATION: MiEstacion = {
       nombreParadaActual: "Terminal",
       fechaReporteUbicacion: "2026-01-02T10:00:00Z",
       pilotAssigned: true,
+      nombrePiloto: "Juan Pérez",
     },
     { idUnidad: "8", numeroPlaca: "P-888BBB", estadoUnidad: "DISPONIBLE", idLinea: "4", pilotAssigned: false },
   ],
@@ -100,10 +101,10 @@ describe("MiEstacionPage", () => {
     expect(first.getByText("P-777AAA")).toBeInTheDocument();
     expect(first.getByText("En servicio")).toBeInTheDocument();
     expect(first.getByText("Terminal")).toBeInTheDocument();
-    expect(first.getByText("Sí")).toBeInTheDocument();
+    expect(first.getByText("Juan Pérez")).toBeInTheDocument();
     const second = within(rows[2]!);
     expect(second.getByText("Sin reporte")).toBeInTheDocument();
-    expect(second.getByText("No")).toBeInTheDocument();
+    expect(second.getByText("Sin piloto")).toBeInTheDocument();
   });
 
   it("shows the empty state when the operator has no station assigned", () => {

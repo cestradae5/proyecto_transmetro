@@ -43,6 +43,7 @@ export interface MiEstacionUnitDto {
   nombreParadaActual?: string;
   fechaReporteUbicacion?: Date;
   pilotAssigned: boolean;
+  nombrePiloto?: string;
 }
 
 export interface MiEstacionResponseDto {

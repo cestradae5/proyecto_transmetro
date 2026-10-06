@@ -130,6 +130,7 @@ describe("EstacionOperadorService", () => {
           nombreParadaActual: "Parada Central",
           fechaReporteUbicacion: reportedAt,
           pilotAssigned: true,
+          nombrePiloto: "Juan Pérez",
         },
         {
           idUnidad: "8",
@@ -140,6 +141,7 @@ describe("EstacionOperadorService", () => {
           nombreParadaActual: null,
           fechaReporteUbicacion: null,
           pilotAssigned: false,
+          nombrePiloto: null,
         },
       ],
     ]);
@@ -155,6 +157,7 @@ describe("EstacionOperadorService", () => {
       nombreParadaActual: "Parada Central",
       fechaReporteUbicacion: reportedAt,
       pilotAssigned: true,
+      nombrePiloto: "Juan Pérez",
     });
     expect(units[1]).toEqual({
       idUnidad: "8",
