@@ -14,7 +14,7 @@ const MODULE_LABELS: Record<string, { icon: string; title: string; desc: string;
   "central_operations_panel": { icon: "dashboard", title: "Panel Operativo Central", desc: "Panel central de operaciones en tiempo real", color: "bg-indigo-50/80 border-indigo-200/70 text-indigo-700 text-indigo-900" },
   "reports": { icon: "bar_chart", title: "Reportes", desc: "Reportes administrativos, auditoría y cumplimiento", color: "bg-purple-50/80 border-purple-200/70 text-purple-700 text-purple-900" },
   "recharge_reporting": { icon: "credit_card", title: "Recarga", desc: "Gestión de recargas y pagos", color: "bg-emerald-50/80 border-emerald-200/70 text-emerald-700 text-emerald-900" },
-  "self_profile": { icon: "person", title: "Perfil", desc: "Ver y editar tu perfil", color: "bg-amber-50/80 border-amber-200/70 text-amber-700 text-amber-900" },
+  "self_profile": { icon: "person", title: "Perfil", desc: "Consulta tus credenciales de identificación", color: "bg-amber-50/80 border-amber-200/70 text-amber-700 text-amber-900" },
 };
 
 export function LandingPage() {
@@ -58,9 +58,15 @@ export function LandingPage() {
                   navigate(fleetDestination());
                 } else if (module === 'personnel') {
                   navigate('/personal');
+                } else if (module === 'self_profile') {
+                  navigate('/profile');
                 }
               };
-              const isNavigable = module === 'infrastructure' || module === 'fleet' || module === 'personnel';
+              const isNavigable =
+                module === 'infrastructure' ||
+                module === 'fleet' ||
+                module === 'personnel' ||
+                module === 'self_profile';
               
               return (
                 <div
