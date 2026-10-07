@@ -7,6 +7,7 @@ import { AuthenticationModule } from "./authentication/authentication.module.js"
 import { InfrastructureModule } from "./infrastructure/infrastructure.module.js";
 import { FleetModule } from "./fleet/fleet.module.js";
 import { PersonalModule } from "./personal/personal.module.js";
+import { ProfileModule } from "./profile/profile.module.js";
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PersonalModule } from "./personal/personal.module.js";
     InfrastructureModule,
     FleetModule,
     PersonalModule,
+    ProfileModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })
