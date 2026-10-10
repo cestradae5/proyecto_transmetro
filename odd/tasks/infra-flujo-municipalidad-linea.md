@@ -30,7 +30,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - Forecast: roughly 1500-2500 authored changed lines across the tasks below.
 
 ## Tasks
-- [ ] T1 Schema + seed + API alignment: new tables in `init.sql` (municipalidad, linea_municipalidad, acceso), `tbl_linea.id_parqueo` nullable, drop `tbl_parqueo.id_estacion`, `tbl_estacion.id_parada` NOT NULL; `seed-current-data.sql`; align Parqueo/Linea/Estacion entities, DTOs, services, `unidad.service.ts` null parqueo, specs and SQL fixtures.
+- [x] T1 Schema + seed + API alignment: new tables in `init.sql` (municipalidad, linea_municipalidad, acceso), `tbl_linea.id_parqueo` nullable, drop `tbl_parqueo.id_estacion`, `tbl_estacion.id_parada` NOT NULL; `seed-current-data.sql`; align Parqueo/Linea/Estacion entities, DTOs, services, `unidad.service.ts` null parqueo, specs and SQL fixtures.
 - [ ] T2 API Municipalidad module: CRUD + link/unlink lineas (`tbl_linea_municipalidad`), with specs.
 - [ ] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
 - [ ] T4 Web: tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
@@ -52,7 +52,17 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - T1: delegated writer (trigger: writer, 2+ non-trivial files; preparation read of schema/entities).
 
 ## Progress / evidence
-- (none yet)
+T1 — commit `b5c5e23` (28 files, +580/-244 = 824 authored lines, over the 400 budget: schema and API alignment must land together; the 203-line seed is the only separable part).
+- apps/api `npx tsc -p tsconfig.build.json --noEmit`: exit 0 (writer + parent spot check)
+- apps/api `npm test`: 49 suites, 571 tests passed
+- apps/api `npx tsc -p tsconfig.json --noEmit`: 32 pre-existing errors, none in touched files
+- Scratch DB `transmetro_t1_check`: init.sql + seed with ON_ERROR_STOP=1 exit 0; row counts match source for all 15 seeded tables; dropped afterwards
+- Integration spec on scratch `transmetro_t1_check_test`: 5/5; each e2e suite passes alone (asignacion-unidad 15, asignacion-piloto 19, unidad 6, piloto 3, personal 14, authentication 10, health 1); running all e2e in one jest process fails with "environment torn down" (runner issue, not schema)
+- Real `transmetro` DB untouched (still old schema); local `transmetro_test` also needs rebuild before `npm run test:e2e`
+- RDD: off -> no review
+- Writer decisions: permissions/role links seeded by code (source ids differ from a fresh init.sql); acceso latitud/longitud match parada DECIMAL(10,8)/(11,8) NOT NULL; new tables without ON DELETE like tbl_estacion_linea
+- Open: admin employee (id 1) uses ON CONFLICT DO NOTHING, so init.sql values win (current DB has it with role PILOTO and phone/DPI/address that are not restored)
+- Admin-web mismatches for T4: infrastructure.types.ts (Parqueo.idEstacion, Linea.idParqueo nullable, Estacion.idParada required), parqueo-form, linea-form, estacion-form, parqueos-table
 
 ## Next step
-T1.
+Resolve admin employee seed behavior, then T2.
