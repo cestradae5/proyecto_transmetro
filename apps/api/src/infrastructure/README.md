@@ -146,7 +146,7 @@ Base path: `/infrastructure`. All routes below require
 | GET | `/` | List all |
 | GET | `/:id` | Get one |
 | PATCH | `/:id` | Update |
-| DELETE | `/:id` | Soft delete → `CERRADA` (no `force` param — see Known Limitations) |
+| DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` (exactly `"true"`) hard-deletes the row so the parada stops being an estación; rows still referencing it (FK violation `23503`) → 409 `ESTACION_IN_USE` |
 
 ### Parqueos — `/infrastructure/parqueos`
 | Method | Path | Notes |
@@ -249,9 +249,9 @@ future readers aren't surprised — not blocking, just not yet fixed):
    PARADA_NOT_FOUND` when `POST /:id/paradas` references a nonexistent
    parada. The implementation returns `404`, matching the existing FK-error
    convention used elsewhere in this module instead.
-5. **`force` hard-delete asymmetry**: `ParadaService.remove()` accepts a
-   `force` query param for a hard delete; `EstacionService.remove()` and
-   `LineaService.remove()` do not expose the same option.
+5. **`force` hard-delete asymmetry**: `ParadaService.remove()` and
+   `EstacionService.remove()` accept a `force` query param for a hard delete;
+   `LineaService.remove()` does not expose the same option.
 6. **`validateForeignKey` is triplicated with divergent contracts**:
    `shared/validators.ts` (Nest `NotFoundException`, `"… no encontrada"`, FK
    name supplied by the caller, 4 args) and the two byte-identical

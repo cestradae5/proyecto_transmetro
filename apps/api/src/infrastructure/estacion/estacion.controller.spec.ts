@@ -101,12 +101,27 @@ describe("EstacionController", () => {
       expect(result).toEqual(updated);
     });
 
-    it("remove() delegates to service.remove with the id param", async () => {
+    it("remove() delegates to service.remove with id and force=false when query is absent", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1");
+      await controller.remove("1", undefined);
 
-      expect(service.remove).toHaveBeenCalledWith("1");
+      expect(service.remove).toHaveBeenCalledWith("1", false);
+    });
+
+    it("remove() forwards force=true only when the query string is exactly 'true'", async () => {
+      service.remove.mockResolvedValue(undefined);
+
+      await controller.remove("1", "true");
+      expect(service.remove).toHaveBeenCalledWith("1", true);
+
+      service.remove.mockClear();
+      await controller.remove("1", "1");
+      expect(service.remove).toHaveBeenCalledWith("1", false);
+
+      service.remove.mockClear();
+      await controller.remove("1", "TRUE");
+      expect(service.remove).toHaveBeenCalledWith("1", false);
     });
   });
 
