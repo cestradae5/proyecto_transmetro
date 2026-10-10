@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Infrastructure module manages the complete transportation infrastructure of Transmetro, including stops, stations, parking lots, lines, and disruptions. It provides a comprehensive CRUD interface with search, filtering, and real-time status tracking.
+The Infrastructure module manages the complete transportation infrastructure of Transmetro, including municipalities, lines, stops, stations, stop accesses, parking lots, and disruptions. It provides a comprehensive CRUD interface with search, filtering, and real-time status tracking.
+
+Tabs follow the creation flow: **Municipalidades → Líneas → Paradas → Parqueos → Afectaciones** (default: Municipalidades). "Crear Nuevo" opens the create dialog of the active tab.
 
 ## File Structure
 
@@ -16,19 +18,31 @@ infrastructure/
 │   ├── lineas/
 │   │   ├── linea-dialog.tsx         # Create/Edit modal for lines
 │   │   ├── linea-form.tsx           # Form with color picker
+│   │   ├── linea-parada-*.tsx       # "Gestionar paradas" dialog (ordered sequence)
+│   │   ├── linea-municipalidades-dialog.tsx # "Municipalidades" dialog (link/unlink)
 │   │   └── lineas-table.tsx         # Table with search/filter
+│   ├── municipalidades/
+│   │   ├── municipalidad-dialog.tsx # Create/Edit modal for municipalities
+│   │   ├── municipalidad-form.tsx   # Form (nombre ≤120, departamento ≤60, estado)
+│   │   └── municipalidades-table.tsx # Table with search, "Desactivar" (soft delete)
 │   ├── paradas/
 │   │   ├── parada-dialog.tsx        # Create/Edit modal for stops
 │   │   ├── parada-form.tsx          # Form with validation + "Es estación" toggle
-│   │   └── paradas-table.tsx        # Table with search/filter, Estación badge, station lines
+│   │   ├── accesos-dialog.tsx       # "Accesos" dialog: list/create/edit/deactivate
+│   │   ├── acceso-form.tsx          # Acceso form (coords prefilled from the parada)
+│   │   └── paradas-table.tsx        # Table with search/filter, Estación badge, station lines, accesos
 │   └── parqueos/
 │       ├── parqueo-dialog.tsx       # Create/Edit modal for parking lots
 │       ├── parqueo-form.tsx         # Form with validation
 │       └── parqueos-table.tsx       # Table with search/filter
 ├── hooks/
+│   ├── use-accesos.ts               # API hook for a parada's accesos (mapped Spanish errors)
 │   ├── use-afectaciones.ts          # API hook for disruptions
 │   ├── use-estaciones.ts            # API hook for stations
 │   ├── use-lineas.ts                # API hook for lines
+│   ├── use-linea-municipalidades.ts # API hook for línea ↔ municipalidad links (mapped errors)
+│   ├── use-linea-paradas.ts         # API hook for a línea's parada sequence (mapped errors)
+│   ├── use-municipalidades.ts       # API hook for municipalities (mapped Spanish errors)
 │   ├── use-paradas.ts               # API hook for stops
 │   ├── save-parada-estacion.ts      # Parada save + estación create/update/force-delete
 │   └── use-parqueos.ts              # API hook for parking lots
@@ -40,6 +54,34 @@ infrastructure/
 ```
 
 ## Entities
+
+### Municipalidad (Municipality)
+First step of the creation flow. Líneas are linked to municipalidades (N:M)
+from the lineas table ("Municipalidades" action): the dialog lists the linked
+municipalidades, offers only ACTIVA municipalidades not yet linked, and removes
+links after confirmation. A duplicate link (409 `LINEA_MUNICIPALIDAD_DUPLICATE`)
+shows "La municipalidad ya está asignada a la línea". The lineas table does not
+show municipalidad names per row (that would need one request per línea).
+
+**Fields:**
+- `nombre` (required, max 120, unique): duplicate → "Ya existe una municipalidad con ese nombre" (409 `MUNICIPALIDAD_NOMBRE_DUPLICATE`)
+- `departamento` (required, max 60)
+- `estado` (required): ACTIVA | INACTIVA
+
+"Desactivar" calls `DELETE /infrastructure/municipalidades/:id`, a soft delete
+to INACTIVA (only offered for ACTIVA rows; links to líneas are kept).
+
+### Acceso (Stop entrance)
+Belongs to a parada (`/infrastructure/paradas/:id/accesos`). Managed from the
+paradas table ("Accesos" action). On create, latitud/longitud are prefilled
+with the parada's coordinates. "Desactivar" is a soft delete to DESHABILITADO
+(only offered for HABILITADO rows).
+
+**Fields:**
+- `nombre` (required, max 120)
+- `tipo` (required): PEATONAL | RAMPA | ESCALERA | ELEVADOR
+- `estado` (required): HABILITADO | DESHABILITADO
+- `latitud` (required, -90 to 90), `longitud` (required, -180 to 180)
 
 ### 1. Parada (Stop)
 Basic bus stop in the system.

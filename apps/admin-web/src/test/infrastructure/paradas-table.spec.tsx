@@ -11,6 +11,13 @@ vi.mock("../../features/fleet/components/estaciones/estacion-lineas-dialog", () 
   ),
 }));
 
+// The accesos dialog has its own spec (accesos-dialog.spec.tsx).
+vi.mock("../../features/infrastructure/components/paradas/accesos-dialog", () => ({
+  AccesosDialog: ({ parada }: { parada: { idParada: number; nombreParada: string } }) => (
+    <div role="dialog" aria-label="Accesos de la parada">{`${parada.idParada}:${parada.nombreParada}`}</div>
+  ),
+}));
+
 const PARADAS: Parada[] = [
   {
     idParada: 1,
@@ -76,6 +83,16 @@ describe("ParadasTable", () => {
     fireEvent.click(within(rowOf("Parada Central")).getByRole("button", { name: "Líneas de la estación" }));
 
     expect(screen.getByRole("dialog", { name: "Líneas de la estación" })).toHaveTextContent("12:Estación Central");
+  });
+
+  it("offers the Accesos action on every parada and opens it for the right parada", () => {
+    renderTable();
+
+    expect(within(rowOf("Parada Central")).getByRole("button", { name: "Accesos" })).toBeInTheDocument();
+
+    fireEvent.click(within(rowOf("Parada Simple")).getByRole("button", { name: "Accesos" }));
+
+    expect(screen.getByRole("dialog", { name: "Accesos de la parada" })).toHaveTextContent("1:Parada Simple");
   });
 
   it("opens the edit dialog with the linked estación pre-filled and saves through onSave", async () => {

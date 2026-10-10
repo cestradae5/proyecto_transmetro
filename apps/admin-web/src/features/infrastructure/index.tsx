@@ -5,7 +5,10 @@ import { useEstaciones } from './hooks/use-estaciones';
 import { useParqueos } from './hooks/use-parqueos';
 import { useLineas } from './hooks/use-lineas';
 import { useAfectaciones } from './hooks/use-afectaciones';
+import { useMunicipalidades } from './hooks/use-municipalidades';
 import { saveParadaWithEstacion } from './hooks/save-parada-estacion';
+import { MunicipalidadesTable } from './components/municipalidades/municipalidades-table';
+import { MunicipalidadDialog } from './components/municipalidades/municipalidad-dialog';
 import { ParadasTable } from './components/paradas/paradas-table';
 import { ParqueosTable } from './components/parqueos/parqueos-table';
 import { LineasTable } from './components/lineas/lineas-table';
@@ -18,21 +21,29 @@ import type { ParadaFormValues } from './types/infrastructure.types';
 
 // Estaciones have no tab of their own: an estación is a 1:1 extension of a
 // parada and is managed from the parada form ("Es estación").
-type Tab = 'lineas' | 'paradas' | 'parqueos' | 'afectaciones';
+type Tab = 'municipalidades' | 'lineas' | 'paradas' | 'parqueos' | 'afectaciones';
 
 export function InfrastructurePage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<Tab>('lineas');
+  const [activeTab, setActiveTab] = useState<Tab>('municipalidades');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
+  const {
+    municipalidades,
+    loading: municipalidadesLoading,
+    createMunicipalidad,
+    updateMunicipalidad,
+    deleteMunicipalidad,
+  } = useMunicipalidades();
   const { paradas, loading: paradasLoading, refresh: refreshParadas, createParada, updateParada, deleteParada } = useParadas();
   const { estaciones, loading: estacionesLoading, createEstacion, updateEstacion, deleteEstacion } = useEstaciones();
   const { parqueos, loading: parqueosLoading, createParqueo, updateParqueo, deleteParqueo } = useParqueos();
   const { lineas, loading: lineasLoading, createLinea, updateLinea, deleteLinea } = useLineas();
   const { afectaciones, loading: afectacionesLoading, createAfectacion, updateAfectacion, deleteAfectacion } = useAfectaciones();
 
-  // Creation flow order: Línea -> Parada/Estación -> Parqueo, then Afectaciones.
+  // Creation flow order: Municipalidad -> Línea -> Parada/Estación -> Parqueo, then Afectaciones.
   const tabs = [
+    { id: 'municipalidades' as Tab, label: 'Municipalidades', count: municipalidades.length },
     { id: 'lineas' as Tab, label: 'Líneas', count: lineas.length },
     { id: 'paradas' as Tab, label: 'Paradas', count: paradas.length },
     { id: 'parqueos' as Tab, label: 'Parqueos', count: parqueos.length },
@@ -51,6 +62,9 @@ export function InfrastructurePage() {
 
   const handleCreate = async (data: any) => {
     switch (activeTab) {
+      case 'municipalidades':
+        await createMunicipalidad(data);
+        break;
       case 'paradas':
         await saveParada(null, data as ParadaFormValues);
         break;
@@ -67,7 +81,7 @@ export function InfrastructurePage() {
     setShowCreateDialog(false);
   };
 
-  const isLoading = paradasLoading || estacionesLoading || parqueosLoading || lineasLoading || afectacionesLoading;
+  const isLoading = municipalidadesLoading || paradasLoading || estacionesLoading || parqueosLoading || lineasLoading || afectacionesLoading;
   // Only replace the table while the active tab has nothing to show yet: a
   // background refetch (e.g. after saving a parada's estación) must not
   // unmount an open edit dialog.
@@ -123,8 +137,22 @@ export function InfrastructurePage() {
             </div>
           ) : (
             <>
+              {activeTab === 'municipalidades' && (
+                <MunicipalidadesTable
+                  municipalidades={municipalidades}
+                  onUpdate={updateMunicipalidad}
+                  onDelete={deleteMunicipalidad}
+                />
+              )}
               {activeTab === 'lineas' && (
-                <LineasTable lineas={lineas} parqueos={parqueos} paradas={paradas} onUpdate={updateLinea} onDelete={deleteLinea} />
+                <LineasTable
+                  lineas={lineas}
+                  parqueos={parqueos}
+                  paradas={paradas}
+                  municipalidades={municipalidades}
+                  onUpdate={updateLinea}
+                  onDelete={deleteLinea}
+                />
               )}
               {activeTab === 'paradas' && (
                 <ParadasTable
@@ -146,6 +174,9 @@ export function InfrastructurePage() {
         </div>
       </main>
 
+      {showCreateDialog && activeTab === 'municipalidades' && (
+        <MunicipalidadDialog onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
+      )}
       {showCreateDialog && activeTab === 'lineas' && (
         <LineaDialog parqueos={parqueos} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
       )}
