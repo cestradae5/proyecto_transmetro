@@ -33,8 +33,8 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - [x] T1 Schema + seed + API alignment: new tables in `init.sql` (municipalidad, linea_municipalidad, acceso), `tbl_linea.id_parqueo` nullable, drop `tbl_parqueo.id_estacion`, `tbl_estacion.id_parada` NOT NULL; `seed-current-data.sql`; align Parqueo/Linea/Estacion entities, DTOs, services, `unidad.service.ts` null parqueo, specs and SQL fixtures.
 - [x] T2 API Municipalidad module: CRUD + link/unlink lineas (`tbl_linea_municipalidad`), with specs.
 - [x] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
-- [ ] T4a API: estacion hard delete via `DELETE /infrastructure/stations/:id?force=true` (same `force` pattern as parada), 409 `ESTACION_IN_USE` when referenced (FK violation 23503); default DELETE keeps soft close (CERRADA). Decision (user): turning off "Es estación" on the parada form hard-deletes the estacion.
-- [ ] T4 Web: tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
+- [x] T4a API: estacion hard delete via `DELETE /infrastructure/estaciones/:id?force=true` (same `force` pattern as parada), 409 `ESTACION_IN_USE` when referenced (FK violation 23503); default DELETE keeps soft close (CERRADA). Decision (user): turning off "Es estación" on the parada form hard-deletes the estacion.
+- [x] T4 Web (municipalidades selector on linea form moved to T5): tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
 - [ ] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
 
 ## Slices (feature-branch-chain)
@@ -42,7 +42,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - PR #2 `feat/infra-flow-02-municipalidad` -> `feat/infra-flow-01-schema`: T2
 - PR #3 `feat/infra-flow-03-acceso` -> `feat/infra-flow-02-municipalidad`: T3
 - PR #4 `feat/infra-flow-04-web-forms` -> `feat/infra-flow-03-acceso`: T4
-- Later slices planned as each task's line count is known.
+- PR #5 `feat/infra-flow-05-web-municipalidad-acceso` -> `feat/infra-flow-04-web-forms`: T5
 
 ## Acceptance criteria
 - A linea can be created with no parqueo, no paradas and no estaciones.
@@ -87,5 +87,14 @@ T3 — commit `e567a76` (14 files, +977/-43; ~490 spec lines; over the 400 budge
 - Writer choices: acceso cannot move between paradas; sorted by name; ids returned as strings at runtime (pre-existing number/string mismatch for parada ids left as is)
 - Route: delegated writer (writer trigger)
 
+T4a — commit `af5d2c5` (+142/-17). T4 — commit `a9cb20b` (+913/-500; 346 deletions are the removed estaciones tab files).
+- Estaciones tab removed: estacion is managed from the parada form ("Es estación" toggle; hard delete runs on Guardar after confirm; 409 ESTACION_IN_USE restores the toggle with a Spanish message). Paradas table shows an "Estación" badge and a "Líneas de la estación" action reusing fleet's EstacionLineasDialog.
+- Tabs: Líneas -> Paradas -> Parqueos -> Afectaciones (default Líneas); linea parqueo optional ("Sin parqueo"); parqueo form without estacion; landing text updated
+- apps/api `npx tsc -p tsconfig.build.json --noEmit`: exit 0; `npm test`: 55 suites, 660 passed
+- apps/admin-web `npx tsc -b`: exit 0; `npx vitest run`: 55 files, 390 passed; parent spot check `npx vitest run src/test/infrastructure`: 12 files, 88 passed
+- admin-web has no lint script (not run)
+- Known gap: creating a parada with estacion where the estacion save fails, then retrying, creates the parada twice
+- Route: delegated writer (writer trigger)
+
 ## Next step
-T4 on `feat/infra-flow-04-web-forms` (child of `feat/infra-flow-03-acceso`).
+T5 on `feat/infra-flow-05-web-municipalidad-acceso` (child of `feat/infra-flow-04-web-forms`): Municipalidades tab first, municipalidad selector on linea form, Accesos UI per parada.
