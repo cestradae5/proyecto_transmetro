@@ -37,12 +37,28 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - [x] T4 Web (municipalidades selector on linea form moved to T5): tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
 - [x] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
 
+## UI rework decisions (user, after T5)
+- Infrastructure page stops being tab-based. A "Nueva infraestructura" wizard is the only creation path; existing data is reviewed/edited in a grouped view (Municipalidad -> Líneas -> Paradas y parqueo) that replaces the tabs.
+- Wizard steps unlock in order, each step persists to the API when completed:
+  1. Municipalidad: pick an existing ACTIVA one or create a new one.
+  2. Línea: create it (no parqueo yet) and link it to the step-1 municipalidad.
+  3. Paradas y parqueo of that línea: one parqueo per línea (pick existing or create, may stay empty); paradas in one ordered list, each picked from existing or created inline (nombre, coordenadas, "Es estación"), with move up/down and minutos hasta la siguiente.
+- Accesos stay out of the wizard (grouped view, "Accesos" action per parada). Afectaciones stay out of the wizard (operational).
+- Existing lineas without municipalidad (seeded data) appear under a "Sin municipalidad" group.
+
+## Additional tasks
+- [ ] T6 API support: `GET /infrastructure/municipalidades/:id/lineas` (lineas of a municipalidad, avoids N+1 in the grouped view) and a transactional bulk reorder of a línea's paradas (`UNIQUE(id_linea, orden)` is not deferrable and `CHECK (orden > 0)`, so up/down swaps cannot be done with single PATCHes); specs.
+- [ ] T7 Web wizard "Nueva infraestructura" (3 steps above) with tests.
+- [ ] T8 Web grouped view replacing tabs (municipalidad -> líneas -> paradas/parqueo, "Sin municipalidad" group, edit actions reusing existing dialogs, accesos/afectaciones reachable) with tests.
+
 ## Slices (feature-branch-chain)
 - PR #1 `feat/infra-flow-01-schema` -> `feat/infra-flow`: T1
 - PR #2 `feat/infra-flow-02-municipalidad` -> `feat/infra-flow-01-schema`: T2
 - PR #3 `feat/infra-flow-03-acceso` -> `feat/infra-flow-02-municipalidad`: T3
 - PR #4 `feat/infra-flow-04-web-forms` -> `feat/infra-flow-03-acceso`: T4
 - PR #5 `feat/infra-flow-05-web-municipalidad-acceso` -> `feat/infra-flow-04-web-forms`: T5
+- PR #6 `feat/infra-flow-06-wizard` -> `feat/infra-flow-05-web-municipalidad-acceso`: T6 + T7
+- PR #7 `feat/infra-flow-07-grouped-view` -> `feat/infra-flow-06-wizard`: T8
 
 ## Acceptance criteria
 - A linea can be created with no parqueo, no paradas and no estaciones.
@@ -103,4 +119,4 @@ T5 — commit `1753b3a` (24 files, +2249/-13; ~1155 spec lines).
 - Route: delegated writer (writer trigger)
 
 ## Next step
-All tasks done. Pending user decisions: push branches and open the chained PRs (tracker `feat/infra-flow` draft + PR #1..#5), `size:exception` for slices over 400 lines; recreate local `transmetro` and `transmetro_test` from init.sql + seed; e2e full-run teardown issue remains.
+T6 + T7 on `feat/infra-flow-06-wizard`, then T8. Still pending user decisions: push branches and open the chained PRs (tracker `feat/infra-flow` draft + PR #1..#5), `size:exception` for slices over 400 lines; recreate local `transmetro` and `transmetro_test` from init.sql + seed; e2e full-run teardown issue remains.
