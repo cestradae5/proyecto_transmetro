@@ -1,5 +1,11 @@
-import { IsString, IsNotEmpty, IsEnum, Matches } from "class-validator";
-import { ApiProperty } from "@nestjs/swagger";
+import {
+  IsString,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  Matches,
+} from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export enum EstadoLinea {
   ACTIVA = "ACTIVA",
@@ -47,8 +53,16 @@ export class CreateLineaDto {
   @IsEnum(TipoRecorrido)
   tipoRecorrido!: TipoRecorrido;
 
-  @ApiProperty({ description: "ID del parqueo asociado" })
+  // Optional: a línea can be created before any parqueo exists. `null` is
+  // accepted (e.g. on update, to clear the assignment): @IsOptional skips the
+  // remaining validators for both null and undefined.
+  @ApiPropertyOptional({
+    description: "ID del parqueo asociado (opcional)",
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  idParqueo!: string;
+  idParqueo?: string | null;
 }

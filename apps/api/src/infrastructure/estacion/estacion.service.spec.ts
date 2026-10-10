@@ -1,10 +1,17 @@
 // PR#2 infraestructura-hardening — EstacionService unit tests (mocked repositories).
 // EstacionService depends on two repositories: EstacionEntity (own table) and
-// ParadaEntity (FK target for the optional idParada relation), validated via
-// validateForeignKey() in ../shared/validators.js.
+// ParadaEntity (FK target for the required idParada relation), validated via
+// validateForeignKey() in ../shared/validators.js. An estación is a 1:1
+// extension of a parada (tbl_estacion.id_parada NOT NULL UNIQUE).
 
 import { jest } from "@jest/globals";
-import { NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
 import type { Repository } from "typeorm";
 
 import { CreateEstacionDto, EstadoEstacion } from "./dto/create-estacion.dto.js";
@@ -48,7 +55,7 @@ function makeEstacion(overrides: Partial<EstacionEntity> = {}): EstacionEntity {
     latitud: 14.6349,
     longitud: -90.5069,
     estadoEstacion: EstadoEstacion.ACTIVA,
-    idParada: undefined,
+    idParada: 3,
     ...overrides,
   } as EstacionEntity;
 }
@@ -68,20 +75,24 @@ describe("EstacionService", () => {
   });
 
   describe("create", () => {
-    it("persists a valid estación with no idParada without checking the FK", async () => {
+    it("persists a valid estación when idParada references a parada without estación", async () => {
       const dto: CreateEstacionDto = {
-        nombreEstacion: "Estación Central",
-        latitud: 14.6349,
-        longitud: -90.5069,
+        nombreEstacion: "Estación Norte",
+        latitud: 14.64,
+        longitud: -90.51,
         estadoEstacion: EstadoEstacion.ACTIVA,
+        idParada: 5,
       };
-      const created = makeEstacion();
+      const created = makeEstacion({ idParada: 5 });
+      paradaRepository.count.mockResolvedValue(1);
+      estacionRepository.findOne.mockResolvedValue(null);
       estacionRepository.create.mockReturnValue(created);
       estacionRepository.save.mockResolvedValue(created);
 
       const result = await service.create(dto);
 
-      expect(paradaRepository.count).not.toHaveBeenCalled();
+      expect(paradaRepository.count).toHaveBeenCalledWith({ where: { idParada: 5 } });
+      expect(estacionRepository.findOne).toHaveBeenCalledWith({ where: { idParada: 5 } });
       expect(estacionRepository.create).toHaveBeenCalledWith(dto);
       expect(result).toEqual({
         idEstacion: created.idEstacion,
@@ -89,27 +100,8 @@ describe("EstacionService", () => {
         latitud: created.latitud,
         longitud: created.longitud,
         estadoEstacion: created.estadoEstacion,
-        idParada: created.idParada,
+        idParada: 5,
       });
-    });
-
-    it("persists a valid estación when idParada references an existing parada", async () => {
-      const dto: CreateEstacionDto = {
-        nombreEstacion: "Estación Norte",
-        latitud: 14.64,
-        longitud: -90.51,
-        estadoEstacion: EstadoEstacion.ACTIVA,
-        idParada: "5",
-      };
-      const created = makeEstacion({ idParada: "5" });
-      paradaRepository.count.mockResolvedValue(1);
-      estacionRepository.create.mockReturnValue(created);
-      estacionRepository.save.mockResolvedValue(created);
-
-      const result = await service.create(dto);
-
-      expect(paradaRepository.count).toHaveBeenCalledWith({ where: { idParada: "5" } });
-      expect(result.idParada).toBe("5");
     });
 
     it("throws NotFoundException when idParada does not reference an existing parada", async () => {
@@ -118,20 +110,57 @@ describe("EstacionService", () => {
         latitud: 14.64,
         longitud: -90.51,
         estadoEstacion: EstadoEstacion.ACTIVA,
-        idParada: "999",
+        idParada: 999,
       };
       paradaRepository.count.mockResolvedValue(0);
-      paradaRepository.findOne.mockResolvedValue(null);
 
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
       expect(estacionRepository.create).not.toHaveBeenCalled();
       expect(estacionRepository.save).not.toHaveBeenCalled();
     });
+
+    it("throws ConflictException when the parada already has an estación", async () => {
+      const dto: CreateEstacionDto = {
+        nombreEstacion: "Estación Duplicada",
+        latitud: 14.64,
+        longitud: -90.51,
+        estadoEstacion: EstadoEstacion.ACTIVA,
+        idParada: 5,
+      };
+      paradaRepository.count.mockResolvedValue(1);
+      estacionRepository.findOne.mockResolvedValue(makeEstacion({ idParada: 5 }));
+
+      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+      expect(estacionRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("CreateEstacionDto validation", () => {
+    const base = {
+      nombreEstacion: "Estación Norte",
+      latitud: 14.64,
+      longitud: -90.51,
+      estadoEstacion: EstadoEstacion.ACTIVA,
+    };
+
+    it("rejects a payload without idParada", async () => {
+      const errors = await validate(plainToInstance(CreateEstacionDto, base));
+
+      expect(errors.map((e) => e.property)).toContain("idParada");
+    });
+
+    it("accepts a payload with a numeric idParada", async () => {
+      const errors = await validate(
+        plainToInstance(CreateEstacionDto, { ...base, idParada: 5 }),
+      );
+
+      expect(errors).toHaveLength(0);
+    });
   });
 
   describe("findAll", () => {
     it("returns the full list of estaciones mapped to response DTOs", async () => {
-      const estaciones = [makeEstacion(), makeEstacion({ idEstacion: "2" })];
+      const estaciones = [makeEstacion(), makeEstacion({ idEstacion: 2 })];
       estacionRepository.find.mockResolvedValue(estaciones);
 
       const result = await service.findAll();
@@ -183,24 +212,56 @@ describe("EstacionService", () => {
       expect(result.nombreEstacion).toBe("Renombrada");
     });
 
-    it("validates the FK when idParada is provided on update", async () => {
+    it("validates the FK and uniqueness when idParada changes on update", async () => {
+      const existing = makeEstacion();
+      estacionRepository.findOne
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(null);
+      paradaRepository.count.mockResolvedValue(1);
+      estacionRepository.save.mockResolvedValue({ ...existing, idParada: 5 });
+
+      await service.update("1", { idParada: 5 });
+
+      expect(paradaRepository.count).toHaveBeenCalledWith({ where: { idParada: 5 } });
+      expect(estacionRepository.findOne).toHaveBeenLastCalledWith({ where: { idParada: 5 } });
+    });
+
+    it("skips the FK check when idParada is unchanged", async () => {
       const existing = makeEstacion();
       estacionRepository.findOne.mockResolvedValue(existing);
+      estacionRepository.save.mockResolvedValue(existing);
+
+      await service.update("1", { idParada: existing.idParada });
+
+      expect(paradaRepository.count).not.toHaveBeenCalled();
+    });
+
+    it("throws ConflictException when the new parada already has an estación", async () => {
+      const existing = makeEstacion();
+      estacionRepository.findOne
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(makeEstacion({ idEstacion: 2, idParada: 7 }));
       paradaRepository.count.mockResolvedValue(1);
-      estacionRepository.save.mockResolvedValue({ ...existing, idParada: "5" });
 
-      await service.update("1", { idParada: "5" });
+      await expect(service.update("1", { idParada: 7 })).rejects.toThrow(ConflictException);
+      expect(estacionRepository.save).not.toHaveBeenCalled();
+    });
 
-      expect(paradaRepository.count).toHaveBeenCalledWith({ where: { idParada: "5" } });
+    it("throws BadRequestException when idParada is cleared to null", async () => {
+      estacionRepository.findOne.mockResolvedValue(makeEstacion());
+
+      await expect(
+        service.update("1", { idParada: null as unknown as number }),
+      ).rejects.toThrow(BadRequestException);
+      expect(estacionRepository.save).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the FK target does not exist on update", async () => {
       const existing = makeEstacion();
       estacionRepository.findOne.mockResolvedValue(existing);
       paradaRepository.count.mockResolvedValue(0);
-      paradaRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.update("1", { idParada: "999" })).rejects.toThrow(NotFoundException);
+      await expect(service.update("1", { idParada: 999 })).rejects.toThrow(NotFoundException);
       expect(estacionRepository.save).not.toHaveBeenCalled();
     });
 

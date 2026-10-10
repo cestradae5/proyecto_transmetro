@@ -25,7 +25,4 @@ export class ParqueoResponseDto {
 
   @ApiProperty({ description: "Estado del parqueo", enum: EstadoParqueo })
   estadoParqueo!: EstadoParqueo;
-
-  @ApiProperty({ description: "ID de la estación asociada" })
-  idEstacion!: string;
 }

@@ -180,10 +180,10 @@ describe("AssignmentScopeRepository fresh baseline integration", () => {
       [`Inactive station ${suffix}`, inactiveStopId],
     );
     const parkingId = await insertId(
-      `INSERT INTO tbl_parqueo (nombre_parqueo, tipo_parqueo, direccion, latitud, longitud, capacidad_unidades, estado_parqueo, id_estacion)
-       VALUES ($1, 'CENTRAL', 'Test address', 14.6, -90.5, 10, 'ACTIVO', $2)
+      `INSERT INTO tbl_parqueo (nombre_parqueo, tipo_parqueo, direccion, latitud, longitud, capacidad_unidades, estado_parqueo)
+       VALUES ($1, 'CENTRAL', 'Test address', 14.6, -90.5, 10, 'ACTIVO')
        RETURNING id_parqueo AS id`,
-      [`Scope parking ${suffix}`, activeStationId],
+      [`Scope parking ${suffix}`],
     );
     const activeLineId = await insertId(
       `INSERT INTO tbl_linea (numero_linea, nombre_linea, color_hex, estado_linea, tipo_recorrido, id_parqueo)

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { EstacionEntity } from "./estacion.entity.js";
@@ -20,26 +25,15 @@ export class EstacionService {
   async create(
     createEstacionDto: CreateEstacionDto
   ): Promise<EstacionResponseDto> {
-    // Validate FK if provided
-    if (createEstacionDto.idParada) {
-      await validateForeignKey(
-        this.paradaRepository,
-        createEstacionDto.idParada,
-        "idParada",
-        "Parada"
-      );
-
-      const parada = await this.paradaRepository.findOne({
-        where: { idParada: createEstacionDto.idParada },
-      });
-      if (parada) {
-        const estacion = this.estacionRepository.create(createEstacionDto);
-        estacion.parada = parada;
-        estacion.idParada = parada.idParada;
-        const saved = await this.estacionRepository.save(estacion);
-        return this.toResponseDto(saved);
-      }
-    }
+    // An estación is a 1:1 extension of a parada: the parada must exist and
+    // must not already have an estación (tbl_estacion.id_parada is UNIQUE).
+    await validateForeignKey(
+      this.paradaRepository,
+      createEstacionDto.idParada,
+      "idParada",
+      "Parada"
+    );
+    await this.ensureParadaWithoutEstacion(createEstacionDto.idParada);
 
     const estacion = this.estacionRepository.create(createEstacionDto);
     const saved = await this.estacionRepository.save(estacion);
@@ -72,14 +66,23 @@ export class EstacionService {
       throw new NotFoundException(`Estación con ID ${id} no encontrada`);
     }
 
-    // Validate FK if provided
-    if (updateEstacionDto.idParada) {
+    // idParada is NOT NULL: it can be changed but never cleared.
+    if (updateEstacionDto.idParada === null) {
+      throw new BadRequestException("idParada no puede ser nulo");
+    }
+
+    // Validate FK and the 1:1 uniqueness if the parada changes.
+    if (
+      updateEstacionDto.idParada !== undefined &&
+      String(updateEstacionDto.idParada) !== String(estacion.idParada)
+    ) {
       await validateForeignKey(
         this.paradaRepository,
         updateEstacionDto.idParada,
         "idParada",
         "Parada"
       );
+      await this.ensureParadaWithoutEstacion(updateEstacionDto.idParada);
     }
 
     Object.assign(estacion, updateEstacionDto);
@@ -98,6 +101,18 @@ export class EstacionService {
     // Soft delete: set status to CERRADA
     estacion.estadoEstacion = "CERRADA";
     await this.estacionRepository.save(estacion);
+  }
+
+  private async ensureParadaWithoutEstacion(idParada: number): Promise<void> {
+    const existing = await this.estacionRepository.findOne({
+      where: { idParada },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `La parada ${idParada} ya tiene una estación asociada`,
+        "PARADA_ALREADY_HAS_ESTACION"
+      );
+    }
   }
 
   private toResponseDto(estacion: EstacionEntity): EstacionResponseDto {

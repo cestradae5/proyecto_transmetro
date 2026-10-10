@@ -41,7 +41,6 @@ function makeParqueoResponse(
     longitud: -90.5069,
     capacidadUnidades: 20,
     estadoParqueo: EstadoParqueo.ACTIVO,
-    idEstacion: "1",
     ...overrides,
   };
 }
@@ -65,7 +64,6 @@ describe("ParqueoController", () => {
         longitud: -90.5069,
         capacidadUnidades: 20,
         estadoParqueo: EstadoParqueo.ACTIVO,
-        idEstacion: "1",
       };
       const created = makeParqueoResponse();
       service.create.mockResolvedValue(created);

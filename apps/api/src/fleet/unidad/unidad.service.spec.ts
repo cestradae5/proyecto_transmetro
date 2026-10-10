@@ -380,6 +380,18 @@ describe("UnidadService", () => {
       );
     });
 
+    it("omits parqueo when the assigned line has no parqueo", async () => {
+      unidadRepo.findOne.mockResolvedValue(makeUnidad());
+      asignacionUnidadRepo.findOne.mockResolvedValue(makeAsignacionUnidad("10"));
+      lineaService.findOne.mockResolvedValue({ idLinea: "10", idParqueo: null });
+
+      const result = await service.findOne("1");
+
+      expect(result.idLinea).toBe("10");
+      expect(parqueoService.findOne).not.toHaveBeenCalled();
+      expect(result.parqueo).toBeUndefined();
+    });
+
     it("exposes nombreLinea from the assigned line, and omits it without a line", async () => {
       unidadRepo.findOne.mockResolvedValue(makeUnidad());
       asignacionUnidadRepo.findOne.mockResolvedValueOnce(makeAsignacionUnidad("10"));

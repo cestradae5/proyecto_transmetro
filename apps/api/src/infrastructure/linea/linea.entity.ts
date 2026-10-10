@@ -47,10 +47,11 @@ export class LineaEntity {
   })
   tipoRecorrido!: TipoRecorrido;
 
-  @Column({ name: "id_parqueo", type: "bigint" })
-  idParqueo!: string;
+  // Nullable: a línea is created first and its parqueo is assigned later.
+  @Column({ name: "id_parqueo", type: "bigint", nullable: true })
+  idParqueo!: string | null;
 
-  @ManyToOne(() => ParqueoEntity)
+  @ManyToOne(() => ParqueoEntity, { nullable: true })
   @JoinColumn({ name: "id_parqueo" })
-  parqueo!: ParqueoEntity;
+  parqueo?: ParqueoEntity | null;
 }

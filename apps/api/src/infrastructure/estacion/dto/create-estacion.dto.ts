@@ -5,9 +5,8 @@ import {
   Min,
   Max,
   IsEnum,
-  IsOptional,
 } from "class-validator";
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty } from "@nestjs/swagger";
 
 export enum EstadoEstacion {
   ACTIVA = "ACTIVA",
@@ -45,8 +44,8 @@ export class CreateEstacionDto {
   @IsEnum(EstadoEstacion)
   estadoEstacion!: EstadoEstacion;
 
-  @ApiPropertyOptional({ description: "ID de la parada asociada (opcional)" })
-  @IsOptional()
+  // Required: an estación is a 1:1 extension of an existing parada.
+  @ApiProperty({ description: "ID de la parada que la estación extiende" })
   @IsNumber()
-  idParada?: number;
+  idParada!: number;
 }

@@ -30,10 +30,11 @@ export class EstacionEntity {
   @Column({ name: "estado_estacion", type: "varchar", length: 30 })
   estadoEstacion!: string;
 
-  @Column({ name: "id_parada", type: "bigint", nullable: true })
-  idParada?: number;
+  // 1:1 extension of a parada: tbl_estacion.id_parada is NOT NULL UNIQUE.
+  @Column({ name: "id_parada", type: "bigint", unique: true })
+  idParada!: number;
 
-  @ManyToOne(() => ParadaEntity, { nullable: true })
+  @ManyToOne(() => ParadaEntity, { nullable: false })
   @JoinColumn({ name: "id_parada" })
   parada?: ParadaEntity;
 }
