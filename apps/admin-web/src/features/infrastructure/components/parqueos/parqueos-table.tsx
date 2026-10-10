@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import type { Parqueo, Estacion } from '../../types/infrastructure.types';
+import type { Parqueo } from '../../types/infrastructure.types';
 import { ParqueoDialog } from './parqueo-dialog';
 
 interface ParqueosTableProps {
   parqueos: Parqueo[];
-  estaciones: Estacion[];
   onUpdate: (id: number, data: any) => Promise<any>;
   onDelete: (id: number) => Promise<any>;
 }
 
-export function ParqueosTable({ parqueos, estaciones, onUpdate, onDelete }: ParqueosTableProps) {
+export function ParqueosTable({ parqueos, onUpdate, onDelete }: ParqueosTableProps) {
   const [search, setSearch] = useState('');
   const [editingParqueo, setEditingParqueo] = useState<Parqueo | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -102,7 +101,6 @@ export function ParqueosTable({ parqueos, estaciones, onUpdate, onDelete }: Parq
       {isDialogOpen && editingParqueo && (
         <ParqueoDialog
           parqueo={editingParqueo}
-          estaciones={estaciones}
           onSave={handleSave}
           onClose={() => {
             setIsDialogOpen(false);

@@ -7,7 +7,7 @@ import { FLEET_MANAGE_PERMISSION, FLEET_STATION_VIEW_PERMISSION, hasPermission }
 // silently drops a card (`if (!info) return null` below), caught by the
 // completeness assertion in role-module-matrix.spec.ts.
 const MODULE_LABELS: Record<string, { icon: string; title: string; desc: string; color: string }> = {
-  "infrastructure": { icon: "map", title: "Infraestructura", desc: "Gestión de paradas, estaciones y parqueos", color: "bg-slate-50 border-slate-200 text-slate-600 text-slate-800" },
+  "infrastructure": { icon: "map", title: "Infraestructura", desc: "Gestión de municipalidades, líneas, paradas, estaciones y parqueos", color: "bg-slate-50 border-slate-200 text-slate-600 text-slate-800" },
   "fleet": { icon: "directions_bus", title: "Flota", desc: "Gestión de unidades, líneas y asignaciones", color: "bg-lime-50/80 border-lime-200/70 text-lime-700 text-lime-900" },
   "personnel": { icon: "groups", title: "Personal", desc: "Administración de perfiles de empleados", color: "bg-sky-50/80 border-sky-200/70 text-sky-700 text-sky-900" },
   "operational_alerts": { icon: "warning", title: "Alertas Operativas", desc: "Gestión de alertas de estación y unidad", color: "bg-orange-50/80 border-orange-200/70 text-orange-700 text-orange-900" },

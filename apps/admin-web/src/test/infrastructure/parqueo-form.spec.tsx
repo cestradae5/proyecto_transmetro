@@ -1,21 +1,10 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { ParqueoForm } from "../../features/infrastructure/components/parqueos/parqueo-form";
-import type { Estacion, Parqueo } from "../../features/infrastructure/types/infrastructure.types";
+import type { Parqueo } from "../../features/infrastructure/types/infrastructure.types";
 
 // Same caveat as parada-form.spec.tsx: labels are not associated via
 // htmlFor/id, so fields are queried by type/order instead of getByLabelText.
-
-const SAMPLE_ESTACIONES: Estacion[] = [
-  {
-    idEstacion: 2,
-    nombreEstacion: "Estación Central",
-    latitud: 14.6,
-    longitud: -90.5,
-    idParada: null,
-    estadoEstacion: "ACTIVA" as Estacion["estadoEstacion"],
-  },
-];
 
 const SAMPLE_PARQUEO: Parqueo = {
   idParqueo: "5",
@@ -25,16 +14,13 @@ const SAMPLE_PARQUEO: Parqueo = {
   latitud: 14.62,
   longitud: -90.52,
   capacidadUnidades: 40,
-  idEstacion: "2",
   estadoParqueo: "ACTIVO" as Parqueo["estadoParqueo"],
 };
 
 function renderForm(props: Partial<Parameters<typeof ParqueoForm>[0]> = {}) {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
   const onCancel = vi.fn();
-  const utils = render(
-    <ParqueoForm estaciones={SAMPLE_ESTACIONES} onSubmit={onSubmit} onCancel={onCancel} {...props} />,
-  );
+  const utils = render(<ParqueoForm onSubmit={onSubmit} onCancel={onCancel} {...props} />);
   const texts = utils.container.querySelectorAll("input[type='text']");
   const nombre = texts[0] as HTMLInputElement;
   const direccion = texts[1] as HTMLInputElement;
@@ -44,8 +30,7 @@ function renderForm(props: Partial<Parameters<typeof ParqueoForm>[0]> = {}) {
   const capacidad = numbers[2] as HTMLInputElement;
   const selects = utils.container.querySelectorAll("select");
   const tipoSelect = selects[0] as HTMLSelectElement;
-  const estacionSelect = selects[1] as HTMLSelectElement;
-  const estadoSelect = selects[2] as HTMLSelectElement;
+  const estadoSelect = selects[1] as HTMLSelectElement;
   return {
     ...utils,
     onSubmit,
@@ -56,15 +41,13 @@ function renderForm(props: Partial<Parameters<typeof ParqueoForm>[0]> = {}) {
     longitud,
     capacidad,
     tipoSelect,
-    estacionSelect,
     estadoSelect,
   };
 }
 
 describe("ParqueoForm", () => {
   it("renders empty fields in create mode", () => {
-    const { nombre, direccion, latitud, longitud, capacidad, tipoSelect, estacionSelect, estadoSelect } =
-      renderForm();
+    const { nombre, direccion, latitud, longitud, capacidad, tipoSelect, estadoSelect } = renderForm();
 
     expect(nombre).toHaveValue("");
     expect(direccion).toHaveValue("");
@@ -72,12 +55,18 @@ describe("ParqueoForm", () => {
     expect(longitud).toHaveValue(null);
     expect(capacidad).toHaveValue(null);
     expect(tipoSelect).toHaveValue("CENTRAL");
-    expect(estacionSelect).toHaveValue("");
     expect(estadoSelect).toHaveValue("ACTIVO");
   });
 
+  it("has no estación field (tbl_parqueo.id_estacion was dropped)", () => {
+    const { container } = renderForm();
+
+    expect(container.querySelectorAll("select")).toHaveLength(2);
+    expect(screen.queryByText("Estación")).not.toBeInTheDocument();
+  });
+
   it("renders pre-filled fields in edit mode", () => {
-    const { nombre, direccion, latitud, longitud, capacidad, tipoSelect, estacionSelect } = renderForm({
+    const { nombre, direccion, latitud, longitud, capacidad, tipoSelect } = renderForm({
       parqueo: SAMPLE_PARQUEO,
     });
 
@@ -87,7 +76,6 @@ describe("ParqueoForm", () => {
     expect(longitud).toHaveValue(-90.52);
     expect(capacidad).toHaveValue(40);
     expect(tipoSelect).toHaveValue("AUXILIAR");
-    expect(estacionSelect).toHaveValue("2");
   });
 
   it("shows validation errors for empty required fields and invalid values", async () => {
@@ -109,7 +97,7 @@ describe("ParqueoForm", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("calls onSubmit with correctly shaped data on success", async () => {
+  it("calls onSubmit with correctly shaped data (no idEstacion) on success", async () => {
     const { nombre, direccion, latitud, longitud, capacidad, onSubmit } = renderForm();
 
     fireEvent.change(nombre, { target: { value: "Parqueo Sur" } });
@@ -127,7 +115,6 @@ describe("ParqueoForm", () => {
       latitud: 14.5,
       longitud: -90.3,
       capacidadUnidades: 10,
-      idEstacion: undefined,
       estadoParqueo: "ACTIVO",
     });
   });

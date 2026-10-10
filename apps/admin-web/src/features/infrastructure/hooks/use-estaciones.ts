@@ -26,15 +26,20 @@ export function useEstaciones() {
     return result;
   };
 
-  const updateEstacion = async (id: number, data: UpdateEstacionDto) => {
+  const updateEstacion = async (id: number | string, data: UpdateEstacionDto) => {
     const result = await apiClient.patch<Estacion>(`/infrastructure/estaciones/${id}`, data);
     await fetchEstaciones();
     return result;
   };
 
-  const deleteEstacion = async (id: number) => {
+  /**
+   * Default: soft close (CERRADA). `force` hard-deletes the row so its parada
+   * stops being an estación; the API answers 409 ESTACION_IN_USE when other
+   * rows still reference it (the ApiError is rethrown for the caller).
+   */
+  const deleteEstacion = async (id: number | string, force = false) => {
     try {
-      await apiClient.delete(`/infrastructure/estaciones/${id}`);
+      await apiClient.delete(`/infrastructure/estaciones/${id}${force ? '?force=true' : ''}`);
       await fetchEstaciones();
     } catch (err: any) {
       console.error('Error al eliminar estación:', err);

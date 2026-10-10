@@ -42,22 +42,47 @@ export enum EstadoAfectacion {
   PENDIENTE = 'PENDIENTE',
 }
 
+/** Valid only for Municipalidad (`tbl_municipalidad.estado_municipalidad` DB CHECK constraint). */
+export enum EstadoMunicipalidad {
+  ACTIVA = 'ACTIVA',
+  INACTIVA = 'INACTIVA',
+}
+
+/** Valid only for Acceso (`tbl_acceso.tipo_acceso` DB CHECK constraint). */
+export enum TipoAcceso {
+  PEATONAL = 'PEATONAL',
+  RAMPA = 'RAMPA',
+  ESCALERA = 'ESCALERA',
+  ELEVADOR = 'ELEVADOR',
+}
+
+/** Valid only for Acceso (`tbl_acceso.estado_acceso` DB CHECK constraint). */
+export enum EstadoAcceso {
+  HABILITADO = 'HABILITADO',
+  DESHABILITADO = 'DESHABILITADO',
+}
+
 export interface Parada {
   idParada: number;
   nombreParada: string;
   latitud: number;
   longitud: number;
   estadoParada: EstadoInfraestructura;
-  fecha_creacion: string;
-  fecha_actualizacion: string;
+  /** Derived by the API: true when an estación extends this parada. */
+  esEstacion: boolean;
+  /** Id of the estación extending this parada (string at runtime), or null. */
+  idEstacion: string | number | null;
+  fecha_creacion?: string;
+  fecha_actualizacion?: string;
 }
 
+/** An estación is a 1:1 extension of a parada (`tbl_estacion.id_parada` NOT NULL UNIQUE). */
 export interface Estacion {
   idEstacion: number;
   nombreEstacion: string;
   latitud: number;
   longitud: number;
-  idParada: number | null;
+  idParada: number;
   estadoEstacion: EstadoInfraestructura;
 }
 
@@ -69,7 +94,6 @@ export interface Parqueo {
   latitud: number;
   longitud: number;
   capacidadUnidades: number;
-  idEstacion: string | null;
   estadoParqueo: EstadoParqueo;
 }
 
@@ -79,8 +103,34 @@ export interface Linea {
   nombreLinea: string;
   colorHex: string;
   tipoRecorrido: TipoRecorrido;
-  idParqueo: string;
+  /** A línea can exist without a parqueo (assigned later). */
+  idParqueo: string | null;
   estadoLinea: EstadoLinea;
+}
+
+export interface Municipalidad {
+  idMunicipalidad: string;
+  nombreMunicipalidad: string;
+  departamento: string;
+  estadoMunicipalidad: EstadoMunicipalidad;
+}
+
+/** Row of `/infrastructure/lineas/:id/municipalidades`. */
+export interface LineaMunicipalidad {
+  idLinea: string;
+  idMunicipalidad: string;
+  nombreMunicipalidad?: string;
+}
+
+/** Acceso (entrance) of a parada, served under `/infrastructure/paradas/:id/accesos`. */
+export interface Acceso {
+  idAcceso: string;
+  idParada: string;
+  nombreAcceso: string;
+  latitud: number;
+  longitud: number;
+  tipoAcceso: TipoAcceso;
+  estadoAcceso: EstadoAcceso;
 }
 
 export interface Afectacion {
@@ -94,17 +144,52 @@ export interface Afectacion {
   estadoAfectacion: EstadoAfectacion;
 }
 
-export type CreateParadaDto = Omit<Parada, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
+// esEstacion/idEstacion are derived read-only fields: never sent to the API.
+export type CreateParadaDto = Omit<
+  Parada,
+  'idParada' | 'esEstacion' | 'idEstacion' | 'fecha_creacion' | 'fecha_actualizacion'
+>;
 export type UpdateParadaDto = Partial<CreateParadaDto>;
 
-export type CreateEstacionDto = Omit<Estacion, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
+export type CreateEstacionDto = Omit<Estacion, 'idEstacion'>;
 export type UpdateEstacionDto = Partial<CreateEstacionDto>;
+
+/** Estación fields edited from the parada form; idParada comes from the parada itself. */
+export type EstacionFormValues = Omit<CreateEstacionDto, 'idParada'>;
+
+/**
+ * Payload emitted by the parada form. `estacion` is null when "Es estación" is
+ * off; `idEstacion` is the estación the parada had when the form opened (null
+ * if none), so the save flow knows whether to create, update or delete it.
+ */
+export interface ParadaFormValues {
+  parada: CreateParadaDto;
+  estacion: EstacionFormValues | null;
+  idEstacion: string | number | null;
+}
 
 export type CreateParqueoDto = Omit<Parqueo, 'idParqueo'>;
 export type UpdateParqueoDto = Partial<CreateParqueoDto>;
 
-export type CreateLineaDto = Omit<Linea, 'idLinea'>;
+export type CreateLineaDto = Omit<Linea, 'idLinea' | 'idParqueo'> & {
+  idParqueo?: string | null;
+};
 export type UpdateLineaDto = Partial<CreateLineaDto>;
+
+export type CreateMunicipalidadDto = Omit<Municipalidad, 'idMunicipalidad' | 'estadoMunicipalidad'> & {
+  estadoMunicipalidad?: EstadoMunicipalidad;
+};
+export type UpdateMunicipalidadDto = Partial<CreateMunicipalidadDto>;
+
+export interface CreateLineaMunicipalidadDto {
+  idMunicipalidad: string;
+}
+
+// The owning parada comes from the route, so idParada is not part of the body.
+export type CreateAccesoDto = Omit<Acceso, 'idAcceso' | 'idParada' | 'estadoAcceso'> & {
+  estadoAcceso?: EstadoAcceso;
+};
+export type UpdateAccesoDto = Partial<CreateAccesoDto>;
 
 export type CreateAfectacionDto = Omit<Afectacion, 'idAfectacion'>;
 export type UpdateAfectacionDto = Partial<CreateAfectacionDto>;
@@ -115,7 +200,9 @@ export interface LineaParada {
   minutosHastaSiguiente: number;
   idParada: string;
   idLinea: string;
-  parada: Parada;
+  // The línea sequence endpoint returns the bare parada row, without the
+  // derived esEstacion/idEstacion fields.
+  parada: Omit<Parada, 'esEstacion' | 'idEstacion'>;
 }
 
 export type CreateLineaParadaDto = {

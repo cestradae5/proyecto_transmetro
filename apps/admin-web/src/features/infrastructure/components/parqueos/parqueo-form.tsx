@@ -1,14 +1,13 @@
 import { useState } from 'react';
-import type { Parqueo, TipoParqueo, EstadoParqueo, Estacion } from '../../types/infrastructure.types';
+import type { Parqueo, TipoParqueo, EstadoParqueo } from '../../types/infrastructure.types';
 
 interface ParqueoFormProps {
   parqueo?: Parqueo;
-  estaciones: Estacion[];
   onSubmit: (data: any) => Promise<void>;
   onCancel: () => void;
 }
 
-export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: ParqueoFormProps) {
+export function ParqueoForm({ parqueo, onSubmit, onCancel }: ParqueoFormProps) {
   const [formData, setFormData] = useState({
     nombreParqueo: parqueo?.nombreParqueo || '',
     tipoParqueo: parqueo?.tipoParqueo || 'CENTRAL' as TipoParqueo,
@@ -16,7 +15,6 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
     latitud: parqueo?.latitud?.toString() || '',
     longitud: parqueo?.longitud?.toString() || '',
     capacidadUnidades: parqueo?.capacidadUnidades?.toString() || '',
-    idEstacion: parqueo?.idEstacion?.toString() || '',
     estadoParqueo: parqueo?.estadoParqueo || 'ACTIVO' as EstadoParqueo,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -52,7 +50,6 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
          latitud: parseFloat(formData.latitud),
          longitud: parseFloat(formData.longitud),
          capacidadUnidades: parseInt(formData.capacidadUnidades),
-         idEstacion: formData.idEstacion || undefined,
          estadoParqueo: formData.estadoParqueo,
        });
     } catch (error: any) {
@@ -102,14 +99,6 @@ export function ParqueoForm({ parqueo, estaciones, onSubmit, onCancel }: Parqueo
         <label className="block text-sm font-medium text-slate-700 mb-1">Capacidad de Unidades *</label>
         <input type="number" min="0" value={formData.capacidadUnidades} onChange={(e) => setFormData({ ...formData, capacidadUnidades: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
         {errors.capacidadUnidades && <p className="text-red-600 text-xs mt-1">{errors.capacidadUnidades}</p>}
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Estación</label>
-        <select value={formData.idEstacion} onChange={(e) => setFormData({ ...formData, idEstacion: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="">Ninguna</option>
-          {estaciones.map((e) => <option key={e.idEstacion} value={e.idEstacion}>{e.nombreEstacion}</option>)}
-        </select>
       </div>
 
       <div>

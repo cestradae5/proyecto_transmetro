@@ -26,13 +26,13 @@ export function useParadas() {
     return result;
   };
 
-  const updateParada = async (id: number, data: UpdateParadaDto) => {
+  const updateParada = async (id: number | string, data: UpdateParadaDto) => {
     const result = await apiClient.patch<Parada>(`/infrastructure/paradas/${id}`, data);
     await fetchParadas();
     return result;
   };
 
-  const deleteParada = async (id: number) => {
+  const deleteParada = async (id: number | string) => {
     try {
       await apiClient.delete(`/infrastructure/paradas/${id}`);
       await fetchParadas();
