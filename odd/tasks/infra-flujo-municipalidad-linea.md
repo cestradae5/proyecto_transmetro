@@ -35,7 +35,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - [x] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
 - [x] T4a API: estacion hard delete via `DELETE /infrastructure/estaciones/:id?force=true` (same `force` pattern as parada), 409 `ESTACION_IN_USE` when referenced (FK violation 23503); default DELETE keeps soft close (CERRADA). Decision (user): turning off "Es estación" on the parada form hard-deletes the estacion.
 - [x] T4 Web (municipalidades selector on linea form moved to T5): tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
-- [ ] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
+- [x] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
 
 ## Slices (feature-branch-chain)
 - PR #1 `feat/infra-flow-01-schema` -> `feat/infra-flow`: T1
@@ -96,5 +96,11 @@ T4a — commit `af5d2c5` (+142/-17). T4 — commit `a9cb20b` (+913/-500; 346 del
 - Known gap: creating a parada with estacion where the estacion save fails, then retrying, creates the parada twice
 - Route: delegated writer (writer trigger)
 
+T5 — commit `1753b3a` (24 files, +2249/-13; ~1155 spec lines).
+- Tabs: Municipalidades (default) -> Líneas -> Paradas -> Parqueos -> Afectaciones; lineas row action "Municipalidades" (link ACTIVA ones / unlink); paradas row action "Accesos" (CRUD, deactivate)
+- apps/admin-web `npx tsc -b`: exit 0; `npx vitest run`: 64 files, 457 passed; parent spot check `npx vitest run src/test/infrastructure`: 21 files, 155 passed
+- Skipped: municipalidad names in lineas table (would need N+1 requests; no batch endpoint)
+- Route: delegated writer (writer trigger)
+
 ## Next step
-T5 on `feat/infra-flow-05-web-municipalidad-acceso` (child of `feat/infra-flow-04-web-forms`): Municipalidades tab first, municipalidad selector on linea form, Accesos UI per parada.
+All tasks done. Pending user decisions: push branches and open the chained PRs (tracker `feat/infra-flow` draft + PR #1..#5), `size:exception` for slices over 400 lines; recreate local `transmetro` and `transmetro_test` from init.sql + seed; e2e full-run teardown issue remains.
