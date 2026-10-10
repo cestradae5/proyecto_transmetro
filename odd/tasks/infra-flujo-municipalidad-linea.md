@@ -32,7 +32,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 ## Tasks
 - [x] T1 Schema + seed + API alignment: new tables in `init.sql` (municipalidad, linea_municipalidad, acceso), `tbl_linea.id_parqueo` nullable, drop `tbl_parqueo.id_estacion`, `tbl_estacion.id_parada` NOT NULL; `seed-current-data.sql`; align Parqueo/Linea/Estacion entities, DTOs, services, `unidad.service.ts` null parqueo, specs and SQL fixtures.
 - [x] T2 API Municipalidad module: CRUD + link/unlink lineas (`tbl_linea_municipalidad`), with specs.
-- [ ] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
+- [x] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
 - [ ] T4 Web: tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
 - [ ] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
 
@@ -40,6 +40,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - PR #1 `feat/infra-flow-01-schema` -> `feat/infra-flow`: T1
 - PR #2 `feat/infra-flow-02-municipalidad` -> `feat/infra-flow-01-schema`: T2
 - PR #3 `feat/infra-flow-03-acceso` -> `feat/infra-flow-02-municipalidad`: T3
+- PR #4 `feat/infra-flow-04-web-forms` -> `feat/infra-flow-03-acceso`: T4
 - Later slices planned as each task's line count is known.
 
 ## Acceptance criteria
@@ -75,5 +76,15 @@ T2 — commit `37a9a14` (16 files, +1263/-7; 644 of those lines are specs; over 
 - Writer choices: soft delete like siblings (links kept); inactive municipalidades can still be linked; Postgres 23505 also mapped to 409; findAll sorted by name
 - Route: delegated writer (writer trigger)
 
+T3 — commit `e567a76` (14 files, +977/-43; ~490 spec lines; over the 400 budget as one cohesive module).
+- Routes: `/infrastructure/paradas/:id/accesos` list/create, `/:accesoId` get/patch/delete (soft delete to DESHABILITADO); `INFRAESTRUCTURA_GESTIONAR`
+- Parada responses add `esEstacion` and `idEstacion` (single IN lookup in findAll)
+- apps/api `npx tsc -p tsconfig.build.json --noEmit`: exit 0
+- apps/api `npm test`: 55 suites, 654 tests passed; parent spot check `npm test -- acceso parada`: 4 suites, 58 passed
+- apps/api `npx tsc -p tsconfig.json --noEmit`: 27 errors (down from 32; parada spec errors fixed), none in touched files
+- Runtime on scratch `transmetro_t3_check`: acceso CRUD, wrong-parada 404, esEstacion before/after estacion; dropped afterwards
+- Writer choices: acceso cannot move between paradas; sorted by name; ids returned as strings at runtime (pre-existing number/string mismatch for parada ids left as is)
+- Route: delegated writer (writer trigger)
+
 ## Next step
-T3 on `feat/infra-flow-03-acceso` (child of `feat/infra-flow-02-municipalidad`).
+T4 on `feat/infra-flow-04-web-forms` (child of `feat/infra-flow-03-acceso`).
