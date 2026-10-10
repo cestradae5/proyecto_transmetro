@@ -38,7 +38,8 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 
 ## Slices (feature-branch-chain)
 - PR #1 `feat/infra-flow-01-schema` -> `feat/infra-flow`: T1
-- Later slices planned after T1 line count is known.
+- PR #2 `feat/infra-flow-02-municipalidad` -> `feat/infra-flow-01-schema`: T2
+- Later slices planned as each task's line count is known.
 
 ## Acceptance criteria
 - A linea can be created with no parqueo, no paradas and no estaciones.
@@ -61,8 +62,8 @@ T1 — commit `b5c5e23` (28 files, +580/-244 = 824 authored lines, over the 400 
 - Real `transmetro` DB untouched (still old schema); local `transmetro_test` also needs rebuild before `npm run test:e2e`
 - RDD: off -> no review
 - Writer decisions: permissions/role links seeded by code (source ids differ from a fresh init.sql); acceso latitud/longitud match parada DECIMAL(10,8)/(11,8) NOT NULL; new tables without ON DELETE like tbl_estacion_linea
-- Open: admin employee (id 1) uses ON CONFLICT DO NOTHING, so init.sql values win (current DB has it with role PILOTO and phone/DPI/address that are not restored)
+- Resolved (user): admin employee (id 1) keeps ON CONFLICT DO NOTHING, so init.sql values win (role ADMINISTRADOR_SISTEMA; current phone/DPI/address are not restored)
 - Admin-web mismatches for T4: infrastructure.types.ts (Parqueo.idEstacion, Linea.idParqueo nullable, Estacion.idParada required), parqueo-form, linea-form, estacion-form, parqueos-table
 
 ## Next step
-Resolve admin employee seed behavior, then T2.
+T2 on `feat/infra-flow-02-municipalidad` (child of `feat/infra-flow-01-schema`).
