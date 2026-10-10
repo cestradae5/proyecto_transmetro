@@ -2,11 +2,13 @@
 
 ## Overview
 
-The Infrastructure module implements the backend CRUD for Transmetro's five
-core transit entities: **Parada** (stop), **Estación** (station), **Parqueo**
-(parking lot), **Línea** (bus line), and **Afectación** (service disruption).
-It also owns the `tbl_linea_parada` junction table that models a línea's
-ordered sequence of paradas, and the afectación "close" workflow.
+The Infrastructure module implements the backend CRUD for Transmetro's core
+transit entities: **Municipalidad** (municipality), **Parada** (stop),
+**Estación** (station), **Parqueo** (parking lot), **Línea** (bus line), and
+**Afectación** (service disruption). It also owns the `tbl_linea_parada`
+junction table that models a línea's ordered sequence of paradas, the
+`tbl_linea_municipalidad` línea ↔ municipalidad links, and the afectación
+"close" workflow.
 
 This document covers the backend (NestJS/TypeORM) implementation. For the
 frontend module that consumes these endpoints, see
@@ -41,6 +43,18 @@ infrastructure/
 │       ├── linea-response.dto.ts
 │       ├── add-linea-parada.dto.ts
 │       └── update-linea-parada.dto.ts
+├── municipalidad/
+│   ├── municipalidad.entity.ts
+│   ├── municipalidad.service.ts (+ .spec.ts)
+│   ├── municipalidad.controller.ts (+ .spec.ts)
+│   ├── linea-municipalidad.entity.ts        # tbl_linea_municipalidad junction entity
+│   ├── linea-municipalidad.service.ts (+ .spec.ts)
+│   ├── linea-municipalidad.controller.ts (+ .spec.ts)
+│   └── dto/
+│       ├── create-municipalidad.dto.ts
+│       ├── update-municipalidad.dto.ts
+│       ├── municipalidad-response.dto.ts
+│       └── linea-municipalidad.dto.ts
 ├── afectacion/
 │   ├── afectacion.entity.ts
 │   ├── afectacion.service.ts (+ .spec.ts)  # includes close()
@@ -67,7 +81,7 @@ estación exists.
 | Estación → Parada | `tbl_estacion.id_parada` NOT NULL UNIQUE (1:1 extension of a parada) | `idParada` required on create; unknown parada → 404; parada that already has an estación → 409 `PARADA_ALREADY_HAS_ESTACION`; cannot be cleared to `null` (400) |
 | Línea ↔ Parada | `tbl_linea_parada` (ordered N:M) | `/infrastructure/lineas/:id/paradas` |
 | Línea ↔ Estación | `tbl_estacion_linea` (N:M) | `/infrastructure/stations/:id/lines` |
-| Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M) | not exposed yet |
+| Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M, composite PK) | `/infrastructure/lineas/:id/municipalidades`; unknown línea/municipalidad → 404; duplicate link → 409 `LINEA_MUNICIPALIDAD_DUPLICATE` |
 | Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | not exposed yet |
 
 `UnidadService` composes a unit's `parqueo` from its línea; when the línea has
@@ -80,7 +94,7 @@ Every route in this module is protected by two layers:
 1. `@UseGuards(AuthenticationGuard)` at the controller class level — requires
    a valid session/JWT.
 2. `@Permissions('INFRAESTRUCTURA_GESTIONAR')` at the **method** level on
-   every single endpoint (25 endpoints across 5 controllers) — requires the
+   every single endpoint (all infrastructure controllers) — requires the
    caller's role to carry this permission, enforced by the guard reading
    `PERMISSION_TO_MODULE` in `apps/api/src/authentication/authentication.service.ts`.
 
@@ -92,6 +106,15 @@ There is no read-only/write split — `GESTIONAR` (manage) is required even for
 
 Base path: `/infrastructure`. All routes below require
 `AuthenticationGuard` + `INFRAESTRUCTURA_GESTIONAR`.
+
+### Municipalidades — `/infrastructure/municipalidades`
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/` | Create; `estadoMunicipalidad` defaults to `ACTIVA`; duplicate `nombreMunicipalidad` → 409 `MUNICIPALIDAD_NOMBRE_DUPLICATE` |
+| GET | `/` | List all, ordered by `nombreMunicipalidad` |
+| GET | `/:id` | Get one |
+| PATCH | `/:id` | Update; renaming to a used name → 409 `MUNICIPALIDAD_NOMBRE_DUPLICATE` |
+| DELETE | `/:id` | Soft delete → `INACTIVA` (línea links are kept) |
 
 ### Paradas — `/infrastructure/paradas`
 | Method | Path | Notes |
@@ -132,6 +155,9 @@ Base path: `/infrastructure`. All routes below require
 | POST | `/:id/paradas` | Add a parada to the sequence (PR#3) |
 | PATCH | `/:id/paradas/:lineaParadaId` | Update `orden`/minutes of a linea-parada row (PR#3) |
 | DELETE | `/:id/paradas/:lineaParadaId` | Remove a parada from the sequence; línea must keep ≥2 paradas (PR#3) |
+| GET | `/:id/municipalidades` | List linked municipalidades (`idLinea`, `idMunicipalidad`, `nombreMunicipalidad`) |
+| POST | `/:id/municipalidades` | Link a municipalidad, body `{ idMunicipalidad }` → 201; duplicate → 409 |
+| DELETE | `/:id/municipalidades/:municipalidadId` | Unlink (hard-deletes the link row) → 204; missing link → 404 |
 
 ### Afectaciones — `/infrastructure/afectaciones`
 | Method | Path | Notes |
@@ -151,6 +177,7 @@ the TypeORM entity enums must match exactly:
 
 | Entity | Enum | Valid values |
 | --- | --- | --- |
+| `MunicipalidadEntity` | `EstadoMunicipalidad` | `ACTIVA`, `INACTIVA` only |
 | `ParadaEntity` | `EstadoParada` | `ACTIVA`, `CERRADA`, `MANTENIMIENTO` |
 | `EstacionEntity` | `EstadoEstacion` | `ABIERTA`, `CERRADA`, `MANTENIMIENTO` |
 | `ParqueoEntity` | `EstadoParqueo` | `ABIERTO`, `CERRADO`, `MANTENIMIENTO` |
