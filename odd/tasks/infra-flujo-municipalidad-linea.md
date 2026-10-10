@@ -33,6 +33,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - [x] T1 Schema + seed + API alignment: new tables in `init.sql` (municipalidad, linea_municipalidad, acceso), `tbl_linea.id_parqueo` nullable, drop `tbl_parqueo.id_estacion`, `tbl_estacion.id_parada` NOT NULL; `seed-current-data.sql`; align Parqueo/Linea/Estacion entities, DTOs, services, `unidad.service.ts` null parqueo, specs and SQL fixtures.
 - [x] T2 API Municipalidad module: CRUD + link/unlink lineas (`tbl_linea_municipalidad`), with specs.
 - [x] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
+- [ ] T4a API: estacion hard delete via `DELETE /infrastructure/stations/:id?force=true` (same `force` pattern as parada), 409 `ESTACION_IN_USE` when referenced (FK violation 23503); default DELETE keeps soft close (CERRADA). Decision (user): turning off "Es estación" on the parada form hard-deletes the estacion.
 - [ ] T4 Web: tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
 - [ ] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
 
