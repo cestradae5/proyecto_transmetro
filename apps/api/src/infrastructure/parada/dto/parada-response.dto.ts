@@ -17,4 +17,18 @@ export class ParadaResponseDto {
 
   @ApiProperty({ enum: EstadoParada })
   estadoParada!: EstadoParada;
+
+  // Derived from tbl_estacion (1:1 extension of a parada); read-only. An
+  // estación is still created/removed through /infrastructure/estaciones.
+  @ApiProperty({
+    description: "Indica si la parada tiene una estación asociada",
+  })
+  esEstacion!: boolean;
+
+  @ApiProperty({
+    description: "ID de la estación asociada, o null si la parada no es estación",
+    type: Number,
+    nullable: true,
+  })
+  idEstacion!: number | null;
 }
