@@ -8,15 +8,12 @@ import { useAfectaciones } from './hooks/use-afectaciones';
 import { useMunicipalidades } from './hooks/use-municipalidades';
 import { saveParadaWithEstacion } from './hooks/save-parada-estacion';
 import { MunicipalidadesTable } from './components/municipalidades/municipalidades-table';
-import { MunicipalidadDialog } from './components/municipalidades/municipalidad-dialog';
 import { ParadasTable } from './components/paradas/paradas-table';
 import { ParqueosTable } from './components/parqueos/parqueos-table';
 import { LineasTable } from './components/lineas/lineas-table';
 import { AfectacionesTable } from './components/afectaciones/afectaciones-table';
-import { ParadaDialog } from './components/paradas/parada-dialog';
-import { ParqueoDialog } from './components/parqueos/parqueo-dialog';
-import { LineaDialog } from './components/lineas/linea-dialog';
 import { AfectacionDialog } from './components/afectaciones/afectacion-dialog';
+import { InfrastructureWizard } from './components/wizard/infrastructure-wizard';
 import type { ParadaFormValues } from './types/infrastructure.types';
 
 // Estaciones have no tab of their own: an estación is a 1:1 extension of a
@@ -26,19 +23,27 @@ type Tab = 'municipalidades' | 'lineas' | 'paradas' | 'parqueos' | 'afectaciones
 export function InfrastructurePage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('municipalidades');
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const [showAfectacionDialog, setShowAfectacionDialog] = useState(false);
 
   const {
     municipalidades,
     loading: municipalidadesLoading,
-    createMunicipalidad,
+    refresh: refreshMunicipalidades,
     updateMunicipalidad,
     deleteMunicipalidad,
   } = useMunicipalidades();
   const { paradas, loading: paradasLoading, refresh: refreshParadas, createParada, updateParada, deleteParada } = useParadas();
-  const { estaciones, loading: estacionesLoading, createEstacion, updateEstacion, deleteEstacion } = useEstaciones();
-  const { parqueos, loading: parqueosLoading, createParqueo, updateParqueo, deleteParqueo } = useParqueos();
-  const { lineas, loading: lineasLoading, createLinea, updateLinea, deleteLinea } = useLineas();
+  const {
+    estaciones,
+    loading: estacionesLoading,
+    refresh: refreshEstaciones,
+    createEstacion,
+    updateEstacion,
+    deleteEstacion,
+  } = useEstaciones();
+  const { parqueos, loading: parqueosLoading, refresh: refreshParqueos, updateParqueo, deleteParqueo } = useParqueos();
+  const { lineas, loading: lineasLoading, refresh: refreshLineas, updateLinea, deleteLinea } = useLineas();
   const { afectaciones, loading: afectacionesLoading, createAfectacion, updateAfectacion, deleteAfectacion } = useAfectaciones();
 
   // Creation flow order: Municipalidad -> Línea -> Parada/Estación -> Parqueo, then Afectaciones.
@@ -50,6 +55,7 @@ export function InfrastructurePage() {
     { id: 'afectaciones' as Tab, label: 'Afectaciones', count: afectaciones.length },
   ];
 
+  // Editing an existing parada (and its estación) from the paradas table.
   const saveParada = (paradaId: number | string | null, values: ParadaFormValues) =>
     saveParadaWithEstacion(paradaId, values, {
       createParada,
@@ -60,25 +66,17 @@ export function InfrastructurePage() {
       refreshParadas,
     });
 
-  const handleCreate = async (data: any) => {
-    switch (activeTab) {
-      case 'municipalidades':
-        await createMunicipalidad(data);
-        break;
-      case 'paradas':
-        await saveParada(null, data as ParadaFormValues);
-        break;
-      case 'parqueos':
-        await createParqueo(data);
-        break;
-      case 'lineas':
-        await createLinea(data);
-        break;
-      case 'afectaciones':
-        await createAfectacion(data);
-        break;
-    }
-    setShowCreateDialog(false);
+  const handleCreateAfectacion = async (data: any) => {
+    await createAfectacion(data);
+    setShowAfectacionDialog(false);
+  };
+
+  // The wizard is the only creation path for municipalidades, líneas, paradas
+  // and parqueos; it uses its own hook instances, so reload the tabs after it.
+  const handleWizardClose = (saved: boolean) => {
+    setShowWizard(false);
+    if (!saved) return;
+    void Promise.all([refreshMunicipalidades(), refreshLineas(), refreshParadas(), refreshParqueos(), refreshEstaciones()]);
   };
 
   const isLoading = municipalidadesLoading || paradasLoading || estacionesLoading || parqueosLoading || lineasLoading || afectacionesLoading;
@@ -101,16 +99,27 @@ export function InfrastructurePage() {
 
       <main className="pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-7xl mx-auto">
         <div className="bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04)] p-6 sm:p-11">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight">
               Gestión de Infraestructura
             </h1>
-            <button
-              onClick={() => setShowCreateDialog(true)}
-              className="px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors"
-            >
-              Crear Nuevo
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {activeTab === 'afectaciones' && (
+                <button
+                  onClick={() => setShowAfectacionDialog(true)}
+                  className="px-4 py-2 text-slate-700 bg-slate-100 rounded-xl font-medium hover:bg-slate-200 transition-colors"
+                >
+                  Nueva afectación
+                </button>
+              )}
+              <button
+                onClick={() => setShowWizard(true)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl font-semibold shadow-sm hover:bg-primary/90 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">add</span>
+                Nueva infraestructura
+              </button>
+            </div>
           </div>
 
           <div className="border-b border-slate-200 mb-6">
@@ -174,20 +183,14 @@ export function InfrastructurePage() {
         </div>
       </main>
 
-      {showCreateDialog && activeTab === 'municipalidades' && (
-        <MunicipalidadDialog onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
-      )}
-      {showCreateDialog && activeTab === 'lineas' && (
-        <LineaDialog parqueos={parqueos} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
-      )}
-      {showCreateDialog && activeTab === 'paradas' && (
-        <ParadaDialog onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
-      )}
-      {showCreateDialog && activeTab === 'parqueos' && (
-        <ParqueoDialog onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
-      )}
-      {showCreateDialog && activeTab === 'afectaciones' && (
-        <AfectacionDialog paradas={paradas} estaciones={estaciones} onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
+      {showWizard && <InfrastructureWizard onClose={handleWizardClose} />}
+      {showAfectacionDialog && (
+        <AfectacionDialog
+          paradas={paradas}
+          estaciones={estaciones}
+          onSave={handleCreateAfectacion}
+          onClose={() => setShowAfectacionDialog(false)}
+        />
       )}
     </div>
   );

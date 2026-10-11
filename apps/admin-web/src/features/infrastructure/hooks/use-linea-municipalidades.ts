@@ -23,6 +23,24 @@ export function mapLineaMunicipalidadError(err: unknown): string {
   return 'Error de conexión. Por favor, intente de nuevo.';
 }
 
+/**
+ * Links a municipalidad to a línea without mounting the hook (used right after
+ * creating a línea). Rejects with an Error carrying the translated message.
+ */
+export async function linkMunicipalidadToLinea(
+  lineaId: string,
+  idMunicipalidad: string
+): Promise<LineaMunicipalidad> {
+  try {
+    return await apiClient.post<LineaMunicipalidad>(
+      `/infrastructure/lineas/${lineaId}/municipalidades`,
+      { idMunicipalidad }
+    );
+  } catch (err: unknown) {
+    throw new Error(mapLineaMunicipalidadError(err));
+  }
+}
+
 export function useLineaMunicipalidades(lineaId: string): UseLineaMunicipalidadesResult {
   const [items, setItems] = useState<LineaMunicipalidad[]>([]);
   const [loading, setLoading] = useState(false);

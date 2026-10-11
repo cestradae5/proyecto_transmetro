@@ -4,7 +4,46 @@
 
 The Infrastructure module manages the complete transportation infrastructure of Transmetro, including municipalities, lines, stops, stations, stop accesses, parking lots, and disruptions. It provides a comprehensive CRUD interface with search, filtering, and real-time status tracking.
 
-Tabs follow the creation flow: **Municipalidades → Líneas → Paradas → Parqueos → Afectaciones** (default: Municipalidades). "Crear Nuevo" opens the create dialog of the active tab.
+Tabs follow the creation flow: **Municipalidades → Líneas → Paradas → Parqueos → Afectaciones** (default: Municipalidades). The tabs are for review and editing only (T8 replaces them with a grouped view).
+
+**Creation paths:** the "Nueva infraestructura" button opens the wizard, the only
+way to create municipalidades, líneas, paradas (and estaciones) and parqueos.
+Afectaciones are operational and keep their own "Nueva afectación" button on
+the Afectaciones tab. Accesos are created from the paradas table ("Accesos").
+
+## "Nueva infraestructura" wizard
+
+`components/wizard/` — a large modal with a stepper header (`wizard-stepper.tsx`).
+Steps are `locked` (disabled, with a hint of what unlocks them), `active`, or
+`done` (with a summary). Each step persists to the API when completed; there is
+no draft, so closing mid-way (button or Escape) asks for confirmation once
+step 1 is done and keeps what was already saved. Closing after saving reloads
+the page data (the wizard uses its own hook instances).
+
+1. **Municipalidad** (`step-municipalidad.tsx`): "Elegir existente" (ACTIVA
+   only) or "Crear nueva" (nombre ≤120, departamento ≤60; 409 → "Ya existe una
+   municipalidad con ese nombre"). Read-only once the línea exists.
+2. **Línea** (`step-linea.tsx`): número (≤10), nombre (≤120), color, tipo de
+   recorrido, estado; created with `idParqueo: null`, then linked with
+   `POST /lineas/:id/municipalidades` (`linkMunicipalidadToLinea`). If the link
+   fails, "Reintentar vínculo" retries only the link (the línea is not created
+   again).
+3. **Paradas y parqueo** (`step-paradas-parqueo.tsx`):
+   - `parqueo-section.tsx`: "Sin parqueo asignado" or the assigned one;
+     "Elegir existente" + "Asignar", or "Crear nuevo" + "Crear y asignar"
+     (PATCH `idParqueo`); "Quitar" sends `null`. A parqueo created whose
+     assignment failed is reused on retry.
+   - `paradas-section.tsx`: the línea's ordered paradas (Estación badge,
+     inline "Minutos hasta la siguiente" save via PATCH, up/down via
+     `reorderParadas` → `PUT /lineas/:id/paradas/orden` with the full id list,
+     "Quitar" with the `LINEA_MIN_PARADAS` message).
+   - `parada-add-panel.tsx`: "Elegir existente" (paradas not in the línea) or
+     "Crear nueva" (nombre, coordenadas, "Es estación" + nombre; saved with
+     `saveParadaWithEstacion`, the estación reuses the parada's coordinates);
+     appended at `orden = max + 1`. A retry after a partial failure never
+     creates the parada (or its estación) twice.
+   - "Finalizar" shows a summary (municipalidad, línea, paradas, parqueo);
+     "Cerrar" closes and reloads.
 
 ## File Structure
 
@@ -31,8 +70,18 @@ infrastructure/
 │   │   ├── accesos-dialog.tsx       # "Accesos" dialog: list/create/edit/deactivate
 │   │   ├── acceso-form.tsx          # Acceso form (coords prefilled from the parada)
 │   │   └── paradas-table.tsx        # Table with search/filter, Estación badge, station lines, accesos
+│   ├── wizard/
+│   │   ├── infrastructure-wizard.tsx # "Nueva infraestructura" modal: state, close confirm, Escape
+│   │   ├── wizard-stepper.tsx       # Stepper header (done/active/locked)
+│   │   ├── step-municipalidad.tsx   # Step 1
+│   │   ├── step-linea.tsx           # Step 2 (create + link, link retry)
+│   │   ├── step-paradas-parqueo.tsx # Step 3 container + Finalizar
+│   │   ├── parqueo-section.tsx      # Step 3 parqueo card
+│   │   ├── paradas-section.tsx      # Step 3 ordered paradas card
+│   │   ├── parada-add-panel.tsx     # Step 3 "Agregar parada"
+│   │   └── wizard-ui.tsx            # Shared classes, ErrorAlert, ModeToggle
 │   └── parqueos/
-│       ├── parqueo-dialog.tsx       # Create/Edit modal for parking lots
+│       ├── parqueo-dialog.tsx       # Edit modal for parking lots
 │       ├── parqueo-form.tsx         # Form with validation
 │       └── parqueos-table.tsx       # Table with search/filter
 ├── hooks/
@@ -41,14 +90,14 @@ infrastructure/
 │   ├── use-estaciones.ts            # API hook for stations
 │   ├── use-lineas.ts                # API hook for lines
 │   ├── use-linea-municipalidades.ts # API hook for línea ↔ municipalidad links (mapped errors)
-│   ├── use-linea-paradas.ts         # API hook for a línea's parada sequence (mapped errors)
+│   ├── use-linea-paradas.ts         # API hook for a línea's parada sequence (mapped errors, reorderParadas)
 │   ├── use-municipalidades.ts       # API hook for municipalities (mapped Spanish errors)
 │   ├── use-paradas.ts               # API hook for stops
 │   ├── save-parada-estacion.ts      # Parada save + estación create/update/force-delete
 │   └── use-parqueos.ts              # API hook for parking lots
 ├── types/
 │   └── infrastructure.types.ts      # TypeScript types and DTOs
-├── index.tsx                        # Main page with tabs
+├── index.tsx                        # Main page: tabs + "Nueva infraestructura" wizard
 └── README.md                        # This file
 
 ```
