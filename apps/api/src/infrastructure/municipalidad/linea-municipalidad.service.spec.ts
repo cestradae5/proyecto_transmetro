@@ -8,7 +8,11 @@ import {
 } from "@nestjs/common";
 import { QueryFailedError, type Repository } from "typeorm";
 
-import type { LineaEntity } from "../linea/linea.entity.js";
+import {
+  EstadoLinea,
+  TipoRecorrido,
+  type LineaEntity,
+} from "../linea/linea.entity.js";
 import type { LineaMunicipalidadEntity } from "./linea-municipalidad.entity.js";
 import { LineaMunicipalidadService } from "./linea-municipalidad.service.js";
 import {
@@ -90,6 +94,68 @@ describe("LineaMunicipalidadService", () => {
       lineaRepo.count.mockResolvedValue(0);
       await expect(service.list("99")).rejects.toBeInstanceOf(
         NotFoundException
+      );
+      expect(linkRepo.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("listLineas", () => {
+    const linea = {
+      idLinea: "3",
+      numeroLinea: "L3",
+      nombreLinea: "Línea 3",
+      colorHex: "#00FF00",
+      estadoLinea: EstadoLinea.ACTIVA,
+      tipoRecorrido: TipoRecorrido.LINEAL,
+      idParqueo: null,
+    } as LineaEntity;
+
+    it("returns the linked líneas with one joined query, as LineaResponseDto", async () => {
+      municipalidadRepo.count.mockResolvedValue(1);
+      linkRepo.find.mockResolvedValue([
+        makeLink({ linea }),
+        makeLink({ idLinea: "8", linea: { ...linea, idLinea: "8", numeroLinea: "L8", idParqueo: "2" } }),
+      ]);
+
+      const result = await service.listLineas("4");
+
+      expect(municipalidadRepo.count).toHaveBeenCalledWith({
+        where: { idMunicipalidad: "4" },
+      });
+      expect(linkRepo.find).toHaveBeenCalledTimes(1);
+      expect(linkRepo.find).toHaveBeenCalledWith({
+        where: { idMunicipalidad: "4" },
+        relations: { linea: true },
+        order: { linea: { numeroLinea: "ASC" } },
+      });
+      expect(lineaRepo.find).not.toHaveBeenCalled();
+      expect(lineaRepo.findOne).not.toHaveBeenCalled();
+      expect(result).toEqual([
+        {
+          idLinea: "3",
+          numeroLinea: "L3",
+          nombreLinea: "Línea 3",
+          colorHex: "#00FF00",
+          estadoLinea: "ACTIVA",
+          tipoRecorrido: "LINEAL",
+          idParqueo: null,
+        },
+        expect.objectContaining({ idLinea: "8", numeroLinea: "L8", idParqueo: "2" }),
+      ]);
+    });
+
+    it("returns an empty list when the municipalidad has no líneas", async () => {
+      municipalidadRepo.count.mockResolvedValue(1);
+      linkRepo.find.mockResolvedValue([]);
+
+      await expect(service.listLineas("4")).resolves.toEqual([]);
+    });
+
+    it("throws NotFoundException when the municipalidad does not exist", async () => {
+      municipalidadRepo.count.mockResolvedValue(0);
+
+      await expect(service.listLineas("99")).rejects.toThrow(
+        "Municipalidad con ID 99 no encontrada"
       );
       expect(linkRepo.find).not.toHaveBeenCalled();
     });

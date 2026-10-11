@@ -27,7 +27,8 @@ type MockLineaService = Record<
   | "listParadas"
   | "addParada"
   | "updateParada"
-  | "removeParada",
+  | "removeParada"
+  | "reorderParadas",
   AnyMock
 >;
 
@@ -42,6 +43,7 @@ function makeMockService(): MockLineaService {
     addParada: jest.fn(),
     updateParada: jest.fn(),
     removeParada: jest.fn(),
+    reorderParadas: jest.fn(),
   };
 }
 
@@ -136,6 +138,16 @@ describe("LineaController", () => {
 
       expect(service.removeParada).toHaveBeenCalledWith("1", "100");
     });
+
+    it("reorderParadas() forwards línea id and body", async () => {
+      const dto = { idsLineaParada: ["101", "100"] };
+      service.reorderParadas.mockResolvedValue([{ idLineaParada: "101" }]);
+
+      await expect(controller.reorderParadas("1", dto)).resolves.toEqual([
+        { idLineaParada: "101" },
+      ]);
+      expect(service.reorderParadas).toHaveBeenCalledWith("1", dto);
+    });
   });
 
   describe("routing metadata for the parada sequence", () => {
@@ -144,6 +156,7 @@ describe("LineaController", () => {
       ["addParada", RequestMethod.POST, ":id/paradas"],
       ["updateParada", RequestMethod.PATCH, ":id/paradas/:lineaParadaId"],
       ["removeParada", RequestMethod.DELETE, ":id/paradas/:lineaParadaId"],
+      ["reorderParadas", RequestMethod.PUT, ":id/paradas/orden"],
     ])("%s() is mapped to %s %s", (method, verb, path) => {
       expect(Reflect.getMetadata(METHOD_METADATA, handler(method))).toBe(verb);
       expect(Reflect.getMetadata(PATH_METADATA, handler(method))).toBe(path);
@@ -185,6 +198,7 @@ describe("LineaController", () => {
       "addParada",
       "updateParada",
       "removeParada",
+      "reorderParadas",
     ])("requires INFRAESTRUCTURA_GESTIONAR permission on %s()", (method) => {
       expect(Reflect.getMetadata(PERMISSIONS_KEY, handler(method))).toEqual([
         "INFRAESTRUCTURA_GESTIONAR",
