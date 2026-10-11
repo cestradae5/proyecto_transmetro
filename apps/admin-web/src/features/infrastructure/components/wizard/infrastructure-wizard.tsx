@@ -16,6 +16,13 @@ import { PRIMARY_BUTTON_CLASS } from './wizard-ui';
 interface InfrastructureWizardProps {
   /** `saved` is true when the wizard may have persisted data (the page should refresh). */
   onClose: (saved: boolean) => void;
+  /**
+   * Existing línea to manage: the wizard opens directly at step 3 ("Gestionar
+   * paradas y parqueo") without the stepper, since steps 1-2 already exist.
+   */
+  initialLinea?: Linea;
+  /** Municipalidad the línea was opened from (null for "Sin municipalidad"). */
+  initialMunicipalidad?: Municipalidad | null;
 }
 
 const CLOSE_CONFIRM =
@@ -26,7 +33,8 @@ const CLOSE_CONFIRM =
  * step persists to the API when completed and unlocks the next one; there is
  * no draft, so closing mid-way keeps what was already saved.
  */
-export function InfrastructureWizard({ onClose }: InfrastructureWizardProps) {
+export function InfrastructureWizard({ onClose, initialLinea, initialMunicipalidad = null }: InfrastructureWizardProps) {
+  const manageMode = initialLinea !== undefined;
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const { municipalidades, loading: municipalidadesLoading, createMunicipalidad } = useMunicipalidades();
@@ -35,14 +43,15 @@ export function InfrastructureWizard({ onClose }: InfrastructureWizardProps) {
   const { paradas, refresh: refreshParadas, createParada, updateParada } = useParadas();
   const { createEstacion, updateEstacion, deleteEstacion } = useEstaciones();
 
-  const [currentStep, setCurrentStep] = useState<WizardStepNumber>(1);
-  const [municipalidad, setMunicipalidad] = useState<Municipalidad | null>(null);
-  const [linea, setLinea] = useState<Linea | null>(null);
-  const [linked, setLinked] = useState(false);
+  const [currentStep, setCurrentStep] = useState<WizardStepNumber>(manageMode ? 3 : 1);
+  const [municipalidad, setMunicipalidad] = useState<Municipalidad | null>(initialMunicipalidad);
+  const [linea, setLinea] = useState<Linea | null>(initialLinea ?? null);
+  const [linked, setLinked] = useState(manageMode);
   const [finishedCount, setFinishedCount] = useState<number | null>(null);
 
   const requestClose = () => {
-    if (finishedCount !== null) {
+    // Managing an existing línea: every change is already saved.
+    if (manageMode || finishedCount !== null) {
       onClose(true);
       return;
     }
@@ -137,7 +146,7 @@ export function InfrastructureWizard({ onClose }: InfrastructureWizardProps) {
           createParqueo={createParqueo}
           assignParqueo={assignParqueo}
           paradaGateway={paradaGateway}
-          onFinish={setFinishedCount}
+          onFinish={manageMode ? () => onClose(true) : setFinishedCount}
         />
       );
     }
@@ -184,8 +193,14 @@ export function InfrastructureWizard({ onClose }: InfrastructureWizardProps) {
       >
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-8">
           <div>
-            <h2 id={titleId} className="font-display text-xl font-bold text-slate-900">Nueva infraestructura</h2>
-            <p className="text-sm text-slate-500">Cada paso se guarda al completarlo.</p>
+            <h2 id={titleId} className="font-display text-xl font-bold text-slate-900">
+              {manageMode ? 'Gestionar paradas y parqueo' : 'Nueva infraestructura'}
+            </h2>
+            <p className="text-sm text-slate-500">
+              {manageMode && linea
+                ? `Línea ${linea.numeroLinea} - ${linea.nombreLinea} · ${municipalidad?.nombreMunicipalidad ?? 'Sin municipalidad'}. Cada cambio se guarda al momento.`
+                : 'Cada paso se guarda al completarlo.'}
+            </p>
           </div>
           <button
             type="button"
@@ -196,9 +211,11 @@ export function InfrastructureWizard({ onClose }: InfrastructureWizardProps) {
             <span className="material-symbols-outlined" aria-hidden="true">close</span>
           </button>
         </header>
-        <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
-          <WizardStepper steps={steps} currentStep={finishedCount !== null ? 3 : currentStep} onSelect={setCurrentStep} />
-        </div>
+        {!manageMode && (
+          <div className="border-b border-slate-100 px-5 py-4 sm:px-8">
+            <WizardStepper steps={steps} currentStep={finishedCount !== null ? 3 : currentStep} onSelect={setCurrentStep} />
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto bg-slate-50 px-5 py-6 sm:px-8">{renderStep()}</div>
       </div>
     </div>
