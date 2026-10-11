@@ -47,7 +47,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 - Existing lineas without municipalidad (seeded data) appear under a "Sin municipalidad" group.
 
 ## Additional tasks
-- [ ] T6 API support: `GET /infrastructure/municipalidades/:id/lineas` (lineas of a municipalidad, avoids N+1 in the grouped view) and a transactional bulk reorder of a línea's paradas (`UNIQUE(id_linea, orden)` is not deferrable and `CHECK (orden > 0)`, so up/down swaps cannot be done with single PATCHes); specs.
+- [x] T6 API support (commit `6b48d72`, +425/-18; jest 682 passed; parent spot check `npm test -- linea municipalidad` 134 passed; scratch DB swap/mismatch/404 verified; contracts: `GET /municipalidades/:id/lineas` -> LineaResponseDto[]; `PUT /lineas/:id/paradas/orden` body `{ idsLineaParada: string[] }` full ordered list, 400 `ORDEN_LIST_MISMATCH`): `GET /infrastructure/municipalidades/:id/lineas` (lineas of a municipalidad, avoids N+1 in the grouped view) and a transactional bulk reorder of a línea's paradas (`UNIQUE(id_linea, orden)` is not deferrable and `CHECK (orden > 0)`, so up/down swaps cannot be done with single PATCHes); specs.
 - [ ] T7 Web wizard "Nueva infraestructura" (3 steps above) with tests.
 - [ ] T8 Web grouped view replacing tabs (municipalidad -> líneas -> paradas/parqueo, "Sin municipalidad" group, edit actions reusing existing dialogs, accesos/afectaciones reachable) with tests.
 
