@@ -48,7 +48,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 
 ## Additional tasks
 - [x] T6 API support (commit `6b48d72`, +425/-18; jest 682 passed; parent spot check `npm test -- linea municipalidad` 134 passed; scratch DB swap/mismatch/404 verified; contracts: `GET /municipalidades/:id/lineas` -> LineaResponseDto[]; `PUT /lineas/:id/paradas/orden` body `{ idsLineaParada: string[] }` full ordered list, 400 `ORDEN_LIST_MISMATCH`): `GET /infrastructure/municipalidades/:id/lineas` (lineas of a municipalidad, avoids N+1 in the grouped view) and a transactional bulk reorder of a línea's paradas (`UNIQUE(id_linea, orden)` is not deferrable and `CHECK (orden > 0)`, so up/down swaps cannot be done with single PATCHes); specs.
-- [ ] T7 Web wizard "Nueva infraestructura" (3 steps above) with tests.
+- [x] T7 Web wizard "Nueva infraestructura" (3 steps above) with tests. Commit `a71f2ae` (~2150 added, ~680 test lines). `npx tsc -b` exit 0; `npx vitest run` 65 files, 487 passed; parent spot check infrastructure 22 files, 185 passed. Per-tab create removed for municipalidad/linea/parada/parqueo (afectaciones keep "Nueva afectación"). Added `apiClient.put`. Gaps: finalize allowed with <2 paradas (hint only); duplicate numeroLinea has no 409 code in API; numeroLinea max 10 in code vs 20 in DB; stale README sections left for T8.
 - [ ] T8 Web grouped view replacing tabs (municipalidad -> líneas -> paradas/parqueo, "Sin municipalidad" group, edit actions reusing existing dialogs, accesos/afectaciones reachable) with tests.
 
 ## Slices (feature-branch-chain)
