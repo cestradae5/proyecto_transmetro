@@ -7,6 +7,9 @@ import { InfrastructurePage } from "../features/infrastructure";
 import { FleetPage } from "../features/fleet";
 import { PersonalPage } from "../features/personal";
 import { AuditLogPage } from "../features/audit-log";
+import { AdministrativeReportsPage, ReportsHubPage } from "../features/reports";
+import { ReportsPermissionRoute } from "../features/reports/reports-permission-route";
+import { canOpenReportsPage, canViewAuditLog } from "../features/reports/permissions";
 import { MiUnidadPage } from "../features/fleet/components/mi-unidad/mi-unidad-page";
 import { MiEstacionPage } from "../features/fleet/components/mi-estacion/mi-estacion-page";
 import { OperatorOnlyRoute } from "../features/fleet/operator-only-route";
@@ -28,7 +31,9 @@ export function App() {
           <Route path="/fleet/my-unit" element={<AuthenticationGuard requiredModule="fleet"><MiUnidadPage /></AuthenticationGuard>} />
           <Route path="/fleet/my-station" element={<AuthenticationGuard requiredModule="fleet"><MiEstacionPage /></AuthenticationGuard>} />
           <Route path="/personal" element={<AuthenticationGuard requiredModule="personnel"><PersonalPage /></AuthenticationGuard>} />
-          <Route path="/reports" element={<AuthenticationGuard requiredModule="reports"><AuditLogPage /></AuthenticationGuard>} />
+          <Route path="/reports" element={<AuthenticationGuard requiredModule="reports"><ReportsHubPage /></AuthenticationGuard>} />
+          <Route path="/reports/audit-log" element={<AuthenticationGuard requiredModule="reports"><ReportsPermissionRoute allowed={canViewAuditLog}><AuditLogPage /></ReportsPermissionRoute></AuthenticationGuard>} />
+          <Route path="/reports/administrative" element={<AuthenticationGuard requiredModule="reports"><ReportsPermissionRoute allowed={canOpenReportsPage}><AdministrativeReportsPage /></ReportsPermissionRoute></AuthenticationGuard>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
