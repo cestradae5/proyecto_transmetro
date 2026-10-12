@@ -293,7 +293,11 @@ export class UnidadService {
       }
       const linea = await this.lineaService.findOne(lineAssignment.idLinea);
       response.nombreLinea = linea.nombreLinea;
-      response.parqueo = await this.parqueoService.findOne(linea.idParqueo);
+      // A línea can exist without a parqueo (tbl_linea.id_parqueo is
+      // nullable); in that case `parqueo` stays omitted from the response.
+      if (linea.idParqueo) {
+        response.parqueo = await this.parqueoService.findOne(linea.idParqueo);
+      }
     }
 
     if (pilotAssignment) {

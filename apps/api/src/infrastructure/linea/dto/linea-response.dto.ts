@@ -20,6 +20,10 @@ export class LineaResponseDto {
   @ApiProperty({ description: "Tipo de recorrido", enum: TipoRecorrido })
   tipoRecorrido!: TipoRecorrido;
 
-  @ApiProperty({ description: "ID del parqueo asociado" })
-  idParqueo!: string;
+  @ApiProperty({
+    description: "ID del parqueo asociado (null si aún no tiene parqueo)",
+    nullable: true,
+    type: String,
+  })
+  idParqueo!: string | null;
 }

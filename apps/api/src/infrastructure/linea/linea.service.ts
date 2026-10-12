@@ -33,15 +33,21 @@ export class LineaService {
   ) {}
 
   async create(createLineaDto: CreateLineaDto): Promise<LineaResponseDto> {
-    // Validate FK
-    await validateForeignKey(
-      this.parqueoRepository,
-      createLineaDto.idParqueo,
-      "idParqueo",
-      "Parqueo"
-    );
+    // The parqueo is optional: a línea is created first and the parqueo is
+    // assigned later. Validate the FK only when one is provided.
+    if (createLineaDto.idParqueo) {
+      await validateForeignKey(
+        this.parqueoRepository,
+        createLineaDto.idParqueo,
+        "idParqueo",
+        "Parqueo"
+      );
+    }
 
-    const linea = this.lineaRepository.create(createLineaDto);
+    const linea = this.lineaRepository.create({
+      ...createLineaDto,
+      idParqueo: createLineaDto.idParqueo ?? null,
+    });
     const saved = await this.lineaRepository.save(linea);
     return this.toResponseDto(saved);
   }
@@ -72,7 +78,7 @@ export class LineaService {
       throw new NotFoundException(`Línea con ID ${id} no encontrada`);
     }
 
-    // Validate FK if provided
+    // Validate FK if provided; an explicit null clears the parqueo.
     if (updateLineaDto.idParqueo) {
       await validateForeignKey(
         this.parqueoRepository,
@@ -231,7 +237,7 @@ export class LineaService {
       colorHex: linea.colorHex,
       estadoLinea: linea.estadoLinea,
       tipoRecorrido: linea.tipoRecorrido,
-      idParqueo: linea.idParqueo,
+      idParqueo: linea.idParqueo ?? null,
     };
   }
 }

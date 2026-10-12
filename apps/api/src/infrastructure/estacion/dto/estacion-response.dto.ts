@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty } from "@nestjs/swagger";
 import { EstadoEstacion } from "./create-estacion.dto.js";
 
 export class EstacionResponseDto {
@@ -17,6 +17,6 @@ export class EstacionResponseDto {
   @ApiProperty({ description: "Estado de la estación", enum: EstadoEstacion })
   estadoEstacion!: EstadoEstacion;
 
-  @ApiPropertyOptional({ description: "ID de la parada asociada" })
-  idParada?: number;
+  @ApiProperty({ description: "ID de la parada que la estación extiende" })
+  idParada!: number;
 }

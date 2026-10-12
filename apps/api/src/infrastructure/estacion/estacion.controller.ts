@@ -36,6 +36,11 @@ export class EstacionController {
     description: "Estación creada exitosamente",
     type: EstacionResponseDto,
   })
+  @ApiResponse({ status: 404, description: "Parada no encontrada" })
+  @ApiResponse({
+    status: 409,
+    description: "La parada ya tiene una estación asociada",
+  })
   create(
     @Body() createEstacionDto: CreateEstacionDto
   ): Promise<EstacionResponseDto> {
@@ -75,7 +80,11 @@ export class EstacionController {
     description: "Estación actualizada",
     type: EstacionResponseDto,
   })
-  @ApiResponse({ status: 404, description: "Estación no encontrada" })
+  @ApiResponse({ status: 404, description: "Estación o parada no encontrada" })
+  @ApiResponse({
+    status: 409,
+    description: "La parada ya tiene una estación asociada",
+  })
   update(
     @Param("id") id: string,
     @Body() updateEstacionDto: UpdateEstacionDto
