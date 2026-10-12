@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Estacion, Linea, Parada, ParadaFormValues } from '../../types/infrastructure.types';
 import { EstacionLineasDialog } from '../../../fleet/components/estaciones/estacion-lineas-dialog';
 import { ParadaDialog } from './parada-dialog';
+import { AccesosDialog } from './accesos-dialog';
 
 interface ParadasTableProps {
   paradas: Parada[];
@@ -16,6 +17,7 @@ export function ParadasTable({ paradas, estaciones, lineas, onSave, onDelete }: 
   const [editingParada, setEditingParada] = useState<Parada | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [linesParada, setLinesParada] = useState<Parada | null>(null);
+  const [accesosParada, setAccesosParada] = useState<Parada | null>(null);
 
   const filteredParadas = paradas.filter((p) =>
     p.nombreParada.toLowerCase().includes(search.toLowerCase())
@@ -104,6 +106,12 @@ export function ParadasTable({ paradas, estaciones, lineas, onSave, onDelete }: 
                   >
                     Editar
                   </button>
+                  <button
+                    onClick={() => setAccesosParada(parada)}
+                    className="px-3 py-1 text-sm text-primary hover:text-primary/80 font-medium mr-2"
+                  >
+                    Accesos
+                  </button>
                   {parada.esEstacion && parada.idEstacion != null && (
                     <button
                       onClick={() => setLinesParada(parada)}
@@ -145,6 +153,8 @@ export function ParadasTable({ paradas, estaciones, lineas, onSave, onDelete }: 
           onClose={() => setLinesParada(null)}
         />
       )}
+
+      {accesosParada && <AccesosDialog parada={accesosParada} onClose={() => setAccesosParada(null)} />}
     </div>
   );
 }

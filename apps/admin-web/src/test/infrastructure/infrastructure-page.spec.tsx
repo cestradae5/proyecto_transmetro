@@ -19,6 +19,9 @@ vi.mock("../../features/infrastructure/hooks/use-paradas", () => ({ useParadas: 
 vi.mock("../../features/infrastructure/hooks/use-estaciones", () => ({ useEstaciones: stubList("estaciones") }));
 vi.mock("../../features/infrastructure/hooks/use-parqueos", () => ({ useParqueos: stubList("parqueos") }));
 vi.mock("../../features/infrastructure/hooks/use-afectaciones", () => ({ useAfectaciones: stubList("afectaciones") }));
+vi.mock("../../features/infrastructure/hooks/use-municipalidades", () => ({
+  useMunicipalidades: stubList("municipalidades"),
+}));
 
 function renderPage() {
   return render(
@@ -36,10 +39,16 @@ function tabLabels() {
 }
 
 describe("InfrastructurePage tabs", () => {
-  it("follows the creation flow order: Líneas -> Paradas -> Parqueos -> Afectaciones", () => {
+  it("follows the creation flow order: Municipalidades -> Líneas -> Paradas -> Parqueos -> Afectaciones", () => {
     renderPage();
 
-    expect(tabLabels()).toEqual(["Líneas (0)", "Paradas (0)", "Parqueos (0)", "Afectaciones (0)"]);
+    expect(tabLabels()).toEqual([
+      "Municipalidades (0)",
+      "Líneas (0)",
+      "Paradas (0)",
+      "Parqueos (0)",
+      "Afectaciones (0)",
+    ]);
   });
 
   it("has no standalone Estaciones tab (estaciones are managed from the parada form)", () => {
@@ -48,11 +57,26 @@ describe("InfrastructurePage tabs", () => {
     expect(screen.queryByRole("button", { name: /^Estaciones/ })).not.toBeInTheDocument();
   });
 
-  it("opens on the Líneas tab by default", () => {
+  it("opens on the Municipalidades tab by default", () => {
     renderPage();
 
+    expect(screen.getByPlaceholderText("Buscar municipalidad...")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Municipalidades (0)" })).toHaveClass("text-primary");
+    expect(screen.getByRole("button", { name: "Líneas (0)" })).not.toHaveClass("text-primary");
+  });
+
+  it("opens the municipalidad create dialog from Crear Nuevo on the default tab", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Crear Nuevo" }));
+    expect(screen.getByRole("dialog", { name: "Nueva Municipalidad" })).toBeInTheDocument();
+  });
+
+  it("switches to the Líneas tab", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Líneas (0)" }));
     expect(screen.getByPlaceholderText("Buscar línea...")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Líneas (0)" })).toHaveClass("text-primary");
   });
 
   it("switches to the Paradas tab and its create dialog shows the estación toggle", () => {

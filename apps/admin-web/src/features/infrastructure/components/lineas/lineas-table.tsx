@@ -1,21 +1,24 @@
 import { useState } from 'react';
-import type { Linea, Parada, Parqueo } from '../../types/infrastructure.types';
+import type { Linea, Municipalidad, Parada, Parqueo } from '../../types/infrastructure.types';
 import { LineaDialog } from './linea-dialog';
 import { LineaParadaDialog } from './linea-parada-dialog';
+import { LineaMunicipalidadesDialog } from './linea-municipalidades-dialog';
 
 interface LineasTableProps {
   lineas: Linea[];
   parqueos: Parqueo[];
   paradas: Parada[];
+  municipalidades: Municipalidad[];
   onUpdate: (id: number, data: any) => Promise<any>;
   onDelete: (id: number) => Promise<any>;
 }
 
-export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: LineasTableProps) {
+export function LineasTable({ lineas, parqueos, paradas, municipalidades, onUpdate, onDelete }: LineasTableProps) {
   const [search, setSearch] = useState('');
   const [editingLinea, setEditingLinea] = useState<Linea | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [managingLinea, setManagingLinea] = useState<Linea | null>(null);
+  const [municipalidadesLinea, setMunicipalidadesLinea] = useState<Linea | null>(null);
 
   const filteredLineas = lineas.filter((l) =>
     l.nombreLinea.toLowerCase().includes(search.toLowerCase()) || l.numeroLinea.includes(search)
@@ -110,6 +113,12 @@ export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: L
                     Gestionar paradas
                   </button>
                   <button
+                    onClick={() => setMunicipalidadesLinea(linea)}
+                    className="px-3 py-1 text-sm text-primary hover:text-primary/80 font-medium mr-2"
+                  >
+                    Municipalidades
+                  </button>
+                  <button
                     onClick={() => handleDelete(Number(linea.idLinea))}
                     className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
                   >
@@ -139,6 +148,14 @@ export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: L
           linea={managingLinea}
           paradas={paradas}
           onClose={() => setManagingLinea(null)}
+        />
+      )}
+
+      {municipalidadesLinea && (
+        <LineaMunicipalidadesDialog
+          linea={municipalidadesLinea}
+          municipalidades={municipalidades}
+          onClose={() => setMunicipalidadesLinea(null)}
         />
       )}
     </div>
