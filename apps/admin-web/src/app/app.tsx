@@ -6,6 +6,7 @@ import { ProfilePage } from "../features/dashboard/profile-page";
 import { InfrastructurePage } from "../features/infrastructure";
 import { FleetPage } from "../features/fleet";
 import { PersonalPage } from "../features/personal";
+import { AuditLogPage } from "../features/audit-log";
 import { MiUnidadPage } from "../features/fleet/components/mi-unidad/mi-unidad-page";
 import { MiEstacionPage } from "../features/fleet/components/mi-estacion/mi-estacion-page";
 import { OperatorOnlyRoute } from "../features/fleet/operator-only-route";
@@ -27,6 +28,7 @@ export function App() {
           <Route path="/fleet/my-unit" element={<AuthenticationGuard requiredModule="fleet"><MiUnidadPage /></AuthenticationGuard>} />
           <Route path="/fleet/my-station" element={<AuthenticationGuard requiredModule="fleet"><MiEstacionPage /></AuthenticationGuard>} />
           <Route path="/personal" element={<AuthenticationGuard requiredModule="personnel"><PersonalPage /></AuthenticationGuard>} />
+          <Route path="/reports" element={<AuthenticationGuard requiredModule="reports"><AuditLogPage /></AuthenticationGuard>} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -82,7 +82,7 @@ describe("LandingPage card filtering (task 5)", () => {
   });
 
   it("navigates to /fleet when the Flota card is clicked and marks it clickable", async () => {
-    seedSession(["fleet", "reports"], ["FLOTA_GESTIONAR"]);
+    seedSession(["fleet", "operational_alerts"], ["FLOTA_GESTIONAR"]);
     render(
       <MemoryRouter initialEntries={["/landing"]}>
         <AuthProvider>
@@ -97,8 +97,8 @@ describe("LandingPage card filtering (task 5)", () => {
 
     const fleetCard = (await screen.findByText("Flota")).closest("div[class*='border']") as HTMLElement;
     expect(fleetCard.className).toContain("cursor-pointer");
-    const reportsCard = screen.getByText("Reportes").closest("div[class*='border']") as HTMLElement;
-    expect(reportsCard.className).not.toContain("cursor-pointer");
+    const alertsCard = screen.getByText("Alertas Operativas").closest("div[class*='border']") as HTMLElement;
+    expect(alertsCard.className).not.toContain("cursor-pointer");
 
     fireEvent.click(fleetCard);
     expect(await screen.findByText("Fleet destination")).toBeInTheDocument();
@@ -146,6 +146,26 @@ describe("LandingPage card filtering (task 5)", () => {
 
     expect(await screen.findByText("Mi estacion destination")).toBeInTheDocument();
     expect(screen.queryByText("Mi unidad destination")).not.toBeInTheDocument();
+  });
+
+  it("navigates to /reports when the Reportes card is clicked and marks it clickable", async () => {
+    seedSession(["reports"], ["AUDITORIA_BITACORA_CONSULTAR"]);
+    render(
+      <MemoryRouter initialEntries={["/landing"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/reports" element={<div>Reports destination</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const card = (await screen.findByText("Reportes")).closest("div[class*='border']") as HTMLElement;
+    expect(card.className).toContain("cursor-pointer");
+
+    fireEvent.click(card);
+    expect(await screen.findByText("Reports destination")).toBeInTheDocument();
   });
 
   it("navigates to /personal when the Personal card is clicked and marks it clickable", async () => {
