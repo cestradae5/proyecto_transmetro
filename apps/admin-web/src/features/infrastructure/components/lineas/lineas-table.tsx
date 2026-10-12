@@ -21,6 +21,11 @@ export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: L
     l.nombreLinea.toLowerCase().includes(search.toLowerCase()) || l.numeroLinea.includes(search)
   );
 
+  const getParqueoNombre = (idParqueo: string | null) => {
+    if (idParqueo == null) return 'Sin parqueo';
+    return parqueos.find((p) => String(p.idParqueo) === String(idParqueo))?.nombreParqueo ?? '—';
+  };
+
   const handleEdit = (linea: Linea) => {
     setEditingLinea(linea);
     setIsDialogOpen(true);
@@ -61,6 +66,7 @@ export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: L
               <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Nombre</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Color</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Tipo</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Parqueo</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Estado</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Acciones</th>
             </tr>
@@ -78,6 +84,7 @@ export function LineasTable({ lineas, parqueos, paradas, onUpdate, onDelete }: L
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">{linea.tipoRecorrido}</td>
+                <td className="px-4 py-3 text-sm text-slate-600">{getParqueoNombre(linea.idParqueo)}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`px-2 py-1 text-xs font-medium rounded ${

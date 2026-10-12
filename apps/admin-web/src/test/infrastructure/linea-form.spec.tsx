@@ -15,7 +15,6 @@ const SAMPLE_PARQUEOS: Parqueo[] = [
     latitud: 14.6,
     longitud: -90.5,
     capacidadUnidades: 20,
-    idEstacion: null,
     estadoParqueo: "ACTIVO" as Parqueo["estadoParqueo"],
   },
 ];
@@ -94,15 +93,40 @@ describe("LineaForm", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("requires selecting a parqueo", async () => {
+  it("offers 'Sin parqueo' as the default parqueo option", () => {
+    const { parqueoSelect } = renderForm();
+
+    const first = within(parqueoSelect).getAllByRole("option")[0] as HTMLOptionElement;
+    expect(first.value).toBe("");
+    expect(first.textContent).toBe("Sin parqueo");
+  });
+
+  it("submits a línea without parqueo as idParqueo null", async () => {
     const { numero, nombreLinea, onSubmit } = renderForm();
 
     fireEvent.change(numero, { target: { value: "L2" } });
     fireEvent.change(nombreLinea, { target: { value: "Línea Este-Oeste" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
 
-    expect(await screen.findByText("El parqueo es requerido")).toBeInTheDocument();
-    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("El parqueo es requerido")).not.toBeInTheDocument();
+    expect(onSubmit.mock.calls[0]?.[0].idParqueo).toBeNull();
+  });
+
+  it("clears the parqueo of an existing línea when 'Sin parqueo' is chosen", async () => {
+    const { parqueoSelect, onSubmit } = renderForm({ linea: SAMPLE_LINEA });
+
+    fireEvent.change(parqueoSelect, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]?.[0].idParqueo).toBeNull();
+  });
+
+  it("renders 'Sin parqueo' selected when editing a línea without parqueo", () => {
+    const { parqueoSelect } = renderForm({ linea: { ...SAMPLE_LINEA, idParqueo: null } });
+
+    expect(parqueoSelect).toHaveValue("");
   });
 
   it("calls onSubmit with correctly shaped data on success", async () => {

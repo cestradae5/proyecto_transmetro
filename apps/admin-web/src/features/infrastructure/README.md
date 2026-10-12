@@ -13,18 +13,14 @@ infrastructure/
 │   │   ├── afectacion-dialog.tsx    # Create/Edit modal for disruptions
 │   │   ├── afectacion-form.tsx      # Form with XOR validation (parada OR estacion)
 │   │   └── afectaciones-table.tsx   # Table with search/filter
-│   ├── estaciones/
-│   │   ├── estacion-dialog.tsx      # Create/Edit modal for stations
-│   │   ├── estacion-form.tsx        # Form with validation
-│   │   └── estaciones-table.tsx     # Table with search/filter
 │   ├── lineas/
 │   │   ├── linea-dialog.tsx         # Create/Edit modal for lines
 │   │   ├── linea-form.tsx           # Form with color picker
 │   │   └── lineas-table.tsx         # Table with search/filter
 │   ├── paradas/
 │   │   ├── parada-dialog.tsx        # Create/Edit modal for stops
-│   │   ├── parada-form.tsx          # Form with validation
-│   │   └── paradas-table.tsx        # Table with search/filter
+│   │   ├── parada-form.tsx          # Form with validation + "Es estación" toggle
+│   │   └── paradas-table.tsx        # Table with search/filter, Estación badge, station lines
 │   └── parqueos/
 │       ├── parqueo-dialog.tsx       # Create/Edit modal for parking lots
 │       ├── parqueo-form.tsx         # Form with validation
@@ -34,6 +30,7 @@ infrastructure/
 │   ├── use-estaciones.ts            # API hook for stations
 │   ├── use-lineas.ts                # API hook for lines
 │   ├── use-paradas.ts               # API hook for stops
+│   ├── save-parada-estacion.ts      # Parada save + estación create/update/force-delete
 │   └── use-parqueos.ts              # API hook for parking lots
 ├── types/
 │   └── infrastructure.types.ts      # TypeScript types and DTOs
@@ -54,17 +51,22 @@ Basic bus stop in the system.
 - `estado` (required): ABIERTA | CERRADA
 
 ### 2. Estación (Station)
-Major transfer station that may contain a stop.
+A 1:1 extension of a parada (`id_parada` NOT NULL UNIQUE). There is no
+standalone Estaciones tab: the parada form's "Es estación" toggle creates or
+updates the estación (blank coordinates default to the parada's). Turning the
+toggle off on a parada that has an estación asks for confirmation and, on save,
+hard-deletes it (`DELETE /infrastructure/estaciones/:id?force=true`); a 409
+`ESTACION_IN_USE` keeps the toggle on with "No se puede quitar la estación
+porque tiene asignaciones o vínculos". The station's líneas are managed from the
+paradas table ("Líneas de la estación", reusing the fleet dialog).
 
 **Fields:**
 - `nombre` (required): Station name
-- `latitud` (required): GPS latitude (-90 to 90)
-- `longitud` (required): GPS longitude (-180 to 180)
-- `id_parada` (optional): Associated stop ID
-- `estado` (required): ABIERTA | CERRADA
+- `latitud`/`longitud` (required by the API; default to the parada's)
+- `estado` (required): ACTIVA | CERRADA | MANTENIMIENTO
 
 ### 3. Parqueo (Parking Lot)
-Bus parking facility that may be attached to a station.
+Bus parking facility (no estación link: `id_estacion` was dropped).
 
 **Fields:**
 - `nombre` (required): Parking lot name
@@ -73,7 +75,6 @@ Bus parking facility that may be attached to a station.
 - `latitud` (required): GPS latitude (-90 to 90)
 - `longitud` (required): GPS longitude (-180 to 180)
 - `capacidad_unidades` (required): Number of buses (>= 0)
-- `id_estacion` (optional): Associated station ID
 - `estado` (required): ABIERTA | CERRADA
 
 ### 4. Línea (Bus Line)
@@ -84,7 +85,7 @@ A numbered route with a color identifier.
 - `nombre_linea` (required): Line name
 - `color_hex` (required): Hex color code (e.g., "#FF0000")
 - `tipo_recorrido` (required): CIRCULAR | LINEAL
-- `id_parqueo` (optional): Home parking lot ID
+- `id_parqueo` (optional): Home parking lot ID; "Sin parqueo" sends `null`
 - `estado` (required): ACTIVA | INACTIVA
 
 **Special Feature:** Color picker input for `color_hex`

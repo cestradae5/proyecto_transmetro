@@ -6,11 +6,13 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import {
   ApiTags,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiBearerAuth,
 } from "@nestjs/swagger";
@@ -94,13 +96,30 @@ export class EstacionController {
 
   @Delete(":id")
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
-  @ApiOperation({ summary: "Eliminar (soft delete) una estación" })
+  @ApiOperation({
+    summary: "Eliminar una estación (soft delete → CERRADA; force=true la borra)",
+  })
+  @ApiQuery({
+    name: "force",
+    required: false,
+    enum: ["true", "false"],
+    description:
+      'Solo "true" borra la fila (la parada deja de ser estación); cualquier otro valor la marca como CERRADA',
+  })
   @ApiResponse({
     status: 200,
-    description: "Estación marcada como CERRADA",
+    description: "Estación marcada como CERRADA o eliminada (force=true)",
   })
   @ApiResponse({ status: 404, description: "Estación no encontrada" })
-  remove(@Param("id") id: string): Promise<void> {
-    return this.estacionService.remove(id);
+  @ApiResponse({
+    status: 409,
+    description:
+      "ESTACION_IN_USE: la estación tiene asignaciones o vínculos (solo con force=true)",
+  })
+  remove(
+    @Param("id") id: string,
+    @Query("force") force?: string
+  ): Promise<void> {
+    return this.estacionService.remove(id, force === "true");
   }
 }

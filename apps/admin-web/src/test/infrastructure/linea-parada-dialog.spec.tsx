@@ -43,6 +43,8 @@ const PARADAS: Parada[] = [
     latitud: 14.0,
     longitud: -90.0,
     estadoParada: "ACTIVA" as any,
+    esEstacion: false,
+    idEstacion: null,
     fecha_creacion: "2026-01-01T00:00:00.000Z",
     fecha_actualizacion: "2026-01-01T00:00:00.000Z",
   },
