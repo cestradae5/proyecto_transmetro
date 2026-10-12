@@ -9,6 +9,7 @@ import { FleetModule } from "./fleet/fleet.module.js";
 import { PersonalModule } from "./personal/personal.module.js";
 import { ProfileModule } from "./profile/profile.module.js";
 import { AuditLogModule } from "./audit-log/audit-log.module.js";
+import { ReportsModule } from "./reports/reports.module.js";
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AuditLogModule } from "./audit-log/audit-log.module.js";
     PersonalModule,
     ProfileModule,
     AuditLogModule,
+    ReportsModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })

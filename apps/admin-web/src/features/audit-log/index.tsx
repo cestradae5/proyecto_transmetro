@@ -50,7 +50,7 @@ export function AuditLogPage() {
     <div className="min-h-screen bg-[#fafbfc]">
       <header className="w-full h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 fixed top-0 left-0">
         <div className="flex items-center gap-4">
-          <button aria-label="Volver" onClick={() => navigate("/landing")} className="text-slate-600 hover:text-slate-900">
+          <button aria-label="Volver" onClick={() => navigate("/reports")} className="text-slate-600 hover:text-slate-900">
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
           <span className="font-display font-bold text-xl text-primary">Transmetro</span>

@@ -35,6 +35,17 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   };
 }
 
+export interface DownloadedFile {
+  blob: Blob;
+  fileName: string;
+}
+
+/** Reads filename="..." from a Content-Disposition header. */
+function fileNameFrom(header: string | null): string | null {
+  const match = header?.match(/filename="?([^";]+)"?/i);
+  return match ? match[1]! : null;
+}
+
 async function fetchWithAuth<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -76,5 +87,17 @@ export const apiClient = {
     return fetchWithAuth<T>(path, {
       method: 'DELETE',
     });
+  },
+
+  /** GETs a binary file (e.g. a PDF report); errors are thrown as ApiError like the JSON calls. */
+  async download(path: string, fallbackFileName = 'descarga'): Promise<DownloadedFile> {
+    const response = await fetch(`${API_BASE_URL}${path}`, { headers: await getAuthHeaders() });
+    if (!response.ok) {
+      await handleResponse<never>(response);
+    }
+    return {
+      blob: await response.blob(),
+      fileName: fileNameFrom(response.headers.get('Content-Disposition')) ?? fallbackFileName,
+    };
   },
 };

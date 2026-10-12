@@ -13,6 +13,8 @@ async function bootstrap(): Promise<void> {
     origin: "*", // Permitir todos los orígenes (JWT no tiene riesgo CSRF)
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    // Lets the browser read the file name of downloaded reports (PDF).
+    exposedHeaders: ["Content-Disposition"],
   });
 
   // Configurar validación global
