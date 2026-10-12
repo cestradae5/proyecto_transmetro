@@ -2,12 +2,18 @@
 // Verifies delegation to MunicipalidadService and guard/permission metadata.
 
 import { jest } from "@jest/globals";
-import { GUARDS_METADATA, PATH_METADATA } from "@nestjs/common/constants";
+import { RequestMethod } from "@nestjs/common";
+import {
+  GUARDS_METADATA,
+  METHOD_METADATA,
+  PATH_METADATA,
+} from "@nestjs/common/constants";
 
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { PERMISSIONS_KEY } from "../../authentication/permissions.decorator.js";
 import { MunicipalidadController } from "./municipalidad.controller.js";
 import type { MunicipalidadService } from "./municipalidad.service.js";
+import type { LineaMunicipalidadService } from "./linea-municipalidad.service.js";
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -34,13 +40,35 @@ function handler(method: string): () => void {
 
 describe("MunicipalidadController", () => {
   let service: MockMunicipalidadService;
+  let linkService: Record<"listLineas", AnyMock>;
   let controller: MunicipalidadController;
 
   beforeEach(() => {
     service = makeMockService();
+    linkService = { listLineas: jest.fn() };
     controller = new MunicipalidadController(
-      service as unknown as MunicipalidadService
+      service as unknown as MunicipalidadService,
+      linkService as unknown as LineaMunicipalidadService
     );
+  });
+
+  describe("líneas of a municipalidad", () => {
+    it("listLineas() forwards the municipalidad id to LineaMunicipalidadService", async () => {
+      const lineas = [{ idLinea: "3", numeroLinea: "L3" }];
+      linkService.listLineas.mockResolvedValue(lineas);
+
+      await expect(controller.listLineas("4")).resolves.toEqual(lineas);
+      expect(linkService.listLineas).toHaveBeenCalledWith("4");
+    });
+
+    it("listLineas() is mapped to GET :id/lineas", () => {
+      expect(Reflect.getMetadata(METHOD_METADATA, handler("listLineas"))).toBe(
+        RequestMethod.GET
+      );
+      expect(Reflect.getMetadata(PATH_METADATA, handler("listLineas"))).toBe(
+        ":id/lineas"
+      );
+    });
   });
 
   describe("delegation to MunicipalidadService", () => {
@@ -104,7 +132,7 @@ describe("MunicipalidadController", () => {
       expect(guards).toContain(AuthenticationGuard);
     });
 
-    it.each(["create", "findAll", "findOne", "update", "remove"])(
+    it.each(["create", "findAll", "findOne", "update", "remove", "listLineas"])(
       "requires INFRAESTRUCTURA_GESTIONAR permission on %s()",
       (method) => {
         expect(Reflect.getMetadata(PERMISSIONS_KEY, handler(method))).toEqual([

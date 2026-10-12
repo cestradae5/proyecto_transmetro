@@ -35,14 +35,16 @@ infrastructure/
 │   ├── linea.entity.ts
 │   ├── linea-parada.entity.ts        # tbl_linea_parada junction entity
 │   ├── linea.service.ts (+ .spec.ts) # includes junction CRUD (addParada,
-│   │                                 # listParadas, updateParada, removeParada)
+│   │                                 # listParadas, updateParada, removeParada,
+│   │                                 # reorderParadas)
 │   ├── linea.controller.ts (+ .spec.ts)
 │   └── dto/
 │       ├── create-linea.dto.ts
 │       ├── update-linea.dto.ts
 │       ├── linea-response.dto.ts
 │       ├── add-linea-parada.dto.ts
-│       └── update-linea-parada.dto.ts
+│       ├── update-linea-parada.dto.ts
+│       └── reorder-linea-paradas.dto.ts
 ├── municipalidad/
 │   ├── municipalidad.entity.ts
 │   ├── municipalidad.service.ts (+ .spec.ts)
@@ -122,6 +124,7 @@ Base path: `/infrastructure`. All routes below require
 | POST | `/` | Create; `estadoMunicipalidad` defaults to `ACTIVA`; duplicate `nombreMunicipalidad` → 409 `MUNICIPALIDAD_NOMBRE_DUPLICATE` |
 | GET | `/` | List all, ordered by `nombreMunicipalidad` |
 | GET | `/:id` | Get one |
+| GET | `/:id/lineas` | Líneas linked through `tbl_linea_municipalidad`, same shape as `GET /lineas` (`LineaResponseDto`), ordered by `numeroLinea`; one joined query (no N+1); unknown municipalidad → 404 |
 | PATCH | `/:id` | Update; renaming to a used name → 409 `MUNICIPALIDAD_NOMBRE_DUPLICATE` |
 | DELETE | `/:id` | Soft delete → `INACTIVA` (línea links are kept) |
 
@@ -167,6 +170,7 @@ Base path: `/infrastructure`. All routes below require
 | DELETE | `/:id` | Soft delete → `INACTIVA` (no `force` param) |
 | GET | `/:id/paradas` | List the línea's parada sequence, ordered by `orden` |
 | POST | `/:id/paradas` | Add a parada to the sequence (PR#3) |
+| PUT | `/:id/paradas/orden` | Bulk reorder, body `{ idsLineaParada: string[] }` (the full sequence; position i → `orden` i + 1; `minutosHastaSiguiente` unchanged); returns the list in the same shape as `GET /:id/paradas`; list with duplicates, missing or foreign ids → 400 `ORDEN_LIST_MISMATCH`; unknown línea → 404. Runs in one transaction with a two-phase update (shift every `orden` above the current max, then write 1..n) because `UNIQUE (id_linea, orden)` is not deferrable and `CHECK (orden > 0)` forbids temporary negatives |
 | PATCH | `/:id/paradas/:lineaParadaId` | Update `orden`/minutes of a linea-parada row (PR#3) |
 | DELETE | `/:id/paradas/:lineaParadaId` | Remove a parada from the sequence; línea must keep ≥2 paradas (PR#3) |
 | GET | `/:id/municipalidades` | List linked municipalidades (`idLinea`, `idMunicipalidad`, `nombreMunicipalidad`) |

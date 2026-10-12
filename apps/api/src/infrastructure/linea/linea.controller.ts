@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Put,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -22,6 +23,7 @@ import { UpdateLineaDto } from "./dto/update-linea.dto.js";
 import { LineaResponseDto } from "./dto/linea-response.dto.js";
 import { AddLineaParadaDto } from "./dto/add-linea-parada.dto.js";
 import { UpdateLineaParadaDto } from "./dto/update-linea-parada.dto.js";
+import { ReorderLineaParadasDto } from "./dto/reorder-linea-paradas.dto.js";
 import { LineaParadaEntity } from "./linea-parada.entity.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { Permissions } from "../../authentication/permissions.decorator.js";
@@ -129,6 +131,28 @@ export class LineaController {
     @Body() dto: AddLineaParadaDto
   ): Promise<LineaParadaEntity> {
     return this.lineaService.addParada(id, dto);
+  }
+
+  @Put(":id/paradas/orden")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
+  @ApiOperation({
+    summary: "Reordenar la secuencia completa de paradas de una línea",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Paradas reordenadas, con el detalle de cada parada",
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      "La lista no contiene exactamente las paradas actuales de la línea (ORDEN_LIST_MISMATCH)",
+  })
+  @ApiResponse({ status: 404, description: "Línea no encontrada" })
+  reorderParadas(
+    @Param("id") id: string,
+    @Body() dto: ReorderLineaParadasDto
+  ): Promise<LineaParadaEntity[]> {
+    return this.lineaService.reorderParadas(id, dto);
   }
 
   @Patch(":id/paradas/:lineaParadaId")

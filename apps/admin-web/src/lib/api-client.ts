@@ -65,6 +65,13 @@ export const apiClient = {
     });
   },
 
+  async put<T>(path: string, data: any): Promise<T> {
+    return fetchWithAuth<T>(path, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   async delete<T>(path: string): Promise<T> {
     return fetchWithAuth<T>(path, {
       method: 'DELETE',

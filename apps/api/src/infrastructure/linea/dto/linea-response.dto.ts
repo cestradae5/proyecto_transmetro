@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { EstadoLinea, TipoRecorrido } from "./create-linea.dto.js";
+import type { LineaEntity } from "../linea.entity.js";
 
 export class LineaResponseDto {
   @ApiProperty({ description: "ID de la línea" })
@@ -26,4 +27,17 @@ export class LineaResponseDto {
     type: String,
   })
   idParqueo!: string | null;
+}
+
+/** Maps a línea entity to its response shape (shared by every línea listing). */
+export function toLineaResponseDto(linea: LineaEntity): LineaResponseDto {
+  return {
+    idLinea: linea.idLinea,
+    numeroLinea: linea.numeroLinea,
+    nombreLinea: linea.nombreLinea,
+    colorHex: linea.colorHex,
+    estadoLinea: linea.estadoLinea as unknown as EstadoLinea,
+    tipoRecorrido: linea.tipoRecorrido as unknown as TipoRecorrido,
+    idParqueo: linea.idParqueo ?? null,
+  };
 }

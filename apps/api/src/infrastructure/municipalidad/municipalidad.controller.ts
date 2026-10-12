@@ -18,6 +18,8 @@ import { MunicipalidadService } from "./municipalidad.service.js";
 import { CreateMunicipalidadDto } from "./dto/create-municipalidad.dto.js";
 import { UpdateMunicipalidadDto } from "./dto/update-municipalidad.dto.js";
 import { MunicipalidadResponseDto } from "./dto/municipalidad-response.dto.js";
+import { LineaMunicipalidadService } from "./linea-municipalidad.service.js";
+import { LineaResponseDto } from "../linea/dto/linea-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { Permissions } from "../../authentication/permissions.decorator.js";
 
@@ -26,7 +28,10 @@ import { Permissions } from "../../authentication/permissions.decorator.js";
 @UseGuards(AuthenticationGuard)
 @ApiBearerAuth()
 export class MunicipalidadController {
-  constructor(private readonly municipalidadService: MunicipalidadService) {}
+  constructor(
+    private readonly municipalidadService: MunicipalidadService,
+    private readonly lineaMunicipalidadService: LineaMunicipalidadService
+  ) {}
 
   @Post()
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
@@ -69,6 +74,19 @@ export class MunicipalidadController {
   @ApiResponse({ status: 404, description: "Municipalidad no encontrada" })
   findOne(@Param("id") id: string): Promise<MunicipalidadResponseDto> {
     return this.municipalidadService.findOne(id);
+  }
+
+  @Get(":id/lineas")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
+  @ApiOperation({ summary: "Listar las líneas vinculadas a una municipalidad" })
+  @ApiResponse({
+    status: 200,
+    description: "Líneas vinculadas a la municipalidad, ordenadas por número",
+    type: [LineaResponseDto],
+  })
+  @ApiResponse({ status: 404, description: "Municipalidad no encontrada" })
+  listLineas(@Param("id") id: string): Promise<LineaResponseDto[]> {
+    return this.lineaMunicipalidadService.listLineas(id);
   }
 
   @Patch(":id")

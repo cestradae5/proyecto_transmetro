@@ -13,6 +13,10 @@ import {
 } from "./dto/linea-municipalidad.dto.js";
 import { isUniqueViolation } from "./municipalidad.service.js";
 import { LineaEntity } from "../linea/linea.entity.js";
+import {
+  LineaResponseDto,
+  toLineaResponseDto,
+} from "../linea/dto/linea-response.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
 
 @Injectable()
@@ -33,6 +37,29 @@ export class LineaMunicipalidadService {
       relations: { municipalidad: true },
     });
     return links.map((l) => this.toResponseDto(l));
+  }
+
+  /**
+   * Líneas linked to a municipalidad, resolved with a single join through
+   * tbl_linea_municipalidad (no per-línea lookups).
+   */
+  async listLineas(municipalidadId: string): Promise<LineaResponseDto[]> {
+    await validateForeignKey(
+      this.municipalidadRepository,
+      municipalidadId,
+      "idMunicipalidad",
+      "Municipalidad"
+    );
+    const links = await this.linkRepository.find({
+      where: { idMunicipalidad: municipalidadId },
+      relations: { linea: true },
+      order: { linea: { numeroLinea: "ASC" } },
+    });
+    return links
+      .filter((l): l is LineaMunicipalidadEntity & { linea: LineaEntity } =>
+        Boolean(l.linea)
+      )
+      .map((l) => toLineaResponseDto(l.linea));
   }
 
   async add(
