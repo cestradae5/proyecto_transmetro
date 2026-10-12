@@ -17,12 +17,17 @@ export interface UseLineaParadasResult {
     data: UpdateLineaParadaDto
   ) => Promise<LineaParada>;
   removeParada: (lineaParadaId: string) => Promise<void>;
+  /** Rewrites the whole sequence: position i of `idsLineaParada` gets orden i + 1. */
+  reorderParadas: (idsLineaParada: string[]) => Promise<LineaParada[]>;
 }
 
 export function mapLineaParadaError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 404) {
       return 'El recurso solicitado no existe o fue eliminado';
+    }
+    if (err.status === 400 && err.data?.error === 'ORDEN_LIST_MISMATCH') {
+      return 'La secuencia de paradas cambió. Recargue e intente de nuevo.';
     }
     if (err.status === 409) {
       const code = err.data?.error;
@@ -100,6 +105,21 @@ export function useLineaParadas(lineaId: string): UseLineaParadasResult {
     );
   };
 
+  // The PUT answers with the reordered list, so no extra GET is needed.
+  const reorderParadas = async (idsLineaParada: string[]): Promise<LineaParada[]> => {
+    let result: LineaParada[];
+    try {
+      result = await apiClient.put<LineaParada[]>(
+        `/infrastructure/lineas/${lineaId}/paradas/orden`,
+        { idsLineaParada }
+      );
+    } catch (err: unknown) {
+      throw new Error(mapLineaParadaError(err));
+    }
+    setLineaParadas(result);
+    return result;
+  };
+
   useEffect(() => {
     fetchLineaParadas();
   }, [fetchLineaParadas]);
@@ -112,5 +132,6 @@ export function useLineaParadas(lineaId: string): UseLineaParadasResult {
     addParada,
     updateParada,
     removeParada,
+    reorderParadas,
   };
 }

@@ -26,7 +26,7 @@ export function useLineas() {
     return result;
   };
 
-  const updateLinea = async (id: number, data: UpdateLineaDto) => {
+  const updateLinea = async (id: number | string, data: UpdateLineaDto) => {
     const result = await apiClient.patch<Linea>(`/infrastructure/lineas/${id}`, data);
     await fetchLineas();
     return result;

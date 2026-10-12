@@ -2,11 +2,13 @@
 
 ## Overview
 
-The Infrastructure module implements the backend CRUD for Transmetro's five
-core transit entities: **Parada** (stop), **Estación** (station), **Parqueo**
-(parking lot), **Línea** (bus line), and **Afectación** (service disruption).
-It also owns the `tbl_linea_parada` junction table that models a línea's
-ordered sequence of paradas, and the afectación "close" workflow.
+The Infrastructure module implements the backend CRUD for Transmetro's core
+transit entities: **Municipalidad** (municipality), **Parada** (stop),
+**Estación** (station), **Acceso** (parada entrance), **Parqueo** (parking
+lot), **Línea** (bus line), and **Afectación** (service disruption). It also owns the `tbl_linea_parada`
+junction table that models a línea's ordered sequence of paradas, the
+`tbl_linea_municipalidad` línea ↔ municipalidad links, and the afectación
+"close" workflow.
 
 This document covers the backend (NestJS/TypeORM) implementation. For the
 frontend module that consumes these endpoints, see
@@ -33,14 +35,36 @@ infrastructure/
 │   ├── linea.entity.ts
 │   ├── linea-parada.entity.ts        # tbl_linea_parada junction entity
 │   ├── linea.service.ts (+ .spec.ts) # includes junction CRUD (addParada,
-│   │                                 # listParadas, updateParada, removeParada)
+│   │                                 # listParadas, updateParada, removeParada,
+│   │                                 # reorderParadas)
 │   ├── linea.controller.ts (+ .spec.ts)
 │   └── dto/
 │       ├── create-linea.dto.ts
 │       ├── update-linea.dto.ts
 │       ├── linea-response.dto.ts
 │       ├── add-linea-parada.dto.ts
-│       └── update-linea-parada.dto.ts
+│       ├── update-linea-parada.dto.ts
+│       └── reorder-linea-paradas.dto.ts
+├── municipalidad/
+│   ├── municipalidad.entity.ts
+│   ├── municipalidad.service.ts (+ .spec.ts)
+│   ├── municipalidad.controller.ts (+ .spec.ts)
+│   ├── linea-municipalidad.entity.ts        # tbl_linea_municipalidad junction entity
+│   ├── linea-municipalidad.service.ts (+ .spec.ts)
+│   ├── linea-municipalidad.controller.ts (+ .spec.ts)
+│   └── dto/
+│       ├── create-municipalidad.dto.ts
+│       ├── update-municipalidad.dto.ts
+│       ├── municipalidad-response.dto.ts
+│       └── linea-municipalidad.dto.ts
+├── acceso/                # sub-resource of parada (/paradas/:id/accesos)
+│   ├── acceso.entity.ts
+│   ├── acceso.service.ts (+ .spec.ts)
+│   ├── acceso.controller.ts (+ .spec.ts)
+│   └── dto/
+│       ├── create-acceso.dto.ts
+│       ├── update-acceso.dto.ts
+│       └── acceso-response.dto.ts
 ├── afectacion/
 │   ├── afectacion.entity.ts
 │   ├── afectacion.service.ts (+ .spec.ts)  # includes close()
@@ -67,8 +91,9 @@ estación exists.
 | Estación → Parada | `tbl_estacion.id_parada` NOT NULL UNIQUE (1:1 extension of a parada) | `idParada` required on create; unknown parada → 404; parada that already has an estación → 409 `PARADA_ALREADY_HAS_ESTACION`; cannot be cleared to `null` (400) |
 | Línea ↔ Parada | `tbl_linea_parada` (ordered N:M) | `/infrastructure/lineas/:id/paradas` |
 | Línea ↔ Estación | `tbl_estacion_linea` (N:M) | `/infrastructure/stations/:id/lines` |
-| Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M) | not exposed yet |
-| Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | not exposed yet |
+| Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M, composite PK) | `/infrastructure/lineas/:id/municipalidades`; unknown línea/municipalidad → 404; duplicate link → 409 `LINEA_MUNICIPALIDAD_DUPLICATE` |
+| Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | `/infrastructure/paradas/:id/accesos`; the parada comes from the route (no `idParada` in the body, cannot be moved); unknown parada → 404; acceso of another parada → 404 |
+| Parada → Estación (derived) | reverse of `tbl_estacion.id_parada` | parada responses expose read-only `esEstacion` and `idEstacion` (`null` when the parada is not an estación); `findAll` resolves them with a single `IN` query; estaciones are still created through `/infrastructure/estaciones` |
 
 `UnidadService` composes a unit's `parqueo` from its línea; when the línea has
 no parqueo, `parqueo` is omitted from the unit response.
@@ -80,7 +105,7 @@ Every route in this module is protected by two layers:
 1. `@UseGuards(AuthenticationGuard)` at the controller class level — requires
    a valid session/JWT.
 2. `@Permissions('INFRAESTRUCTURA_GESTIONAR')` at the **method** level on
-   every single endpoint (25 endpoints across 5 controllers) — requires the
+   every single endpoint (all infrastructure controllers) — requires the
    caller's role to carry this permission, enforced by the guard reading
    `PERMISSION_TO_MODULE` in `apps/api/src/authentication/authentication.service.ts`.
 
@@ -93,14 +118,29 @@ There is no read-only/write split — `GESTIONAR` (manage) is required even for
 Base path: `/infrastructure`. All routes below require
 `AuthenticationGuard` + `INFRAESTRUCTURA_GESTIONAR`.
 
+### Municipalidades — `/infrastructure/municipalidades`
+| Method | Path | Notes |
+| --- | --- | --- |
+| POST | `/` | Create; `estadoMunicipalidad` defaults to `ACTIVA`; duplicate `nombreMunicipalidad` → 409 `MUNICIPALIDAD_NOMBRE_DUPLICATE` |
+| GET | `/` | List all, ordered by `nombreMunicipalidad` |
+| GET | `/:id` | Get one |
+| GET | `/:id/lineas` | Líneas linked through `tbl_linea_municipalidad`, same shape as `GET /lineas` (`LineaResponseDto`), ordered by `numeroLinea`; one joined query (no N+1); unknown municipalidad → 404 |
+| PATCH | `/:id` | Update; renaming to a used name → 409 `MUNICIPALIDAD_NOMBRE_DUPLICATE` |
+| DELETE | `/:id` | Soft delete → `INACTIVA` (línea links are kept) |
+
 ### Paradas — `/infrastructure/paradas`
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create |
-| GET | `/` | List all |
-| GET | `/:id` | Get one |
-| PATCH | `/:id` | Update |
+| POST | `/` | Create (response has `esEstacion: false`, `idEstacion: null`) |
+| GET | `/` | List all, each with derived `esEstacion`/`idEstacion` |
+| GET | `/:id` | Get one, with derived `esEstacion`/`idEstacion` |
+| PATCH | `/:id` | Update (body unchanged: no estación fields) |
 | DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` hard-deletes |
+| GET | `/:id/accesos` | List the parada's accesos, ordered by `nombreAcceso` |
+| POST | `/:id/accesos` | Create an acceso; `tipoAcceso` is `PEATONAL`/`RAMPA`/`ESCALERA`/`ELEVADOR`; `estadoAcceso` defaults to `HABILITADO` |
+| GET | `/:id/accesos/:accesoId` | Get one; 404 if the acceso belongs to another parada |
+| PATCH | `/:id/accesos/:accesoId` | Update; 404 if the acceso belongs to another parada |
+| DELETE | `/:id/accesos/:accesoId` | Soft delete → `DESHABILITADO`; 404 if the acceso belongs to another parada |
 
 ### Estaciones — `/infrastructure/estaciones`
 | Method | Path | Notes |
@@ -109,7 +149,7 @@ Base path: `/infrastructure`. All routes below require
 | GET | `/` | List all |
 | GET | `/:id` | Get one |
 | PATCH | `/:id` | Update |
-| DELETE | `/:id` | Soft delete → `CERRADA` (no `force` param — see Known Limitations) |
+| DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` (exactly `"true"`) hard-deletes the row so the parada stops being an estación; rows still referencing it (FK violation `23503`) → 409 `ESTACION_IN_USE` |
 
 ### Parqueos — `/infrastructure/parqueos`
 | Method | Path | Notes |
@@ -130,8 +170,12 @@ Base path: `/infrastructure`. All routes below require
 | DELETE | `/:id` | Soft delete → `INACTIVA` (no `force` param) |
 | GET | `/:id/paradas` | List the línea's parada sequence, ordered by `orden` |
 | POST | `/:id/paradas` | Add a parada to the sequence (PR#3) |
+| PUT | `/:id/paradas/orden` | Bulk reorder, body `{ idsLineaParada: string[] }` (the full sequence; position i → `orden` i + 1; `minutosHastaSiguiente` unchanged); returns the list in the same shape as `GET /:id/paradas`; list with duplicates, missing or foreign ids → 400 `ORDEN_LIST_MISMATCH`; unknown línea → 404. Runs in one transaction with a two-phase update (shift every `orden` above the current max, then write 1..n) because `UNIQUE (id_linea, orden)` is not deferrable and `CHECK (orden > 0)` forbids temporary negatives |
 | PATCH | `/:id/paradas/:lineaParadaId` | Update `orden`/minutes of a linea-parada row (PR#3) |
 | DELETE | `/:id/paradas/:lineaParadaId` | Remove a parada from the sequence; línea must keep ≥2 paradas (PR#3) |
+| GET | `/:id/municipalidades` | List linked municipalidades (`idLinea`, `idMunicipalidad`, `nombreMunicipalidad`) |
+| POST | `/:id/municipalidades` | Link a municipalidad, body `{ idMunicipalidad }` → 201; duplicate → 409 |
+| DELETE | `/:id/municipalidades/:municipalidadId` | Unlink (hard-deletes the link row) → 204; missing link → 404 |
 
 ### Afectaciones — `/infrastructure/afectaciones`
 | Method | Path | Notes |
@@ -151,6 +195,9 @@ the TypeORM entity enums must match exactly:
 
 | Entity | Enum | Valid values |
 | --- | --- | --- |
+| `MunicipalidadEntity` | `EstadoMunicipalidad` | `ACTIVA`, `INACTIVA` only |
+| `AccesoEntity` | `TipoAcceso` | `PEATONAL`, `RAMPA`, `ESCALERA`, `ELEVADOR` |
+| `AccesoEntity` | `EstadoAcceso` | `HABILITADO`, `DESHABILITADO` only |
 | `ParadaEntity` | `EstadoParada` | `ACTIVA`, `CERRADA`, `MANTENIMIENTO` |
 | `EstacionEntity` | `EstadoEstacion` | `ABIERTA`, `CERRADA`, `MANTENIMIENTO` |
 | `ParqueoEntity` | `EstadoParqueo` | `ABIERTO`, `CERRADO`, `MANTENIMIENTO` |
@@ -206,9 +253,9 @@ future readers aren't surprised — not blocking, just not yet fixed):
    PARADA_NOT_FOUND` when `POST /:id/paradas` references a nonexistent
    parada. The implementation returns `404`, matching the existing FK-error
    convention used elsewhere in this module instead.
-5. **`force` hard-delete asymmetry**: `ParadaService.remove()` accepts a
-   `force` query param for a hard delete; `EstacionService.remove()` and
-   `LineaService.remove()` do not expose the same option.
+5. **`force` hard-delete asymmetry**: `ParadaService.remove()` and
+   `EstacionService.remove()` accept a `force` query param for a hard delete;
+   `LineaService.remove()` does not expose the same option.
 6. **`validateForeignKey` is triplicated with divergent contracts**:
    `shared/validators.ts` (Nest `NotFoundException`, `"… no encontrada"`, FK
    name supplied by the caller, 4 args) and the two byte-identical

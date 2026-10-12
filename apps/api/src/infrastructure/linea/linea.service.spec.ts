@@ -3,6 +3,7 @@
 
 import { jest } from "@jest/globals";
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   NotFoundException,
@@ -12,6 +13,7 @@ import { validate } from "class-validator";
 import type { Repository } from "typeorm";
 
 import { CreateLineaDto } from "./dto/create-linea.dto.js";
+import { ReorderLineaParadasDto } from "./dto/reorder-linea-paradas.dto.js";
 import { EstadoLinea, LineaEntity, TipoRecorrido } from "./linea.entity.js";
 import { LineaParadaEntity } from "./linea-parada.entity.js";
 import { LineaService } from "./linea.service.js";
@@ -442,6 +444,137 @@ describe("LineaService", () => {
         where: { idLineaParada: "100", idLinea: "2" },
       });
       expect(lineaParadaRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("reorderParadas", () => {
+    type MockManager = Record<"find" | "increment" | "update", AnyMock>;
+    let manager: MockManager;
+    let transaction: AnyMock;
+
+    const current = [
+      makeLineaParada({ idLineaParada: "100", orden: 1, minutosHastaSiguiente: 4 }),
+      makeLineaParada({ idLineaParada: "101", orden: 2, idParada: "6", minutosHastaSiguiente: 6 }),
+      makeLineaParada({ idLineaParada: "102", orden: 5, idParada: "7", minutosHastaSiguiente: 0 }),
+    ];
+
+    beforeEach(() => {
+      manager = { find: jest.fn(), increment: jest.fn(), update: jest.fn() };
+      transaction = jest.fn(async (cb: (m: MockManager) => unknown) => cb(manager));
+      Object.assign(lineaParadaRepo, { manager: { transaction } });
+    });
+
+    it("shifts above the max orden, then writes 1..n inside one transaction", async () => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
+      const reordered = [current[2], current[0], current[1]];
+      manager.find
+        .mockResolvedValueOnce(current) // validation snapshot
+        .mockResolvedValueOnce(reordered); // final listing
+
+      const result = await service.reorderParadas("1", {
+        idsLineaParada: ["102", "100", "101"],
+      });
+
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(manager.find).toHaveBeenNthCalledWith(1, LineaParadaEntity, {
+        where: { idLinea: "1" },
+      });
+      // Phase 1: offset = current max orden (5), so shifted values never collide.
+      expect(manager.increment).toHaveBeenCalledWith(
+        LineaParadaEntity,
+        { idLinea: "1" },
+        "orden",
+        5
+      );
+      // Phase 2: final positions, only orden is written.
+      expect(manager.update.mock.calls).toEqual([
+        [LineaParadaEntity, { idLineaParada: "102", idLinea: "1" }, { orden: 1 }],
+        [LineaParadaEntity, { idLineaParada: "100", idLinea: "1" }, { orden: 2 }],
+        [LineaParadaEntity, { idLineaParada: "101", idLinea: "1" }, { orden: 3 }],
+      ]);
+      expect(manager.increment.mock.invocationCallOrder[0]).toBeLessThan(
+        manager.update.mock.invocationCallOrder[0]!
+      );
+      expect(manager.find).toHaveBeenNthCalledWith(2, LineaParadaEntity, {
+        where: { idLinea: "1" },
+        relations: { parada: true },
+        order: { orden: "ASC" },
+      });
+      expect(result).toEqual(reordered);
+    });
+
+    it("accepts numeric ids from the database (bigint as string or number)", async () => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
+      manager.find
+        .mockResolvedValueOnce(
+          current.map((r) => ({ ...r, idLineaParada: Number(r.idLineaParada) }))
+        )
+        .mockResolvedValueOnce([]);
+
+      await expect(
+        service.reorderParadas("1", { idsLineaParada: ["101", "102", "100"] })
+      ).resolves.toEqual([]);
+      expect(manager.update).toHaveBeenCalledTimes(3);
+    });
+
+    it("does nothing but list when the línea has no paradas and the list is empty", async () => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
+      manager.find.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+      await expect(
+        service.reorderParadas("1", { idsLineaParada: [] })
+      ).resolves.toEqual([]);
+      expect(manager.increment).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a duplicated id", ["100", "100", "101"]],
+      ["a missing id", ["100", "101"]],
+      ["an id of another línea", ["100", "101", "999"]],
+      ["an extra id", ["100", "101", "102", "103"]],
+    ])("rejects %s with 400 ORDEN_LIST_MISMATCH", async (_label, ids) => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
+      manager.find.mockResolvedValueOnce(current);
+
+      const error = await service
+        .reorderParadas("1", { idsLineaParada: ids })
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(errorCode(error)).toBe("ORDEN_LIST_MISMATCH");
+      expect(manager.increment).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException when the línea does not exist", async () => {
+      lineaRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.reorderParadas("missing", { idsLineaParada: ["100"] })
+      ).rejects.toThrow(NotFoundException);
+      expect(transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("ReorderLineaParadasDto validation", () => {
+    it("accepts an array of ids", async () => {
+      const errors = await validate(
+        plainToInstance(ReorderLineaParadasDto, { idsLineaParada: ["1", "2"] })
+      );
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it.each([
+      ["a missing list", {}],
+      ["a non-array value", { idsLineaParada: "1" }],
+      ["non-string ids", { idsLineaParada: [1, 2] }],
+      ["empty ids", { idsLineaParada: ["1", ""] }],
+    ])("rejects %s", async (_label, body) => {
+      const errors = await validate(plainToInstance(ReorderLineaParadasDto, body));
+
+      expect(errors.map((e) => e.property)).toContain("idsLineaParada");
     });
   });
 

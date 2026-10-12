@@ -11,7 +11,8 @@ import { AuthenticationGuard } from "../../authentication/authentication.guard.j
 import { PERMISSIONS_KEY } from "../../authentication/permissions.decorator.js";
 import { CreateParadaDto } from "./dto/create-parada.dto.js";
 import { UpdateParadaDto } from "./dto/update-parada.dto.js";
-import { EstadoParada, ParadaEntity } from "./parada.entity.js";
+import { ParadaResponseDto } from "./dto/parada-response.dto.js";
+import { EstadoParada } from "./parada.entity.js";
 import { ParadaController } from "./parada.controller.js";
 import type { ParadaService } from "./parada.service.js";
 
@@ -33,13 +34,15 @@ function makeMockService(): MockParadaService {
   };
 }
 
-function makeParada(overrides: Partial<ParadaEntity> = {}): ParadaEntity {
+function makeParada(overrides: Partial<ParadaResponseDto> = {}): ParadaResponseDto {
   return {
-    idParada: "1",
+    idParada: 1,
     nombreParada: "Parada Central",
     latitud: 14.6349,
     longitud: -90.5069,
     estadoParada: EstadoParada.ACTIVA,
+    esEstacion: false,
+    idEstacion: null,
     ...overrides,
   };
 }
@@ -71,7 +74,7 @@ describe("ParadaController", () => {
     });
 
     it("findAll() delegates to service.findAll", async () => {
-      const paradas = [makeParada(), makeParada({ idParada: "2" })];
+      const paradas = [makeParada(), makeParada({ idParada: 2, esEstacion: true, idEstacion: 5 })];
       service.findAll.mockResolvedValue(paradas);
 
       const result = await controller.findAll();

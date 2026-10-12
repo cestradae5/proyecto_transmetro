@@ -5,13 +5,24 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { QueryFailedError, Repository } from "typeorm";
 import { EstacionEntity } from "./estacion.entity.js";
 import { CreateEstacionDto } from "./dto/create-estacion.dto.js";
 import { UpdateEstacionDto } from "./dto/update-estacion.dto.js";
 import { EstacionResponseDto } from "./dto/estacion-response.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
+
+const PG_FOREIGN_KEY_VIOLATION = "23503";
+
+/** True when `error` is a Postgres foreign key violation surfaced by TypeORM. */
+function isForeignKeyViolation(error: unknown): boolean {
+  return (
+    error instanceof QueryFailedError &&
+    (error.driverError as { code?: string } | undefined)?.code ===
+      PG_FOREIGN_KEY_VIOLATION
+  );
+}
 
 @Injectable()
 export class EstacionService {
@@ -90,7 +101,7 @@ export class EstacionService {
     return this.toResponseDto(updated);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, force = false): Promise<void> {
     const estacion = await this.estacionRepository.findOne({
       where: { idEstacion: Number(id) },
     });
@@ -98,9 +109,28 @@ export class EstacionService {
       throw new NotFoundException(`Estación con ID ${id} no encontrada`);
     }
 
-    // Soft delete: set status to CERRADA
-    estacion.estadoEstacion = "CERRADA";
-    await this.estacionRepository.save(estacion);
+    if (!force) {
+      // Soft delete: set status to CERRADA
+      estacion.estadoEstacion = "CERRADA";
+      await this.estacionRepository.save(estacion);
+      return;
+    }
+
+    // Hard delete: the row disappears and its parada stops being an estación.
+    // Rows that still reference it (tbl_estacion_linea, tbl_afectacion,
+    // tbl_asignacion_estacion, tbl_alerta, ...) make Postgres reject the
+    // delete; that is translated to a 409 instead of cascading.
+    try {
+      await this.estacionRepository.remove(estacion);
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        throw new ConflictException(
+          `No se puede eliminar la estación ${id} porque tiene asignaciones o vínculos`,
+          "ESTACION_IN_USE"
+        );
+      }
+      throw error;
+    }
   }
 
   private async ensureParadaWithoutEstacion(idParada: number): Promise<void> {

@@ -12,7 +12,7 @@ import {
 } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
-import type { Repository } from "typeorm";
+import { QueryFailedError, type Repository } from "typeorm";
 
 import { CreateEstacionDto, EstadoEstacion } from "./dto/create-estacion.dto.js";
 import { UpdateEstacionDto } from "./dto/update-estacion.dto.js";
@@ -25,7 +25,13 @@ type MockEstacionRepository = {
   save: jest.MockedFunction<(entity: unknown) => Promise<EstacionEntity>>;
   find: jest.MockedFunction<() => Promise<EstacionEntity[]>>;
   findOne: jest.MockedFunction<(options: unknown) => Promise<EstacionEntity | null>>;
+  remove: jest.MockedFunction<(entity: unknown) => Promise<EstacionEntity>>;
 };
+
+/** Builds the error TypeORM raises when Postgres rejects a statement. */
+function pgError(code: string): QueryFailedError {
+  return new QueryFailedError("DELETE", [], Object.assign(new Error("pg"), { code }));
+}
 
 type MockParadaRepository = {
   count: jest.MockedFunction<(options: unknown) => Promise<number>>;
@@ -38,6 +44,7 @@ function makeMockEstacionRepository(): MockEstacionRepository {
     save: jest.fn(),
     find: jest.fn(),
     findOne: jest.fn(),
+    remove: jest.fn(),
   };
 }
 
@@ -293,6 +300,60 @@ describe("EstacionService", () => {
 
       await expect(service.remove("missing")).rejects.toThrow(NotFoundException);
       expect(estacionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it("keeps the soft delete when force is false", async () => {
+      const existing = makeEstacion();
+      estacionRepository.findOne.mockResolvedValue(existing);
+      estacionRepository.save.mockResolvedValue(existing);
+
+      await service.remove("1", false);
+
+      expect(estacionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ estadoEstacion: "CERRADA" }),
+      );
+      expect(estacionRepository.remove).not.toHaveBeenCalled();
+    });
+
+    it("hard-deletes via repository.remove when force is true", async () => {
+      const existing = makeEstacion();
+      estacionRepository.findOne.mockResolvedValue(existing);
+      estacionRepository.remove.mockResolvedValue(existing);
+
+      await service.remove("1", true);
+
+      expect(estacionRepository.findOne).toHaveBeenCalledWith({ where: { idEstacion: 1 } });
+      expect(estacionRepository.remove).toHaveBeenCalledWith(existing);
+      expect(estacionRepository.save).not.toHaveBeenCalled();
+    });
+
+    it("throws NotFoundException on force delete of a missing estación", async () => {
+      estacionRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.remove("missing", true)).rejects.toThrow(NotFoundException);
+      expect(estacionRepository.remove).not.toHaveBeenCalled();
+    });
+
+    it("translates a foreign key violation (23503) into 409 ESTACION_IN_USE", async () => {
+      estacionRepository.findOne.mockResolvedValue(makeEstacion());
+      estacionRepository.remove.mockRejectedValue(pgError("23503"));
+
+      const error = await service.remove("1", true).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      const body = (error as ConflictException).getResponse() as Record<string, unknown>;
+      expect(body).toEqual(
+        expect.objectContaining({ statusCode: 409, error: "ESTACION_IN_USE" }),
+      );
+      expect(body.message).toContain("asignaciones o vínculos");
+    });
+
+    it("rethrows other database errors unchanged on force delete", async () => {
+      estacionRepository.findOne.mockResolvedValue(makeEstacion());
+      const other = pgError("23505");
+      estacionRepository.remove.mockRejectedValue(other);
+
+      await expect(service.remove("1", true)).rejects.toBe(other);
     });
   });
 });

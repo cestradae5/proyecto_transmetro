@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -9,9 +10,13 @@ import { EstadoLinea, LineaEntity } from "./linea.entity.js";
 import { LineaParadaEntity } from "./linea-parada.entity.js";
 import { CreateLineaDto } from "./dto/create-linea.dto.js";
 import { UpdateLineaDto } from "./dto/update-linea.dto.js";
-import { LineaResponseDto } from "./dto/linea-response.dto.js";
+import {
+  LineaResponseDto,
+  toLineaResponseDto,
+} from "./dto/linea-response.dto.js";
 import { AddLineaParadaDto } from "./dto/add-linea-parada.dto.js";
 import { UpdateLineaParadaDto } from "./dto/update-linea-parada.dto.js";
+import { ReorderLineaParadasDto } from "./dto/reorder-linea-paradas.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
 import { ParqueoEntity } from "../parqueo/parqueo.entity.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
@@ -189,6 +194,73 @@ export class LineaService {
     await this.lineaParadaRepository.remove(record);
   }
 
+  /**
+   * Rewrites the whole sequence in one transaction: position i of
+   * `idsLineaParada` gets orden i + 1; minutosHastaSiguiente is untouched.
+   *
+   * UNIQUE (id_linea, orden) is not deferrable and CHECK (orden > 0) forbids
+   * negatives, so a plain swap would collide mid-statement. Phase 1 shifts
+   * every row above the current max orden (old values <= max, shifted values
+   * > max, so no row ever collides); phase 2 writes the final 1..n values,
+   * which are <= max and therefore never meet a shifted value.
+   */
+  async reorderParadas(
+    lineaId: string,
+    dto: ReorderLineaParadasDto
+  ): Promise<LineaParadaEntity[]> {
+    await this.ensureLineaExists(lineaId);
+    const ids = dto.idsLineaParada.map(String);
+
+    return this.lineaParadaRepository.manager.transaction(async (manager) => {
+      const current = await manager.find(LineaParadaEntity, {
+        where: { idLinea: lineaId },
+      });
+      this.ensureSameSequence(lineaId, ids, current);
+
+      if (current.length > 0) {
+        const maxOrden = Math.max(...current.map((r) => r.orden));
+        await manager.increment(
+          LineaParadaEntity,
+          { idLinea: lineaId },
+          "orden",
+          maxOrden
+        );
+        for (const [index, idLineaParada] of ids.entries()) {
+          await manager.update(
+            LineaParadaEntity,
+            { idLineaParada, idLinea: lineaId },
+            { orden: index + 1 }
+          );
+        }
+      }
+
+      return manager.find(LineaParadaEntity, {
+        where: { idLinea: lineaId },
+        relations: { parada: true },
+        order: { orden: "ASC" },
+      });
+    });
+  }
+
+  private ensureSameSequence(
+    lineaId: string,
+    ids: string[],
+    current: LineaParadaEntity[]
+  ): void {
+    const requested = new Set(ids);
+    const existing = new Set(current.map((r) => String(r.idLineaParada)));
+    const matches =
+      requested.size === ids.length &&
+      requested.size === existing.size &&
+      ids.every((id) => existing.has(id));
+    if (!matches) {
+      throw new BadRequestException(
+        `La lista debe contener exactamente una vez cada parada actual de la línea ${lineaId}`,
+        "ORDEN_LIST_MISMATCH"
+      );
+    }
+  }
+
   private async ensureLineaExists(lineaId: string): Promise<void> {
     const linea = await this.lineaRepository.findOne({
       where: { idLinea: lineaId },
@@ -230,14 +302,6 @@ export class LineaService {
   }
 
   private toResponseDto(linea: LineaEntity): LineaResponseDto {
-    return {
-      idLinea: linea.idLinea,
-      numeroLinea: linea.numeroLinea,
-      nombreLinea: linea.nombreLinea,
-      colorHex: linea.colorHex,
-      estadoLinea: linea.estadoLinea,
-      tipoRecorrido: linea.tipoRecorrido,
-      idParqueo: linea.idParqueo ?? null,
-    };
+    return toLineaResponseDto(linea);
   }
 }

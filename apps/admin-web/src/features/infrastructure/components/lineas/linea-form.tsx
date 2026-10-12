@@ -31,8 +31,6 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
       newErrors.colorHex = 'Color debe ser formato hex válido de 6 dígitos (ej: #FF0000)';
     }
 
-    if (!formData.idParqueo) newErrors.idParqueo = 'El parqueo es requerido';
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -47,7 +45,8 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
          nombreLinea: formData.nombreLinea,
          colorHex: formData.colorHex,
          tipoRecorrido: formData.tipoRecorrido,
-         idParqueo: formData.idParqueo,
+         // A línea can exist without a parqueo; null also clears it on update.
+         idParqueo: formData.idParqueo || null,
          estadoLinea: formData.estadoLinea,
        });
     } catch (error: any) {
@@ -100,12 +99,11 @@ export function LineaForm({ linea, parqueos, onSubmit, onCancel }: LineaFormProp
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Parqueo *</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Parqueo</label>
         <select value={formData.idParqueo} onChange={(e) => setFormData({ ...formData, idParqueo: e.target.value })} className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-          <option value="">Seleccionar parqueo</option>
+          <option value="">Sin parqueo</option>
           {parqueos.map((p) => <option key={p.idParqueo} value={p.idParqueo}>{p.nombreParqueo}</option>)}
         </select>
-        {errors.idParqueo && <p className="text-red-600 text-xs mt-1">{errors.idParqueo}</p>}
       </div>
 
       <div>

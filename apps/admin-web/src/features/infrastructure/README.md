@@ -2,7 +2,87 @@
 
 ## Overview
 
-The Infrastructure module manages the complete transportation infrastructure of Transmetro, including stops, stations, parking lots, lines, and disruptions. It provides a comprehensive CRUD interface with search, filtering, and real-time status tracking.
+The Infrastructure module manages the complete transportation infrastructure of Transmetro, including municipalities, lines, stops, stations, stop accesses, parking lots, and disruptions.
+
+**Creation paths:** the "Nueva infraestructura" button opens the wizard, the only
+way to create municipalidades, líneas, paradas (and estaciones) and parqueos.
+Afectaciones are operational and keep their own "Nueva afectación" button in
+the Afectaciones section. Accesos are created from a parada's "Accesos" action.
+
+## Page structure (`index.tsx`)
+
+There are no tabs. The page is a grouped view for review and editing,
+following the hierarchy **Municipalidad > Línea > Parada**:
+
+- **Header:** title, "Nueva infraestructura" (opens the wizard; closing it after
+  saving reloads every list and regroups) and a search box. The search is
+  accent-insensitive: a municipalidad whose name matches keeps all its líneas;
+  otherwise only líneas whose nombre or número match are shown, and groups
+  without matches are hidden. While searching, every group is expanded.
+- **One card per municipalidad** (`components/grouped/group-card.tsx`):
+  nombre, departamento, estado badge and línea count; "Editar"
+  (`MunicipalidadDialog`) and "Desactivar" (soft delete, ACTIVA only). Cards
+  start expanded when there are at most 3 groups. Its líneas come from
+  `GET /municipalidades/:id/lineas` (`hooks/use-municipalidad-lineas.ts`: one
+  request per municipalidad, in parallel, with a per-group "Reintentar"). The
+  rows show the data of `GET /lineas`, so edits appear without re-grouping.
+- **"Sin municipalidad"**: all líneas minus the union of the per-municipalidad
+  lists (`components/grouped/grouping.ts`). Only computed once every
+  municipalidad answered; hidden while one is loading or failed. Its líneas
+  offer "Vincular municipalidad" (`LineaMunicipalidadesDialog`); closing that
+  dialog reloads every group. With no municipalidades, an empty state explains
+  the flow and points to "Nueva infraestructura".
+- **Línea card** (`components/grouped/linea-card.tsx`): color, número - nombre,
+  tipo de recorrido, parqueo ("Sin parqueo"), estado badge; "Editar"
+  (`LineaDialog`), "Municipalidades" (`LineaMunicipalidadesDialog`),
+  "Desactivar" (soft delete, ACTIVA only). Expanding it loads its paradas
+  lazily (`GET /lineas/:id/paradas`): count, order, "Estación" badge, minutes to
+  the next one; per parada "Editar" (`ParadaDialog`, "Es estación" toggle),
+  "Accesos" (`AccesosDialog`) and, for estaciones, "Líneas de la estación"
+  (fleet `EstacionLineasDialog`). "Gestionar paradas y parqueo" opens the wizard
+  in manage mode (`initialLinea` / `initialMunicipalidad`): directly at step 3
+  for that línea, without the stepper; "Finalizar" or closing reloads the page.
+- **"Otros registros"** (`components/grouped/secondary-sections.tsx`): a
+  section switcher for Parqueos (edit/delete; created from the wizard), Todas
+  las paradas (`ParadasTable`: every parada, including those in no línea, with
+  edit and delete) and Afectaciones ("Nueva afectación", edit, delete).
+
+All dialogs are rendered by the page (not inside the cards), so background
+refetches never unmount an open dialog.
+
+## "Nueva infraestructura" wizard
+
+`components/wizard/` — a large modal with a stepper header (`wizard-stepper.tsx`).
+Steps are `locked` (disabled, with a hint of what unlocks them), `active`, or
+`done` (with a summary). Each step persists to the API when completed; there is
+no draft, so closing mid-way (button or Escape) asks for confirmation once
+step 1 is done and keeps what was already saved. Closing after saving reloads
+the page data (the wizard uses its own hook instances).
+
+1. **Municipalidad** (`step-municipalidad.tsx`): "Elegir existente" (ACTIVA
+   only) or "Crear nueva" (nombre ≤120, departamento ≤60; 409 → "Ya existe una
+   municipalidad con ese nombre"). Read-only once the línea exists.
+2. **Línea** (`step-linea.tsx`): número (≤10), nombre (≤120), color, tipo de
+   recorrido, estado; created with `idParqueo: null`, then linked with
+   `POST /lineas/:id/municipalidades` (`linkMunicipalidadToLinea`). If the link
+   fails, "Reintentar vínculo" retries only the link (the línea is not created
+   again).
+3. **Paradas y parqueo** (`step-paradas-parqueo.tsx`):
+   - `parqueo-section.tsx`: "Sin parqueo asignado" or the assigned one;
+     "Elegir existente" + "Asignar", or "Crear nuevo" + "Crear y asignar"
+     (PATCH `idParqueo`); "Quitar" sends `null`. A parqueo created whose
+     assignment failed is reused on retry.
+   - `paradas-section.tsx`: the línea's ordered paradas (Estación badge,
+     inline "Minutos hasta la siguiente" save via PATCH, up/down via
+     `reorderParadas` → `PUT /lineas/:id/paradas/orden` with the full id list,
+     "Quitar" with the `LINEA_MIN_PARADAS` message).
+   - `parada-add-panel.tsx`: "Elegir existente" (paradas not in the línea) or
+     "Crear nueva" (nombre, coordenadas, "Es estación" + nombre; saved with
+     `saveParadaWithEstacion`, the estación reuses the parada's coordinates);
+     appended at `orden = max + 1`. A retry after a partial failure never
+     creates the parada (or its estación) twice.
+   - "Finalizar" shows a summary (municipalidad, línea, paradas, parqueo);
+     "Cerrar" closes and reloads.
 
 ## File Structure
 
@@ -13,36 +93,87 @@ infrastructure/
 │   │   ├── afectacion-dialog.tsx    # Create/Edit modal for disruptions
 │   │   ├── afectacion-form.tsx      # Form with XOR validation (parada OR estacion)
 │   │   └── afectaciones-table.tsx   # Table with search/filter
-│   ├── estaciones/
-│   │   ├── estacion-dialog.tsx      # Create/Edit modal for stations
-│   │   ├── estacion-form.tsx        # Form with validation
-│   │   └── estaciones-table.tsx     # Table with search/filter
 │   ├── lineas/
 │   │   ├── linea-dialog.tsx         # Create/Edit modal for lines
 │   │   ├── linea-form.tsx           # Form with color picker
-│   │   └── lineas-table.tsx         # Table with search/filter
+│   │   ├── linea-parada-*.tsx       # Legacy "Gestionar paradas" dialog (no longer mounted by the page)
+│   │   └── linea-municipalidades-dialog.tsx # "Municipalidades" dialog (link/unlink)
+│   ├── grouped/
+│   │   ├── grouping.ts              # Pure helpers: resolve, "Sin municipalidad", search filter
+│   │   ├── group-card.tsx           # Collapsible group card, StatusBadge, RetryAlert
+│   │   ├── linea-card.tsx           # Línea card + lazily loaded paradas
+│   │   └── secondary-sections.tsx   # Parqueos / Todas las paradas / Afectaciones
+│   ├── municipalidades/
+│   │   ├── municipalidad-dialog.tsx # Create/Edit modal for municipalities
+│   │   └── municipalidad-form.tsx   # Form (nombre ≤120, departamento ≤60, estado)
 │   ├── paradas/
 │   │   ├── parada-dialog.tsx        # Create/Edit modal for stops
-│   │   ├── parada-form.tsx          # Form with validation
-│   │   └── paradas-table.tsx        # Table with search/filter
+│   │   ├── parada-form.tsx          # Form with validation + "Es estación" toggle
+│   │   ├── accesos-dialog.tsx       # "Accesos" dialog: list/create/edit/deactivate
+│   │   ├── acceso-form.tsx          # Acceso form (coords prefilled from the parada)
+│   │   └── paradas-table.tsx        # Table with search/filter, Estación badge, station lines, accesos
+│   ├── wizard/
+│   │   ├── infrastructure-wizard.tsx # "Nueva infraestructura" modal (or manage mode at step 3): state, close confirm, Escape
+│   │   ├── wizard-stepper.tsx       # Stepper header (done/active/locked)
+│   │   ├── step-municipalidad.tsx   # Step 1
+│   │   ├── step-linea.tsx           # Step 2 (create + link, link retry)
+│   │   ├── step-paradas-parqueo.tsx # Step 3 container + Finalizar
+│   │   ├── parqueo-section.tsx      # Step 3 parqueo card
+│   │   ├── paradas-section.tsx      # Step 3 ordered paradas card
+│   │   ├── parada-add-panel.tsx     # Step 3 "Agregar parada"
+│   │   └── wizard-ui.tsx            # Shared classes, ErrorAlert, ModeToggle
 │   └── parqueos/
-│       ├── parqueo-dialog.tsx       # Create/Edit modal for parking lots
+│       ├── parqueo-dialog.tsx       # Edit modal for parking lots
 │       ├── parqueo-form.tsx         # Form with validation
 │       └── parqueos-table.tsx       # Table with search/filter
 ├── hooks/
+│   ├── use-accesos.ts               # API hook for a parada's accesos (mapped Spanish errors)
 │   ├── use-afectaciones.ts          # API hook for disruptions
 │   ├── use-estaciones.ts            # API hook for stations
 │   ├── use-lineas.ts                # API hook for lines
+│   ├── use-linea-municipalidades.ts # API hook for línea ↔ municipalidad links (mapped errors)
+│   ├── use-linea-paradas.ts         # API hook for a línea's parada sequence (mapped errors, reorderParadas)
+│   ├── use-municipalidades.ts       # API hook for municipalities (mapped Spanish errors)
+│   ├── use-municipalidad-lineas.ts  # Líneas of each municipalidad (parallel, per-group reload)
 │   ├── use-paradas.ts               # API hook for stops
+│   ├── save-parada-estacion.ts      # Parada save + estación create/update/force-delete
 │   └── use-parqueos.ts              # API hook for parking lots
 ├── types/
 │   └── infrastructure.types.ts      # TypeScript types and DTOs
-├── index.tsx                        # Main page with tabs
+├── index.tsx                        # Main page: grouped view + dialogs + "Nueva infraestructura" wizard
 └── README.md                        # This file
 
 ```
 
 ## Entities
+
+### Municipalidad (Municipality)
+First step of the creation flow. Líneas are linked to municipalidades (N:M)
+from a línea card ("Municipalidades" / "Vincular municipalidad"): the dialog
+lists the linked municipalidades, offers only ACTIVA municipalidades not yet
+linked, and removes links after confirmation. A duplicate link (409
+`LINEA_MUNICIPALIDAD_DUPLICATE`) shows "La municipalidad ya está asignada a la
+línea". A línea linked to several municipalidades appears in each group.
+
+**Fields:**
+- `nombre` (required, max 120, unique): duplicate → "Ya existe una municipalidad con ese nombre" (409 `MUNICIPALIDAD_NOMBRE_DUPLICATE`)
+- `departamento` (required, max 60)
+- `estado` (required): ACTIVA | INACTIVA
+
+"Desactivar" calls `DELETE /infrastructure/municipalidades/:id`, a soft delete
+to INACTIVA (only offered for ACTIVA rows; links to líneas are kept).
+
+### Acceso (Stop entrance)
+Belongs to a parada (`/infrastructure/paradas/:id/accesos`). Managed from a
+parada's "Accesos" action (expanded línea or "Todas las paradas"). On create, latitud/longitud are prefilled
+with the parada's coordinates. "Desactivar" is a soft delete to DESHABILITADO
+(only offered for HABILITADO rows).
+
+**Fields:**
+- `nombre` (required, max 120)
+- `tipo` (required): PEATONAL | RAMPA | ESCALERA | ELEVADOR
+- `estado` (required): HABILITADO | DESHABILITADO
+- `latitud` (required, -90 to 90), `longitud` (required, -180 to 180)
 
 ### 1. Parada (Stop)
 Basic bus stop in the system.
@@ -54,17 +185,22 @@ Basic bus stop in the system.
 - `estado` (required): ABIERTA | CERRADA
 
 ### 2. Estación (Station)
-Major transfer station that may contain a stop.
+A 1:1 extension of a parada (`id_parada` NOT NULL UNIQUE). There is no
+standalone Estaciones tab: the parada form's "Es estación" toggle creates or
+updates the estación (blank coordinates default to the parada's). Turning the
+toggle off on a parada that has an estación asks for confirmation and, on save,
+hard-deletes it (`DELETE /infrastructure/estaciones/:id?force=true`); a 409
+`ESTACION_IN_USE` keeps the toggle on with "No se puede quitar la estación
+porque tiene asignaciones o vínculos". The station's líneas are managed from
+"Líneas de la estación" on the parada (reusing the fleet dialog).
 
 **Fields:**
 - `nombre` (required): Station name
-- `latitud` (required): GPS latitude (-90 to 90)
-- `longitud` (required): GPS longitude (-180 to 180)
-- `id_parada` (optional): Associated stop ID
-- `estado` (required): ABIERTA | CERRADA
+- `latitud`/`longitud` (required by the API; default to the parada's)
+- `estado` (required): ACTIVA | CERRADA | MANTENIMIENTO
 
 ### 3. Parqueo (Parking Lot)
-Bus parking facility that may be attached to a station.
+Bus parking facility (no estación link: `id_estacion` was dropped).
 
 **Fields:**
 - `nombre` (required): Parking lot name
@@ -73,7 +209,6 @@ Bus parking facility that may be attached to a station.
 - `latitud` (required): GPS latitude (-90 to 90)
 - `longitud` (required): GPS longitude (-180 to 180)
 - `capacidad_unidades` (required): Number of buses (>= 0)
-- `id_estacion` (optional): Associated station ID
 - `estado` (required): ABIERTA | CERRADA
 
 ### 4. Línea (Bus Line)
@@ -84,7 +219,7 @@ A numbered route with a color identifier.
 - `nombre_linea` (required): Line name
 - `color_hex` (required): Hex color code (e.g., "#FF0000")
 - `tipo_recorrido` (required): CIRCULAR | LINEAL
-- `id_parqueo` (optional): Home parking lot ID
+- `id_parqueo` (optional): Home parking lot ID; "Sin parqueo" sends `null`
 - `estado` (required): ACTIVA | INACTIVA
 
 **Special Feature:** Color picker input for `color_hex`
@@ -101,103 +236,6 @@ Service disruptions affecting stops or stations.
 - `estado` (required): ABIERTA | CERRADA
 
 **Special Feature:** XOR validation ensures a disruption affects either a stop OR a station, never both.
-
-## Adding a New Entity
-
-To add a new entity to the infrastructure module:
-
-1. **Define Types** in `types/infrastructure.types.ts`:
-   ```typescript
-   export interface MyEntity {
-     id: number;
-     nombre: string;
-     estado: EstadoInfraestructura;
-     fecha_creacion: string;
-     fecha_actualizacion: string;
-   }
-   
-   export type CreateMyEntityDto = Omit<MyEntity, 'id' | 'fecha_creacion' | 'fecha_actualizacion'>;
-   export type UpdateMyEntityDto = Partial<CreateMyEntityDto>;
-   ```
-
-2. **Create API Hook** in `hooks/use-my-entity.ts`:
-   ```typescript
-   import { useState, useEffect, useCallback } from 'react';
-   import { apiClient } from '../../../lib/api-client';
-   import type { MyEntity, CreateMyEntityDto, UpdateMyEntityDto } from '../types/infrastructure.types';
-   
-   export function useMyEntity() {
-     const [entities, setEntities] = useState<MyEntity[]>([]);
-     const [loading, setLoading] = useState(false);
-     const [error, setError] = useState<string | null>(null);
-   
-     const fetchEntities = useCallback(async () => {
-       setLoading(true);
-       try {
-         const data = await apiClient.get<MyEntity[]>('/infrastructure/my-entity');
-         setEntities(data);
-       } catch (err: any) {
-         setError(err.message);
-       } finally {
-         setLoading(false);
-       }
-     }, []);
-   
-     const createEntity = async (data: CreateMyEntityDto) => {
-       const result = await apiClient.post<MyEntity>('/infrastructure/my-entity', data);
-       await fetchEntities();
-       return result;
-     };
-   
-     const updateEntity = async (id: number, data: UpdateMyEntityDto) => {
-       const result = await apiClient.patch<MyEntity>(`/infrastructure/my-entity/${id}`, data);
-       await fetchEntities();
-       return result;
-     };
-   
-     const deleteEntity = async (id: number) => {
-       await apiClient.delete(`/infrastructure/my-entity/${id}`);
-       await fetchEntities();
-     };
-   
-     useEffect(() => {
-       fetchEntities();
-     }, [fetchEntities]);
-   
-     return { entities, loading, error, createEntity, updateEntity, deleteEntity };
-   }
-   ```
-
-3. **Create Components** in `components/my-entity/`:
-   - `my-entity-dialog.tsx` - Modal wrapper
-   - `my-entity-form.tsx` - Form with validation
-   - `my-entity-table.tsx` - Table with search
-
-4. **Add to Main Page** in `index.tsx`:
-   ```typescript
-   // Import hook and components
-   import { useMyEntity } from './hooks/use-my-entity';
-   import { MyEntityDialog } from './components/my-entity/my-entity-dialog';
-   import { MyEntityTable } from './components/my-entity/my-entity-table';
-   
-   // Add to tabs array
-   { id: 'my-entity', label: 'My Entities', count: myEntities.length }
-   
-   // Add to handleCreate switch
-   case 'my-entity':
-     await createMyEntity(data);
-     break;
-   
-   // Add table render
-   {activeTab === 'my-entity' && (
-     <MyEntityTable entities={myEntities} onUpdate={updateMyEntity} onDelete={deleteMyEntity} />
-   )}
-   
-   // Add dialog render
-   {showCreateDialog && activeTab === 'my-entity' && (
-     <MyEntityDialog onSave={handleCreate} onClose={() => setShowCreateDialog(false)} />
-   )}
-   ```
 
 ## API Integration
 
@@ -260,21 +298,13 @@ All buttons show loading spinners:
 )}
 ```
 
-## Testing Checklist
+## Testing
 
-- [ ] All 5 entities load correctly
-- [ ] Create new records works
-- [ ] Edit existing records works
-- [ ] Delete records works (with confirmation)
-- [ ] Search/filter works
-- [ ] Form validation shows errors
-- [ ] Estado badges show correct colors
-- [ ] XOR validation works (Afectaciones)
-- [ ] Color picker works (Líneas)
-- [ ] Permission check redirects properly
-- [ ] Loading states show during API calls
-- [ ] Error messages display on failures
-
+Specs live in `src/test/infrastructure/`. `infrastructure-page.spec.tsx` covers
+the grouped view (grouping, "Sin municipalidad", search, lazy paradas, dialogs,
+manage mode, empty state, errors with "Reintentar", secondary sections and the
+post-wizard reload); `infrastructure-wizard.spec.tsx` covers the wizard,
+including manage mode.
 ## Future Enhancements
 
 - [ ] Pagination for large datasets

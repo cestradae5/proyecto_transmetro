@@ -9,6 +9,7 @@ vi.mock("../../lib/api-client", () => ({
     get: vi.fn(),
     post: vi.fn(),
     patch: vi.fn(),
+    put: vi.fn(),
     delete: vi.fn(),
   },
   ApiError: class ApiError extends Error {
@@ -29,6 +30,7 @@ const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
 const mockPatch = vi.mocked(apiClient.patch);
 const mockDelete = vi.mocked(apiClient.delete);
+const mockPut = vi.mocked(apiClient.put);
 
 const SAMPLE_PARADA: LineaParada = {
   idLineaParada: "100",
@@ -198,6 +200,32 @@ describe("useLineaParadas", () => {
 
     await expect(result.current.removeParada("100")).rejects.toThrow(
       "Una línea debe tener al menos 2 paradas"
+    );
+  });
+
+  it("reorderParadas PUTs the full id list and uses the returned order without refetching", async () => {
+    const { result } = await renderLoaded();
+    const second = { ...SAMPLE_PARADA, idLineaParada: "101", orden: 1 };
+    const first = { ...SAMPLE_PARADA, orden: 2 };
+    mockPut.mockResolvedValue([second, first]);
+
+    await act(async () => {
+      await result.current.reorderParadas(["101", "100"]);
+    });
+
+    expect(mockPut).toHaveBeenCalledWith("/infrastructure/lineas/1/paradas/orden", {
+      idsLineaParada: ["101", "100"],
+    });
+    expect(result.current.lineaParadas).toEqual([second, first]);
+    expect(mockGet).toHaveBeenCalledTimes(1);
+  });
+
+  it("reorderParadas rejects with the ORDEN_LIST_MISMATCH message", async () => {
+    const { result } = await renderLoaded();
+    mockPut.mockRejectedValue(new ApiError(400, "raw", { error: "ORDEN_LIST_MISMATCH" }));
+
+    await expect(result.current.reorderParadas(["100"])).rejects.toThrow(
+      "La secuencia de paradas cambió. Recargue e intente de nuevo."
     );
   });
 });

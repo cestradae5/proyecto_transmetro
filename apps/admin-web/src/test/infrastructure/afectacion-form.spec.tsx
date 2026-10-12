@@ -14,6 +14,8 @@ const SAMPLE_PARADAS: Parada[] = [
     latitud: 14.6,
     longitud: -90.5,
     estadoParada: "ACTIVA" as Parada["estadoParada"],
+    esEstacion: false,
+    idEstacion: null,
     fecha_creacion: "2026-01-01T00:00:00.000Z",
     fecha_actualizacion: "2026-01-01T00:00:00.000Z",
   },
@@ -25,7 +27,7 @@ const SAMPLE_ESTACIONES: Estacion[] = [
     nombreEstacion: "Estación B",
     latitud: 14.61,
     longitud: -90.51,
-    idParada: null,
+    idParada: 3,
     estadoEstacion: "ACTIVA" as Estacion["estadoEstacion"],
   },
 ];
