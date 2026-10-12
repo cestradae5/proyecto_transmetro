@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { InfrastructureWizard } from "../../features/infrastructure/components/wizard/infrastructure-wizard";
-import type { LineaParada, Parada } from "../../features/infrastructure/types/infrastructure.types";
+import type { Linea, LineaParada, Municipalidad, Parada } from "../../features/infrastructure/types/infrastructure.types";
 
 vi.mock("../../lib/api-client", () => ({
   apiClient: {
@@ -523,5 +523,51 @@ describe("Finalize and close", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(confirmSpy).toHaveBeenCalledTimes(2);
     expect(onClose).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("InfrastructureWizard managing an existing línea", () => {
+  function renderManage(municipalidad: (typeof MUNICIPALIDADES)[number] | null) {
+    const onClose = vi.fn<(saved: boolean) => void>();
+    render(
+      <InfrastructureWizard
+        onClose={onClose}
+        initialLinea={{ ...LINEA, idParqueo: "9" } as Linea}
+        initialMunicipalidad={municipalidad as Municipalidad | null}
+      />,
+    );
+    return { onClose };
+  }
+
+  it("opens directly at step 3 for the línea, without the stepper", async () => {
+    lineaParadas = THREE_ROWS;
+    renderManage(MUNICIPALIDADES[0]!);
+
+    const dialog = screen.getByRole("dialog", { name: "Gestionar paradas y parqueo" });
+    expect(within(dialog).getByText(/Línea L50 - Mixco Express · Mixco/)).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Pasos del asistente" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Parqueo (opcional)" })).toBeInTheDocument();
+    expect(await screen.findByText("Parada A")).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith("/infrastructure/lineas/50/paradas");
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("labels a línea without municipalidad and closes as saved without confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const { onClose } = renderManage(null);
+
+    expect(screen.getByText(/Línea L50 - Mixco Express · Sin municipalidad/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar asistente" }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it("'Finalizar' closes as saved instead of showing the creation summary", async () => {
+    const { onClose } = renderManage(MUNICIPALIDADES[0]!);
+    await screen.findByRole("region", { name: "Parqueo (opcional)" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Finalizar" }));
+    expect(onClose).toHaveBeenCalledWith(true);
+    expect(screen.queryByText("Infraestructura registrada")).not.toBeInTheDocument();
   });
 });
