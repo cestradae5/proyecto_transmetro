@@ -22,6 +22,7 @@ Let authorized users (permission `AUDITORIA_BITACORA_CONSULTAR`) browse `tbl_bit
 - [x] A1 Backend `audit-log` module: query DTO, service (filters + pagination + options), controller, specs
 - [x] A2 Frontend `/reports` audit log page: hook, filters, table, detail dialog, route, landing link, tests
 - [x] A3 Full verification (api jest, web vitest, tsc)
+- [x] A4 DB-backed e2e for `/audit-log` against `transmetro_test` (gap: A1 unit specs mock SQL)
 
 ## Pending follow-ups
 - Infrastructure CRUD does not write `tbl_bitacora` yet (REQ-FUNC-012 gap).
@@ -38,4 +39,6 @@ A1 follow-up: date-only `to` bound now sent as next date-only (session time zone
 
 A2 evidence (test-first): RED 6 files failed (modules missing, route/card not navigable) -> GREEN `vitest run src/test/audit-log src/test/authentication/landing-page.spec.tsx` 6 files / 29 tests; refactor (page reset without extra request, debounced user filter test) -> audit-log 5 files / 22 tests. Commit: a15cbcb.
 
-A3 evidence: web `vitest run` 69 files / 527 passed; api `npm test` 60 suites / 708 passed; api `tsc -p tsconfig.build.json` exit 0; web `tsc -b` exit 0. No lint script configured. No DB-backed e2e for audit-log (none run).
+A3 evidence: web `vitest run` 69 files / 527 passed; api `npm test` 60 suites / 708 passed; api `tsc -p tsconfig.build.json` exit 0; web `tsc -b` exit 0. No lint script configured. No DB-backed e2e for audit-log at A3 time (gap closed by A4).
+
+A4 evidence: `apps/api/test/audit-log.e2e-spec.ts` (16 tests) against `transmetro_test` with `apps/api/.env` exported literally (bash read-loop; `. ./.env` breaks on special chars in the password). `npm run test:e2e -- audit-log` 16/16. Mutation checks: removing LIKE escaping -> wildcard test fails; reverting the date-only `to` to a UTC timestamp -> date-only test fails (confirms the d20e798 fix: DB session time zone is not UTC). Full `npm run test:e2e` 8 suites / 84 passed. Leftovers after run: 0 audit rows, 0 employees. Commit: 6580001.
