@@ -31,7 +31,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 
 ## Tasks
 - [x] T1 Schema + seed + API alignment: new tables in `init.sql` (municipalidad, linea_municipalidad, acceso), `tbl_linea.id_parqueo` nullable, drop `tbl_parqueo.id_estacion`, `tbl_estacion.id_parada` NOT NULL; `seed-current-data.sql`; align Parqueo/Linea/Estacion entities, DTOs, services, `unidad.service.ts` null parqueo, specs and SQL fixtures.
-- [ ] T2 API Municipalidad module: CRUD + link/unlink lineas (`tbl_linea_municipalidad`), with specs.
+- [x] T2 API Municipalidad module: CRUD + link/unlink lineas (`tbl_linea_municipalidad`), with specs.
 - [ ] T3 API Acceso module (CRUD scoped to parada) + `esEstacion` on parada responses, with specs.
 - [ ] T4 Web: tab order Municipalidades -> Lineas -> Paradas -> Parqueos -> Afectaciones; linea form with optional parqueo and municipalidades; parada form with estacion toggle; parqueo form without estacion; tests.
 - [ ] T5 Web: Municipalidad CRUD UI and Accesos UI per parada; tests.
@@ -39,6 +39,7 @@ Today the FK chain is Parada -> Estacion (`id_parada` optional) -> Parqueo (`id_
 ## Slices (feature-branch-chain)
 - PR #1 `feat/infra-flow-01-schema` -> `feat/infra-flow`: T1
 - PR #2 `feat/infra-flow-02-municipalidad` -> `feat/infra-flow-01-schema`: T2
+- PR #3 `feat/infra-flow-03-acceso` -> `feat/infra-flow-02-municipalidad`: T3
 - Later slices planned as each task's line count is known.
 
 ## Acceptance criteria
@@ -65,5 +66,14 @@ T1 — commit `b5c5e23` (28 files, +580/-244 = 824 authored lines, over the 400 
 - Resolved (user): admin employee (id 1) keeps ON CONFLICT DO NOTHING, so init.sql values win (role ADMINISTRADOR_SISTEMA; current phone/DPI/address are not restored)
 - Admin-web mismatches for T4: infrastructure.types.ts (Parqueo.idEstacion, Linea.idParqueo nullable, Estacion.idParada required), parqueo-form, linea-form, estacion-form, parqueos-table
 
+T2 — commit `37a9a14` (16 files, +1263/-7; 644 of those lines are specs; over the 400 budget as one cohesive module).
+- Routes: CRUD `/infrastructure/municipalidades` (DELETE = soft delete to INACTIVA), `/infrastructure/lineas/:id/municipalidades` list/link/unlink; all `INFRAESTRUCTURA_GESTIONAR`, no new permission codes
+- apps/api `npx tsc -p tsconfig.build.json --noEmit`: exit 0
+- apps/api `npm test`: 53 suites, 617 tests passed; parent spot check `npm test -- municipalidad`: 4 suites, 46 passed
+- apps/api `npx tsc -p tsconfig.json --noEmit`: same 32 pre-existing errors, none in touched files
+- Runtime on scratch `transmetro_t2_check`: services exercised through TypeORM (create/duplicate 409/update/404/link/duplicate link 409/soft delete/unlink); dropped afterwards
+- Writer choices: soft delete like siblings (links kept); inactive municipalidades can still be linked; Postgres 23505 also mapped to 409; findAll sorted by name
+- Route: delegated writer (writer trigger)
+
 ## Next step
-T2 on `feat/infra-flow-02-municipalidad` (child of `feat/infra-flow-01-schema`).
+T3 on `feat/infra-flow-03-acceso` (child of `feat/infra-flow-02-municipalidad`).
