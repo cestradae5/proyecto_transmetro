@@ -99,7 +99,7 @@ describe("AuditLogService.findAll", () => {
     expect(countParams).toEqual([
       "2026-01-01",
       // date-only "to" is inclusive: strictly before the next day
-      "2026-02-01T00:00:00.000Z",
+      "2026-02-01",
       "%ana%",
       "fleet",
       "assign_pilot",

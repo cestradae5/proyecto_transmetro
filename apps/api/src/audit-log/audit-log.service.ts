@@ -108,10 +108,12 @@ function buildWhere(query: QueryAuditLogDto): { where: string; params: unknown[]
   return { where: conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "", params };
 }
 
+// Returns the next calendar date as YYYY-MM-DD. Kept date-only so Postgres
+// resolves it in the session time zone, exactly like a date-only "from".
 function nextDay(date: string): string {
   const day = new Date(`${date}T00:00:00.000Z`);
   day.setUTCDate(day.getUTCDate() + 1);
-  return day.toISOString();
+  return day.toISOString().slice(0, 10);
 }
 
 // Postgres LIKE uses backslash as the default escape character.
