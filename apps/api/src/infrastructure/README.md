@@ -4,8 +4,8 @@
 
 The Infrastructure module implements the backend CRUD for Transmetro's core
 transit entities: **Municipalidad** (municipality), **Parada** (stop),
-**Estación** (station), **Parqueo** (parking lot), **Línea** (bus line), and
-**Afectación** (service disruption). It also owns the `tbl_linea_parada`
+**Estación** (station), **Acceso** (parada entrance), **Parqueo** (parking
+lot), **Línea** (bus line), and **Afectación** (service disruption). It also owns the `tbl_linea_parada`
 junction table that models a línea's ordered sequence of paradas, the
 `tbl_linea_municipalidad` línea ↔ municipalidad links, and the afectación
 "close" workflow.
@@ -55,6 +55,14 @@ infrastructure/
 │       ├── update-municipalidad.dto.ts
 │       ├── municipalidad-response.dto.ts
 │       └── linea-municipalidad.dto.ts
+├── acceso/                # sub-resource of parada (/paradas/:id/accesos)
+│   ├── acceso.entity.ts
+│   ├── acceso.service.ts (+ .spec.ts)
+│   ├── acceso.controller.ts (+ .spec.ts)
+│   └── dto/
+│       ├── create-acceso.dto.ts
+│       ├── update-acceso.dto.ts
+│       └── acceso-response.dto.ts
 ├── afectacion/
 │   ├── afectacion.entity.ts
 │   ├── afectacion.service.ts (+ .spec.ts)  # includes close()
@@ -82,7 +90,8 @@ estación exists.
 | Línea ↔ Parada | `tbl_linea_parada` (ordered N:M) | `/infrastructure/lineas/:id/paradas` |
 | Línea ↔ Estación | `tbl_estacion_linea` (N:M) | `/infrastructure/stations/:id/lines` |
 | Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M, composite PK) | `/infrastructure/lineas/:id/municipalidades`; unknown línea/municipalidad → 404; duplicate link → 409 `LINEA_MUNICIPALIDAD_DUPLICATE` |
-| Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | not exposed yet |
+| Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | `/infrastructure/paradas/:id/accesos`; the parada comes from the route (no `idParada` in the body, cannot be moved); unknown parada → 404; acceso of another parada → 404 |
+| Parada → Estación (derived) | reverse of `tbl_estacion.id_parada` | parada responses expose read-only `esEstacion` and `idEstacion` (`null` when the parada is not an estación); `findAll` resolves them with a single `IN` query; estaciones are still created through `/infrastructure/estaciones` |
 
 `UnidadService` composes a unit's `parqueo` from its línea; when the línea has
 no parqueo, `parqueo` is omitted from the unit response.
@@ -119,11 +128,16 @@ Base path: `/infrastructure`. All routes below require
 ### Paradas — `/infrastructure/paradas`
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create |
-| GET | `/` | List all |
-| GET | `/:id` | Get one |
-| PATCH | `/:id` | Update |
+| POST | `/` | Create (response has `esEstacion: false`, `idEstacion: null`) |
+| GET | `/` | List all, each with derived `esEstacion`/`idEstacion` |
+| GET | `/:id` | Get one, with derived `esEstacion`/`idEstacion` |
+| PATCH | `/:id` | Update (body unchanged: no estación fields) |
 | DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` hard-deletes |
+| GET | `/:id/accesos` | List the parada's accesos, ordered by `nombreAcceso` |
+| POST | `/:id/accesos` | Create an acceso; `tipoAcceso` is `PEATONAL`/`RAMPA`/`ESCALERA`/`ELEVADOR`; `estadoAcceso` defaults to `HABILITADO` |
+| GET | `/:id/accesos/:accesoId` | Get one; 404 if the acceso belongs to another parada |
+| PATCH | `/:id/accesos/:accesoId` | Update; 404 if the acceso belongs to another parada |
+| DELETE | `/:id/accesos/:accesoId` | Soft delete → `DESHABILITADO`; 404 if the acceso belongs to another parada |
 
 ### Estaciones — `/infrastructure/estaciones`
 | Method | Path | Notes |
@@ -178,6 +192,8 @@ the TypeORM entity enums must match exactly:
 | Entity | Enum | Valid values |
 | --- | --- | --- |
 | `MunicipalidadEntity` | `EstadoMunicipalidad` | `ACTIVA`, `INACTIVA` only |
+| `AccesoEntity` | `TipoAcceso` | `PEATONAL`, `RAMPA`, `ESCALERA`, `ELEVADOR` |
+| `AccesoEntity` | `EstadoAcceso` | `HABILITADO`, `DESHABILITADO` only |
 | `ParadaEntity` | `EstadoParada` | `ACTIVA`, `CERRADA`, `MANTENIMIENTO` |
 | `EstacionEntity` | `EstadoEstacion` | `ABIERTA`, `CERRADA`, `MANTENIMIENTO` |
 | `ParqueoEntity` | `EstadoParqueo` | `ABIERTO`, `CERRADO`, `MANTENIMIENTO` |
