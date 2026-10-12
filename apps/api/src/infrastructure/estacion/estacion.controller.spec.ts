@@ -33,12 +33,12 @@ function makeEstacionResponse(
   overrides: Partial<EstacionResponseDto> = {},
 ): EstacionResponseDto {
   return {
-    idEstacion: "1",
+    idEstacion: 1,
     nombreEstacion: "Estación Central",
     latitud: 14.6349,
     longitud: -90.5069,
     estadoEstacion: EstadoEstacion.ACTIVA,
-    idParada: undefined,
+    idParada: 3,
     ...overrides,
   };
 }
@@ -59,6 +59,7 @@ describe("EstacionController", () => {
         latitud: 14.6349,
         longitud: -90.5069,
         estadoEstacion: EstadoEstacion.ACTIVA,
+        idParada: 3,
       };
       const created = makeEstacionResponse();
       service.create.mockResolvedValue(created);
@@ -70,7 +71,7 @@ describe("EstacionController", () => {
     });
 
     it("findAll() delegates to service.findAll", async () => {
-      const estaciones = [makeEstacionResponse(), makeEstacionResponse({ idEstacion: "2" })];
+      const estaciones = [makeEstacionResponse(), makeEstacionResponse({ idEstacion: 2 })];
       service.findAll.mockResolvedValue(estaciones);
 
       const result = await controller.findAll();

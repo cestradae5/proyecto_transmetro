@@ -54,6 +54,25 @@ infrastructure/
 └── infrastructure.module.ts
 ```
 
+## Relations
+
+The creation flow is Municipalidad → Línea → Parada/Estación → Acceso
+(`database/init.sql`). A línea can be created before any parqueo, parada or
+estación exists.
+
+| Relation | Schema | API behavior |
+| --- | --- | --- |
+| Línea → Parqueo | `tbl_linea.id_parqueo` nullable FK; one parqueo can serve several líneas | `idParqueo` optional on create/update (`null` clears it); FK validated (404) only when provided; responses return `idParqueo: null` when unset |
+| Parqueo | standalone, no FK to estación (`id_estacion` was dropped) | no `idEstacion` field |
+| Estación → Parada | `tbl_estacion.id_parada` NOT NULL UNIQUE (1:1 extension of a parada) | `idParada` required on create; unknown parada → 404; parada that already has an estación → 409 `PARADA_ALREADY_HAS_ESTACION`; cannot be cleared to `null` (400) |
+| Línea ↔ Parada | `tbl_linea_parada` (ordered N:M) | `/infrastructure/lineas/:id/paradas` |
+| Línea ↔ Estación | `tbl_estacion_linea` (N:M) | `/infrastructure/stations/:id/lines` |
+| Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M) | not exposed yet |
+| Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | not exposed yet |
+
+`UnidadService` composes a unit's `parqueo` from its línea; when the línea has
+no parqueo, `parqueo` is omitted from the unit response.
+
 ## Permission Model
 
 Every route in this module is protected by two layers:

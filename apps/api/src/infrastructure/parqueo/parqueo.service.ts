@@ -5,29 +5,17 @@ import { ParqueoEntity } from "./parqueo.entity.js";
 import { CreateParqueoDto } from "./dto/create-parqueo.dto.js";
 import { UpdateParqueoDto } from "./dto/update-parqueo.dto.js";
 import { ParqueoResponseDto } from "./dto/parqueo-response.dto.js";
-import { validateForeignKey } from "../shared/validators.js";
-import { EstacionEntity } from "../estacion/estacion.entity.js";
 
+// A parqueo is a standalone resource: it has no FK to estación. Líneas point
+// to their parqueo through tbl_linea.id_parqueo (nullable).
 @Injectable()
 export class ParqueoService {
   constructor(
     @InjectRepository(ParqueoEntity)
-    private readonly parqueoRepository: Repository<ParqueoEntity>,
-    @InjectRepository(EstacionEntity)
-    private readonly estacionRepository: Repository<EstacionEntity>
+    private readonly parqueoRepository: Repository<ParqueoEntity>
   ) {}
 
   async create(createParqueoDto: CreateParqueoDto): Promise<ParqueoResponseDto> {
-    // Validate FK if provided
-    if (createParqueoDto.idEstacion) {
-      await validateForeignKey(
-        this.estacionRepository,
-        createParqueoDto.idEstacion,
-        "idEstacion",
-        "Estación"
-      );
-    }
-
     const parqueo = this.parqueoRepository.create(createParqueoDto);
     const saved = await this.parqueoRepository.save(parqueo);
     return this.toResponseDto(saved);
@@ -59,16 +47,6 @@ export class ParqueoService {
       throw new NotFoundException(`Parqueo con ID ${id} no encontrado`);
     }
 
-    // Validate FK if provided
-    if (updateParqueoDto.idEstacion) {
-      await validateForeignKey(
-        this.estacionRepository,
-        updateParqueoDto.idEstacion,
-        "idEstacion",
-        "Estación"
-      );
-    }
-
     Object.assign(parqueo, updateParqueoDto);
     const updated = await this.parqueoRepository.save(parqueo);
     return this.toResponseDto(updated);
@@ -97,7 +75,6 @@ export class ParqueoService {
       longitud: parqueo.longitud,
       capacidadUnidades: parqueo.capacidadUnidades,
       estadoParqueo: parqueo.estadoParqueo,
-      idEstacion: parqueo.idEstacion,
     };
   }
 }

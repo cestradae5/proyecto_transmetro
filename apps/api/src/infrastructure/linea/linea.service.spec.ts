@@ -7,6 +7,8 @@ import {
   HttpException,
   NotFoundException,
 } from "@nestjs/common";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
 import type { Repository } from "typeorm";
 
 import { CreateLineaDto } from "./dto/create-linea.dto.js";
@@ -129,6 +131,53 @@ describe("LineaService", () => {
       await expect(service.create(dto)).rejects.toThrow(NotFoundException);
       expect(lineaRepo.save).not.toHaveBeenCalled();
     });
+
+    it("creates a línea without parqueo and skips the FK check", async () => {
+      const { idParqueo: _omitted, ...withoutParqueo } = dto;
+      const saved = makeLinea({ idParqueo: null });
+      lineaRepo.create.mockReturnValue(saved);
+      lineaRepo.save.mockResolvedValue(saved);
+
+      const result = await service.create(withoutParqueo);
+
+      expect(parqueoRepo.count).not.toHaveBeenCalled();
+      expect(lineaRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ idParqueo: null })
+      );
+      expect(result.idParqueo).toBeNull();
+    });
+  });
+
+  describe("CreateLineaDto validation", () => {
+    const base = {
+      numeroLinea: "L1",
+      nombreLinea: "Línea 1",
+      colorHex: "#FF5733",
+      estadoLinea: "ACTIVA",
+      tipoRecorrido: "CIRCULAR",
+    };
+
+    it("accepts a payload without idParqueo", async () => {
+      const errors = await validate(plainToInstance(CreateLineaDto, base));
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it("accepts an explicit null idParqueo", async () => {
+      const errors = await validate(
+        plainToInstance(CreateLineaDto, { ...base, idParqueo: null })
+      );
+
+      expect(errors).toHaveLength(0);
+    });
+
+    it("rejects an empty-string idParqueo", async () => {
+      const errors = await validate(
+        plainToInstance(CreateLineaDto, { ...base, idParqueo: "" })
+      );
+
+      expect(errors.map((e) => e.property)).toContain("idParqueo");
+    });
   });
 
   describe("findAll / findOne", () => {
@@ -179,6 +228,16 @@ describe("LineaService", () => {
         NotFoundException
       );
       expect(lineaRepo.save).not.toHaveBeenCalled();
+    });
+
+    it("clears the parqueo without FK validation when idParqueo is null", async () => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
+      lineaRepo.save.mockImplementation(async (l: LineaEntity) => l);
+
+      const result = await service.update("1", { idParqueo: null });
+
+      expect(parqueoRepo.count).not.toHaveBeenCalled();
+      expect(result.idParqueo).toBeNull();
     });
 
     it("throws NotFoundException when the línea does not exist", async () => {

@@ -41,6 +41,10 @@ export class LineaController {
     description: "Línea creada exitosamente",
     type: LineaResponseDto,
   })
+  @ApiResponse({
+    status: 404,
+    description: "Parqueo no encontrado (solo si se envía idParqueo)",
+  })
   create(@Body() createLineaDto: CreateLineaDto): Promise<LineaResponseDto> {
     return this.lineaService.create(createLineaDto);
   }
@@ -78,7 +82,7 @@ export class LineaController {
     description: "Línea actualizada",
     type: LineaResponseDto,
   })
-  @ApiResponse({ status: 404, description: "Línea no encontrada" })
+  @ApiResponse({ status: 404, description: "Línea o parqueo no encontrado" })
   update(
     @Param("id") id: string,
     @Body() updateLineaDto: UpdateLineaDto

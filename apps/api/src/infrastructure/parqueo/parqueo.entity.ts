@@ -1,11 +1,4 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  JoinColumn,
-} from "typeorm";
-import { EstacionEntity } from "../estacion/estacion.entity.js";
+import { Entity, PrimaryGeneratedColumn, Column } from "typeorm";
 
 export enum TipoParqueo {
   CENTRAL = "CENTRAL",
@@ -54,11 +47,4 @@ export class ParqueoEntity {
     enum: EstadoParqueo,
   })
   estadoParqueo!: EstadoParqueo;
-
-  @Column({ name: "id_estacion", type: "bigint", nullable: true })
-  idEstacion!: string;
-
-  @ManyToOne(() => EstacionEntity)
-  @JoinColumn({ name: "id_estacion" })
-  estacion!: EstacionEntity;
 }
