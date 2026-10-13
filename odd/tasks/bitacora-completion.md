@@ -40,7 +40,7 @@ without crashing. The read-only viewer already exists (PR #72).
 - [x] T2  `municipalidad` create/update/delete audit + actor threading + tests. Commit: feat(api).
 - [x] T3  `acceso` audit + actor + tests. Commit: feat(api).
 - [x] T4  `parqueo` audit + actor + tests. Commit: feat(api).
-- [ ] T5  `parada` audit + actor + tests. Commit: feat(api).
+- [x] T5  `parada` audit + actor + tests. Commit: feat(api).
 - [ ] T6  `estacion` (+ `estacion-linea`) audit + actor + tests. Commit: feat(api).
 - [ ] T7  `linea` (+ `linea-parada`) audit + actor + tests. Commit: feat(api).
 - [ ] T8  `afectacion` audit + actor + tests (if it has mutations). Commit: feat(api).
@@ -58,6 +58,8 @@ without crashing. The read-only viewer already exists (PR #72).
 - T3: acceso create/update/remove audited (CREATE/UPDATE/REMOVE, entityType acceso, entityId=String(accesoId)) inside transaction; actor threaded. `npm test -- acceso` 2 suites / 33; tsc exit 0.
 
 - T4: parqueo create/update/remove audited inside transaction; actor threaded. `npm test -- parqueo` 2 suites / 19; tsc exit 0.
+
+- T5: parada create/update/remove (soft+force) audited inside transaction; entityId=String(numeric id); actor threaded (controller remove sig now id,request,force?). `npm test -- parada` 2 suites / 25; tsc exit 0.
 
 ## Log
 - L1 (user request, verbatim): "Hola necesito que me ayudes a terminar la bitacora al 100% de usabilidad"

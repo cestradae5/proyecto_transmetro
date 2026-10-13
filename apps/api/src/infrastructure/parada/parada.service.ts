@@ -7,6 +7,11 @@ import { CreateParadaDto } from "./dto/create-parada.dto.js";
 import { ParadaResponseDto } from "./dto/parada-response.dto.js";
 import { UpdateParadaDto } from "./dto/update-parada.dto.js";
 import { EstadoParada, ParadaEntity } from "./parada.entity.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 @Injectable()
 export class ParadaService {
@@ -15,11 +20,30 @@ export class ParadaService {
     private readonly paradaRepository: Repository<ParadaEntity>,
     @InjectRepository(EstacionEntity)
     private readonly estacionRepository: Repository<EstacionEntity>,
+    private readonly audit: InfrastructureAuditService,
   ) {}
 
-  async create(dto: CreateParadaDto): Promise<ParadaResponseDto> {
-    const parada = this.paradaRepository.create(dto);
-    const saved = await this.paradaRepository.save(parada);
+  async create(
+    dto: CreateParadaDto,
+    actorEmployeeId: string,
+  ): Promise<ParadaResponseDto> {
+    const saved = await this.paradaRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(ParadaEntity);
+        const parada = repo.create(dto);
+        const persisted = await repo.save(parada);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+          entityId: String(persisted.idParada),
+          detalle: {
+            nombreParada: persisted.nombreParada,
+            estadoParada: persisted.estadoParada,
+          },
+        });
+        return persisted;
+      },
+    );
     // A new parada never has an estación yet: those are created afterwards
     // through /infrastructure/estaciones.
     return this.toResponseDto(saved, null);
@@ -44,21 +68,47 @@ export class ParadaService {
     );
   }
 
-  async update(id: string, dto: UpdateParadaDto): Promise<ParadaResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateParadaDto,
+    actorEmployeeId: string,
+  ): Promise<ParadaResponseDto> {
     await this.findOrFail(id);
-    await this.paradaRepository.update({ idParada: Number(id) }, dto);
+    const changedFields = Object.keys(dto);
+    await this.paradaRepository.manager.transaction(async (manager) => {
+      await manager.getRepository(ParadaEntity).update({ idParada: Number(id) }, dto);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: String(id),
+        detalle: { changedFields },
+      });
+    });
     return this.findOne(id);
   }
 
-  async remove(id: string, force = false): Promise<void> {
+  async remove(
+    id: string,
+    force: boolean,
+    actorEmployeeId: string,
+  ): Promise<void> {
     const parada = await this.findOrFail(id);
 
-    if (force) {
-      await this.paradaRepository.remove(parada);
-    } else {
-      parada.estadoParada = EstadoParada.CERRADA;
-      await this.paradaRepository.save(parada);
-    }
+    await this.paradaRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(ParadaEntity);
+      if (force) {
+        await repo.remove(parada);
+      } else {
+        parada.estadoParada = EstadoParada.CERRADA;
+        await repo.save(parada);
+      }
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: String(id),
+        detalle: { nombreParada: parada.nombreParada, force },
+      });
+    });
   }
 
   private async findOrFail(id: string): Promise<ParadaEntity> {

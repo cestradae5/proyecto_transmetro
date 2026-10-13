@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -34,8 +35,11 @@ export class ParadaController {
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Crear nueva parada" })
   @ApiResponse({ status: 201, type: ParadaResponseDto })
-  async create(@Body() dto: CreateParadaDto): Promise<ParadaResponseDto> {
-    return this.paradaService.create(dto);
+  async create(
+    @Body() dto: CreateParadaDto,
+    @Req() request: Record<string, any>,
+  ): Promise<ParadaResponseDto> {
+    return this.paradaService.create(dto, request.user.employeeId);
   }
 
   @Get()
@@ -62,8 +66,9 @@ export class ParadaController {
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateParadaDto,
+    @Req() request: Record<string, any>,
   ): Promise<ParadaResponseDto> {
-    return this.paradaService.update(id, dto);
+    return this.paradaService.update(id, dto, request.user.employeeId);
   }
 
   @Delete(":id")
@@ -72,8 +77,9 @@ export class ParadaController {
   @ApiResponse({ status: 204, description: "Parada eliminada" })
   async remove(
     @Param("id") id: string,
+    @Req() request: Record<string, any>,
     @Query("force") force?: string,
   ): Promise<void> {
-    return this.paradaService.remove(id, force === "true");
+    return this.paradaService.remove(id, force === "true", request.user.employeeId);
   }
 }
