@@ -8,8 +8,13 @@ import {
   HttpException,
   NotFoundException,
 } from "@nestjs/common";
-import type { Repository } from "typeorm";
+import type { EntityManager, Repository } from "typeorm";
 
+import type { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 import {
   AfectacionEntity,
   EstadoAfectacion,
@@ -28,16 +33,25 @@ type MockRepository = {
   find: AnyMock;
   findOne: AnyMock;
   count: AnyMock;
+  manager: { transaction: AnyMock };
 };
 
+const ACTOR = "7";
+
 function makeMockRepository(): MockRepository {
-  return {
+  const repo: MockRepository = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
     findOne: jest.fn(),
     count: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
+  const manager = { getRepository: () => repo } as unknown as EntityManager;
+  repo.manager.transaction.mockImplementation(
+    async (cb: (m: EntityManager) => unknown) => cb(manager)
+  );
+  return repo;
 }
 
 function makeAfectacion(
@@ -70,16 +84,19 @@ describe("AfectacionService", () => {
   let afectacionRepo: MockRepository;
   let paradaRepo: MockRepository;
   let estacionRepo: MockRepository;
+  let audit: { record: AnyMock };
   let service: AfectacionService;
 
   beforeEach(() => {
     afectacionRepo = makeMockRepository();
     paradaRepo = makeMockRepository();
     estacionRepo = makeMockRepository();
+    audit = { record: jest.fn() };
     service = new AfectacionService(
       afectacionRepo as unknown as Repository<AfectacionEntity>,
       paradaRepo as unknown as Repository<ParadaEntity>,
-      estacionRepo as unknown as Repository<EstacionEntity>
+      estacionRepo as unknown as Repository<EstacionEntity>,
+      audit as unknown as InfrastructureAuditService
     );
   });
 
@@ -90,12 +107,18 @@ describe("AfectacionService", () => {
       afectacionRepo.create.mockReturnValue(saved);
       afectacionRepo.save.mockResolvedValue(saved);
 
-      const result = await service.create(baseDto({ idParada: "5" }));
+      const result = await service.create(baseDto({ idParada: "5" }), ACTOR);
 
       expect(paradaRepo.count).toHaveBeenCalledWith({ where: { idParada: "5" } });
       expect(estacionRepo.count).not.toHaveBeenCalled();
       expect(result.idAfectacion).toBe("7");
       expect(result.idParada).toBe("5");
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+        entityId: "7",
+        detalle: { tipoAfectacion: TipoAfectacion.MANTENIMIENTO, idParada: "5", idEstacion: null },
+      });
     });
 
     it("creates an afectación at an estación", async () => {
@@ -104,7 +127,7 @@ describe("AfectacionService", () => {
       afectacionRepo.create.mockReturnValue(saved);
       afectacionRepo.save.mockResolvedValue(saved);
 
-      const result = await service.create(baseDto({ idEstacion: "3" }));
+      const result = await service.create(baseDto({ idEstacion: "3" }), ACTOR);
 
       expect(estacionRepo.count).toHaveBeenCalledWith({
         where: { idEstacion: "3" },
@@ -115,13 +138,14 @@ describe("AfectacionService", () => {
 
     it("rejects both parada and estación (XOR violation)", async () => {
       await expect(
-        service.create(baseDto({ idParada: "5", idEstacion: "3" }))
+        service.create(baseDto({ idParada: "5", idEstacion: "3" }), ACTOR)
       ).rejects.toThrow(BadRequestException);
       expect(afectacionRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("rejects neither parada nor estación (XOR violation)", async () => {
-      await expect(service.create(baseDto())).rejects.toThrow(
+      await expect(service.create(baseDto(), ACTOR)).rejects.toThrow(
         BadRequestException
       );
       expect(afectacionRepo.save).not.toHaveBeenCalled();
@@ -130,12 +154,12 @@ describe("AfectacionService", () => {
     it("throws NotFoundException when the parada does not exist", async () => {
       paradaRepo.count.mockResolvedValue(0);
 
-      await expect(service.create(baseDto({ idParada: "999" }))).rejects.toThrow(
+      await expect(service.create(baseDto({ idParada: "999" }), ACTOR)).rejects.toThrow(
         NotFoundException
       );
       // The message must name the entity idParada actually references, never the
       // sibling idEstacion this payload deliberately leaves out.
-      await expect(service.create(baseDto({ idParada: "999" }))).rejects.toThrow(
+      await expect(service.create(baseDto({ idParada: "999" }), ACTOR)).rejects.toThrow(
         "Parada con ID 999 no encontrada"
       );
       expect(afectacionRepo.save).not.toHaveBeenCalled();
@@ -144,7 +168,7 @@ describe("AfectacionService", () => {
     it("names the estación when idEstacion does not exist", async () => {
       estacionRepo.count.mockResolvedValue(0);
 
-      await expect(service.create(baseDto({ idEstacion: "999" }))).rejects.toThrow(
+      await expect(service.create(baseDto({ idEstacion: "999" }), ACTOR)).rejects.toThrow(
         "Estación con ID 999 no encontrada"
       );
       expect(estacionRepo.count).toHaveBeenCalledWith({
@@ -192,18 +216,25 @@ describe("AfectacionService", () => {
       afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
       afectacionRepo.save.mockImplementation(async (a: AfectacionEntity) => a);
 
-      const result = await service.update("7", { motivo: "Reparación ampliada" });
+      const result = await service.update("7", { motivo: "Reparación ampliada" }, ACTOR);
 
       expect(result.motivo).toBe("Reparación ampliada");
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+        entityId: "7",
+        detalle: { changedFields: ["motivo"] },
+      });
     });
 
     it("rejects both idParada and idEstacion in the same update (XOR)", async () => {
       afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
 
       await expect(
-        service.update("7", { idParada: "5", idEstacion: "3" })
+        service.update("7", { idParada: "5", idEstacion: "3" }, ACTOR)
       ).rejects.toThrow(BadRequestException);
       expect(afectacionRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("switching to an estación clears idParada", async () => {
@@ -211,7 +242,7 @@ describe("AfectacionService", () => {
       estacionRepo.count.mockResolvedValue(1);
       afectacionRepo.save.mockImplementation(async (a: AfectacionEntity) => a);
 
-      const result = await service.update("7", { idEstacion: "3" });
+      const result = await service.update("7", { idEstacion: "3" }, ACTOR);
 
       expect(result.idEstacion).toBe("3");
       expect(result.idParada).toBeUndefined();
@@ -220,7 +251,7 @@ describe("AfectacionService", () => {
     it("throws NotFoundException when not found", async () => {
       afectacionRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.update("missing", {})).rejects.toThrow(
+      await expect(service.update("missing", {}, ACTOR)).rejects.toThrow(
         NotFoundException
       );
     });
@@ -232,17 +263,23 @@ describe("AfectacionService", () => {
       afectacionRepo.findOne.mockResolvedValue(existing);
       afectacionRepo.save.mockResolvedValue(existing);
 
-      await service.remove("7");
+      await service.remove("7", ACTOR);
 
       expect(afectacionRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ estadoAfectacion: EstadoAfectacion.CERRADA })
       );
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+        entityId: "7",
+        detalle: { tipoAfectacion: TipoAfectacion.MANTENIMIENTO },
+      });
     });
 
     it("throws NotFoundException when not found", async () => {
       afectacionRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.remove("missing")).rejects.toThrow(NotFoundException);
+      await expect(service.remove("missing", ACTOR)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -252,10 +289,16 @@ describe("AfectacionService", () => {
       afectacionRepo.save.mockImplementation(async (a: AfectacionEntity) => a);
       const before = Date.now();
 
-      const result = await service.close("7");
+      const result = await service.close("7", ACTOR);
 
       const after = Date.now();
       expect(result.estadoAfectacion).toBe(EstadoAfectacion.CERRADA);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+        entityId: "7",
+        detalle: { estadoAfectacion: EstadoAfectacion.CERRADA, closed: true },
+      });
       expect(result.fechaFin).toBeInstanceOf(Date);
       expect(result.fechaFin!.getTime()).toBeGreaterThanOrEqual(before);
       expect(result.fechaFin!.getTime()).toBeLessThanOrEqual(after);
@@ -265,7 +308,7 @@ describe("AfectacionService", () => {
     it("throws NotFoundException when not found", async () => {
       afectacionRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.close("missing")).rejects.toThrow(NotFoundException);
+      await expect(service.close("missing", ACTOR)).rejects.toThrow(NotFoundException);
       expect(afectacionRepo.save).not.toHaveBeenCalled();
     });
 
@@ -278,7 +321,7 @@ describe("AfectacionService", () => {
         })
       );
 
-      const error = await service.close("7").catch((e: unknown) => e);
+      const error = await service.close("7", ACTOR).catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
       expect(

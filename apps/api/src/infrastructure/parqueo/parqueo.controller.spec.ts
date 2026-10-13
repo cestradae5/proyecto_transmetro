@@ -54,6 +54,8 @@ describe("ParqueoController", () => {
     controller = new ParqueoController(service as unknown as ParqueoService);
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to ParqueoService", () => {
     it("create() delegates to service.create with the request body", async () => {
       const dto: CreateParqueoDto = {
@@ -68,9 +70,9 @@ describe("ParqueoController", () => {
       const created = makeParqueoResponse();
       service.create.mockResolvedValue(created);
 
-      const result = await controller.create(dto);
+      const result = await controller.create(dto, request);
 
-      expect(service.create).toHaveBeenCalledWith(dto);
+      expect(service.create).toHaveBeenCalledWith(dto, "7");
       expect(result).toEqual(created);
     });
 
@@ -99,18 +101,18 @@ describe("ParqueoController", () => {
       const updated = makeParqueoResponse({ nombreParqueo: "Renombrado" });
       service.update.mockResolvedValue(updated);
 
-      const result = await controller.update("1", dto);
+      const result = await controller.update("1", dto, request);
 
-      expect(service.update).toHaveBeenCalledWith("1", dto);
+      expect(service.update).toHaveBeenCalledWith("1", dto, "7");
       expect(result).toEqual(updated);
     });
 
     it("remove() delegates to service.remove with the id param", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1");
+      await controller.remove("1", request);
 
-      expect(service.remove).toHaveBeenCalledWith("1");
+      expect(service.remove).toHaveBeenCalledWith("1", "7");
     });
   });
 

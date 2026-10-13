@@ -64,6 +64,31 @@ describe("AuditLogService.findAll", () => {
     expect(listParams).toEqual([20, 0]);
   });
 
+  it("keeps rows without an employee (failed login) via LEFT JOIN and maps them to null", async () => {
+    const failed = {
+      ...row,
+      module: "authentication",
+      action: "LOGIN",
+      entityType: "jwt",
+      entityId: null,
+      result: "FALLIDO",
+      detalle: null,
+      employeeId: null,
+      employeeName: null,
+      employeeEmail: null,
+    };
+    const { service, query: q } = makeService([[{ total: "1" }], [failed]]);
+
+    const result = await service.findAll(query());
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({ entityId: null, employee: null, result: "FALLIDO" }),
+    );
+    for (const [sql] of q.mock.calls) {
+      expect(sql).toMatch(/LEFT JOIN tbl_empleado e ON e\.id_emple = b\.id_empleado/);
+    }
+  });
+
   it("maps a null detalle to null", async () => {
     const { service } = makeService([[{ total: "1" }], [{ ...row, detalle: null }]]);
     const result = await service.findAll(query());

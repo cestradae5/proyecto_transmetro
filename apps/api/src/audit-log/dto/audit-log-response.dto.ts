@@ -12,10 +12,12 @@ export interface AuditLogItemDto {
   module: string;
   action: string;
   entityType: string;
-  entityId: string;
+  // Null for a failed login: the attempt is recorded with no entity and no
+  // employee (the UI shows it as "Sistema").
+  entityId: string | null;
   result: AuditResult;
   detalle: Record<string, unknown> | null;
-  employee: AuditLogEmployeeDto;
+  employee: AuditLogEmployeeDto | null;
 }
 
 export interface AuditLogPageDto {

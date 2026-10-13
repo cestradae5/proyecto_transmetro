@@ -8,6 +8,11 @@ import { AccesoEntity, EstadoAcceso } from "./acceso.entity.js";
 import { AccesoResponseDto } from "./dto/acceso-response.dto.js";
 import { CreateAccesoDto } from "./dto/create-acceso.dto.js";
 import { UpdateAccesoDto } from "./dto/update-acceso.dto.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 /**
  * Accesos are a sub-resource of a parada (/infrastructure/paradas/:id/accesos).
@@ -20,7 +25,8 @@ export class AccesoService {
     @InjectRepository(AccesoEntity)
     private readonly accesoRepository: Repository<AccesoEntity>,
     @InjectRepository(ParadaEntity)
-    private readonly paradaRepository: Repository<ParadaEntity>
+    private readonly paradaRepository: Repository<ParadaEntity>,
+    private readonly audit: InfrastructureAuditService
   ) {}
 
   async list(paradaId: string): Promise<AccesoResponseDto[]> {
@@ -34,15 +40,33 @@ export class AccesoService {
 
   async create(
     paradaId: string,
-    dto: CreateAccesoDto
+    dto: CreateAccesoDto,
+    actorEmployeeId: string
   ): Promise<AccesoResponseDto> {
     await this.ensureParadaExists(paradaId);
-    const acceso = this.accesoRepository.create({
-      ...dto,
-      idParada: paradaId,
-      estadoAcceso: dto.estadoAcceso ?? EstadoAcceso.HABILITADO,
-    });
-    const saved = await this.accesoRepository.save(acceso);
+    const saved = await this.accesoRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(AccesoEntity);
+        const acceso = repo.create({
+          ...dto,
+          idParada: paradaId,
+          estadoAcceso: dto.estadoAcceso ?? EstadoAcceso.HABILITADO,
+        });
+        const persisted = await repo.save(acceso);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ACCESO,
+          entityId: String(persisted.idAcceso),
+          detalle: {
+            idParada: paradaId,
+            nombreAcceso: persisted.nombreAcceso,
+            tipoAcceso: persisted.tipoAcceso,
+            estadoAcceso: persisted.estadoAcceso,
+          },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(saved);
   }
 
@@ -54,23 +78,50 @@ export class AccesoService {
   async update(
     paradaId: string,
     accesoId: string,
-    dto: UpdateAccesoDto
+    dto: UpdateAccesoDto,
+    actorEmployeeId: string
   ): Promise<AccesoResponseDto> {
     const acceso = await this.findOrFail(paradaId, accesoId);
-    Object.assign(acceso, dto);
-    // The owning parada is fixed by the route and never changes on update.
-    acceso.idParada = paradaId;
-    const updated = await this.accesoRepository.save(acceso);
+    const changedFields = Object.keys(dto);
+    const updated = await this.accesoRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(AccesoEntity);
+        Object.assign(acceso, dto);
+        // The owning parada is fixed by the route and never changes on update.
+        acceso.idParada = paradaId;
+        const persisted = await repo.save(acceso);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ACCESO,
+          entityId: String(accesoId),
+          detalle: { idParada: paradaId, changedFields },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(updated);
   }
 
-  async remove(paradaId: string, accesoId: string): Promise<void> {
+  async remove(
+    paradaId: string,
+    accesoId: string,
+    actorEmployeeId: string
+  ): Promise<void> {
     const acceso = await this.findOrFail(paradaId, accesoId);
 
     // Soft delete like the sibling infrastructure modules: the row is kept and
     // only marked DESHABILITADO, which the DB CHECK allows.
-    acceso.estadoAcceso = EstadoAcceso.DESHABILITADO;
-    await this.accesoRepository.save(acceso);
+    await this.accesoRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(AccesoEntity);
+      acceso.estadoAcceso = EstadoAcceso.DESHABILITADO;
+      await repo.save(acceso);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.ACCESO,
+        entityId: String(accesoId),
+        detalle: { idParada: paradaId, nombreAcceso: acceso.nombreAcceso },
+      });
+    });
   }
 
   private async findOrFail(

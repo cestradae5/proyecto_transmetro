@@ -21,6 +21,15 @@ export const RESULT_STYLES: Record<AuditResult, string> = {
   ERROR: "bg-red-50 text-red-700 border-red-200",
 };
 
+/** Shown for rows with no employee (a failed login attempt). */
+export const SYSTEM_ACTOR_LABEL = "Sistema";
+export const SYSTEM_ACTOR_HINT = "Intento de inicio de sesión";
+
+/** "jwt #7", or just "jwt" when the row has no entity id. */
+export function entityLabel(entityType: string, entityId: string | null): string {
+  return entityId === null ? entityType : `${entityType} #${entityId}`;
+}
+
 export function moduleLabel(module: string): string {
   return MODULE_LABELS[module] ?? module;
 }

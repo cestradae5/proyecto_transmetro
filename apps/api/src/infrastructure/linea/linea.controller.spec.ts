@@ -62,13 +62,15 @@ describe("LineaController", () => {
     controller = new LineaController(service as unknown as LineaService);
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to LineaService", () => {
     it("create() forwards the body", async () => {
       const dto = { numeroLinea: "L1" } as never;
       service.create.mockResolvedValue({ idLinea: "1" });
 
-      await expect(controller.create(dto)).resolves.toEqual({ idLinea: "1" });
-      expect(service.create).toHaveBeenCalledWith(dto);
+      await expect(controller.create(dto, request)).resolves.toEqual({ idLinea: "1" });
+      expect(service.create).toHaveBeenCalledWith(dto, "7");
     });
 
     it("findAll() delegates", async () => {
@@ -91,17 +93,17 @@ describe("LineaController", () => {
       const dto = { nombreLinea: "X" };
       service.update.mockResolvedValue({ idLinea: "1" });
 
-      await controller.update("1", dto);
+      await controller.update("1", dto, request);
 
-      expect(service.update).toHaveBeenCalledWith("1", dto);
+      expect(service.update).toHaveBeenCalledWith("1", dto, "7");
     });
 
     it("remove() forwards the id", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1");
+      await controller.remove("1", request);
 
-      expect(service.remove).toHaveBeenCalledWith("1");
+      expect(service.remove).toHaveBeenCalledWith("1", "7");
     });
 
     it("listParadas() forwards the línea id", async () => {
@@ -116,37 +118,37 @@ describe("LineaController", () => {
       const dto = { idParada: "5", orden: 1, minutosHastaSiguiente: 5 };
       service.addParada.mockResolvedValue({ idLineaParada: "100" });
 
-      await expect(controller.addParada("1", dto)).resolves.toEqual({
+      await expect(controller.addParada("1", dto, request)).resolves.toEqual({
         idLineaParada: "100",
       });
-      expect(service.addParada).toHaveBeenCalledWith("1", dto);
+      expect(service.addParada).toHaveBeenCalledWith("1", dto, "7");
     });
 
     it("updateParada() forwards línea id, record id and body", async () => {
       const dto = { orden: 2, minutosHastaSiguiente: 7 };
       service.updateParada.mockResolvedValue({ idLineaParada: "100" });
 
-      await controller.updateParada("1", "100", dto);
+      await controller.updateParada("1", "100", dto, request);
 
-      expect(service.updateParada).toHaveBeenCalledWith("1", "100", dto);
+      expect(service.updateParada).toHaveBeenCalledWith("1", "100", dto, "7");
     });
 
     it("removeParada() forwards línea id and record id", async () => {
       service.removeParada.mockResolvedValue(undefined);
 
-      await controller.removeParada("1", "100");
+      await controller.removeParada("1", "100", request);
 
-      expect(service.removeParada).toHaveBeenCalledWith("1", "100");
+      expect(service.removeParada).toHaveBeenCalledWith("1", "100", "7");
     });
 
     it("reorderParadas() forwards línea id and body", async () => {
       const dto = { idsLineaParada: ["101", "100"] };
       service.reorderParadas.mockResolvedValue([{ idLineaParada: "101" }]);
 
-      await expect(controller.reorderParadas("1", dto)).resolves.toEqual([
+      await expect(controller.reorderParadas("1", dto, request)).resolves.toEqual([
         { idLineaParada: "101" },
       ]);
-      expect(service.reorderParadas).toHaveBeenCalledWith("1", dto);
+      expect(service.reorderParadas).toHaveBeenCalledWith("1", dto, "7");
     });
   });
 

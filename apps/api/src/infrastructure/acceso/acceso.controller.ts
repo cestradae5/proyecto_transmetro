@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -54,9 +55,10 @@ export class AccesoController {
   @ApiResponse({ status: 404, description: "Parada no encontrada" })
   create(
     @Param("id") id: string,
-    @Body() dto: CreateAccesoDto
+    @Body() dto: CreateAccesoDto,
+    @Req() request: Record<string, any>
   ): Promise<AccesoResponseDto> {
-    return this.accesoService.create(id, dto);
+    return this.accesoService.create(id, dto, request.user.employeeId);
   }
 
   @Get(":accesoId")
@@ -93,9 +95,10 @@ export class AccesoController {
   update(
     @Param("id") id: string,
     @Param("accesoId") accesoId: string,
-    @Body() dto: UpdateAccesoDto
+    @Body() dto: UpdateAccesoDto,
+    @Req() request: Record<string, any>
   ): Promise<AccesoResponseDto> {
-    return this.accesoService.update(id, accesoId, dto);
+    return this.accesoService.update(id, accesoId, dto, request.user.employeeId);
   }
 
   @Delete(":accesoId")
@@ -111,8 +114,9 @@ export class AccesoController {
   })
   remove(
     @Param("id") id: string,
-    @Param("accesoId") accesoId: string
+    @Param("accesoId") accesoId: string,
+    @Req() request: Record<string, any>
   ): Promise<void> {
-    return this.accesoService.remove(id, accesoId);
+    return this.accesoService.remove(id, accesoId, request.user.employeeId);
   }
 }

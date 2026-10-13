@@ -9,8 +9,10 @@ import { EmployeeEntity } from "../entities/employee.entity.js";
 export interface NewAuditRecord {
   action: string;
   detalle?: Record<string, unknown> | null;
-  employee: EmployeeEntity;
-  entityId: string;
+  // Null only for a failed login: the attempt is recorded with no employee
+  // and no entity id (tbl_bitacora.id_empleado/entidad_id are nullable).
+  employee: EmployeeEntity | null;
+  entityId: string | null;
   entityType: string;
   module: string;
   result: AuditResult;

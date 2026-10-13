@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -65,9 +66,10 @@ export class LineaMunicipalidadController {
   })
   add(
     @Param("id") id: string,
-    @Body() dto: CreateLineaMunicipalidadDto
+    @Body() dto: CreateLineaMunicipalidadDto,
+    @Req() request: Record<string, any>
   ): Promise<LineaMunicipalidadResponseDto> {
-    return this.lineaMunicipalidadService.add(id, dto);
+    return this.lineaMunicipalidadService.add(id, dto, request.user.employeeId);
   }
 
   @Delete(":municipalidadId")
@@ -81,8 +83,13 @@ export class LineaMunicipalidadController {
   })
   remove(
     @Param("id") id: string,
-    @Param("municipalidadId") municipalidadId: string
+    @Param("municipalidadId") municipalidadId: string,
+    @Req() request: Record<string, any>
   ): Promise<void> {
-    return this.lineaMunicipalidadService.remove(id, municipalidadId);
+    return this.lineaMunicipalidadService.remove(
+      id,
+      municipalidadId,
+      request.user.employeeId
+    );
   }
 }

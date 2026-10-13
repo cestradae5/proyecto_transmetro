@@ -18,6 +18,11 @@ import {
   toLineaResponseDto,
 } from "../linea/dto/linea-response.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 @Injectable()
 export class LineaMunicipalidadService {
@@ -27,7 +32,8 @@ export class LineaMunicipalidadService {
     @InjectRepository(LineaEntity)
     private readonly lineaRepository: Repository<LineaEntity>,
     @InjectRepository(MunicipalidadEntity)
-    private readonly municipalidadRepository: Repository<MunicipalidadEntity>
+    private readonly municipalidadRepository: Repository<MunicipalidadEntity>,
+    private readonly audit: InfrastructureAuditService
   ) {}
 
   async list(lineaId: string): Promise<LineaMunicipalidadResponseDto[]> {
@@ -64,7 +70,8 @@ export class LineaMunicipalidadService {
 
   async add(
     lineaId: string,
-    dto: CreateLineaMunicipalidadDto
+    dto: CreateLineaMunicipalidadDto,
+    actorEmployeeId: string
   ): Promise<LineaMunicipalidadResponseDto> {
     await this.ensureLineaExists(lineaId);
     const municipalidad = await this.municipalidadRepository.findOne({
@@ -83,12 +90,25 @@ export class LineaMunicipalidadService {
       throw this.duplicateLink(lineaId, dto.idMunicipalidad);
     }
 
-    const record = this.linkRepository.create({
-      idLinea: lineaId,
-      idMunicipalidad: dto.idMunicipalidad,
-    });
     try {
-      const saved = await this.linkRepository.save(record);
+      // The link and its audit row commit or roll back together.
+      const saved = await this.linkRepository.manager.transaction(
+        async (manager) => {
+          const repo = manager.getRepository(LineaMunicipalidadEntity);
+          const record = repo.create({
+            idLinea: lineaId,
+            idMunicipalidad: dto.idMunicipalidad,
+          });
+          const persisted = await repo.save(record);
+          await this.audit.record(manager, actorEmployeeId, {
+            action: INFRASTRUCTURE_AUDIT_ACTIONS.LINK,
+            entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_MUNICIPALIDAD,
+            entityId: lineaId,
+            detalle: { idMunicipalidad: dto.idMunicipalidad },
+          });
+          return persisted;
+        }
+      );
       return this.toResponseDto({ ...saved, municipalidad });
     } catch (error) {
       // Composite PK still guards concurrent duplicate links.
@@ -100,7 +120,11 @@ export class LineaMunicipalidadService {
   }
 
   /** Hard-deletes the link row; neither the línea nor the municipalidad is touched. */
-  async remove(lineaId: string, municipalidadId: string): Promise<void> {
+  async remove(
+    lineaId: string,
+    municipalidadId: string,
+    actorEmployeeId: string
+  ): Promise<void> {
     const record = await this.linkRepository.findOne({
       where: { idLinea: lineaId, idMunicipalidad: municipalidadId },
     });
@@ -109,7 +133,16 @@ export class LineaMunicipalidadService {
         `La municipalidad ${municipalidadId} no está vinculada a la línea ${lineaId}`
       );
     }
-    await this.linkRepository.remove(record);
+    await this.linkRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(LineaMunicipalidadEntity);
+      await repo.remove(record);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UNLINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_MUNICIPALIDAD,
+        entityId: lineaId,
+        detalle: { idMunicipalidad: municipalidadId },
+      });
+    });
   }
 
   private async ensureLineaExists(lineaId: string): Promise<void> {

@@ -20,6 +20,11 @@ import { ReorderLineaParadasDto } from "./dto/reorder-linea-paradas.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
 import { ParqueoEntity } from "../parqueo/parqueo.entity.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 /** Minimum number of paradas a línea must keep once its sequence is built. */
 export const LINEA_MIN_PARADAS = 2;
@@ -34,10 +39,14 @@ export class LineaService {
     @InjectRepository(LineaParadaEntity)
     private readonly lineaParadaRepository: Repository<LineaParadaEntity>,
     @InjectRepository(ParadaEntity)
-    private readonly paradaRepository: Repository<ParadaEntity>
+    private readonly paradaRepository: Repository<ParadaEntity>,
+    private readonly audit: InfrastructureAuditService
   ) {}
 
-  async create(createLineaDto: CreateLineaDto): Promise<LineaResponseDto> {
+  async create(
+    createLineaDto: CreateLineaDto,
+    actorEmployeeId: string
+  ): Promise<LineaResponseDto> {
     // The parqueo is optional: a línea is created first and the parqueo is
     // assigned later. Validate the FK only when one is provided.
     if (createLineaDto.idParqueo) {
@@ -49,11 +58,26 @@ export class LineaService {
       );
     }
 
-    const linea = this.lineaRepository.create({
-      ...createLineaDto,
-      idParqueo: createLineaDto.idParqueo ?? null,
-    });
-    const saved = await this.lineaRepository.save(linea);
+    const saved = await this.lineaRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(LineaEntity);
+        const linea = repo.create({
+          ...createLineaDto,
+          idParqueo: createLineaDto.idParqueo ?? null,
+        });
+        const persisted = await repo.save(linea);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+          entityId: String(persisted.idLinea),
+          detalle: {
+            numeroLinea: persisted.numeroLinea,
+            nombreLinea: persisted.nombreLinea,
+          },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(saved);
   }
 
@@ -74,7 +98,8 @@ export class LineaService {
 
   async update(
     id: string,
-    updateLineaDto: UpdateLineaDto
+    updateLineaDto: UpdateLineaDto,
+    actorEmployeeId: string
   ): Promise<LineaResponseDto> {
     const linea = await this.lineaRepository.findOne({
       where: { idLinea: id },
@@ -93,12 +118,25 @@ export class LineaService {
       );
     }
 
-    Object.assign(linea, updateLineaDto);
-    const updated = await this.lineaRepository.save(linea);
+    const changedFields = Object.keys(updateLineaDto);
+    const updated = await this.lineaRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(LineaEntity);
+        Object.assign(linea, updateLineaDto);
+        const persisted = await repo.save(linea);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+          entityId: String(id),
+          detalle: { changedFields },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(updated);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actorEmployeeId: string): Promise<void> {
     const linea = await this.lineaRepository.findOne({
       where: { idLinea: id },
     });
@@ -108,8 +146,17 @@ export class LineaService {
 
     // Soft delete: set status to INACTIVA (the DB CHECK constraint only
     // allows ACTIVA/INACTIVA for estado_linea).
-    linea.estadoLinea = EstadoLinea.INACTIVA;
-    await this.lineaRepository.save(linea);
+    await this.lineaRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(LineaEntity);
+      linea.estadoLinea = EstadoLinea.INACTIVA;
+      await repo.save(linea);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+        entityId: String(id),
+        detalle: { numeroLinea: linea.numeroLinea },
+      });
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -127,7 +174,8 @@ export class LineaService {
 
   async addParada(
     lineaId: string,
-    dto: AddLineaParadaDto
+    dto: AddLineaParadaDto,
+    actorEmployeeId: string
   ): Promise<LineaParadaEntity> {
     await this.ensureLineaExists(lineaId);
     await validateForeignKey(
@@ -149,19 +197,30 @@ export class LineaService {
 
     await this.ensureOrdenAvailable(lineaId, dto.orden);
 
-    const record = this.lineaParadaRepository.create({
-      idLinea: lineaId,
-      idParada: dto.idParada,
-      orden: dto.orden,
-      minutosHastaSiguiente: dto.minutosHastaSiguiente,
+    return this.lineaParadaRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(LineaParadaEntity);
+      const record = repo.create({
+        idLinea: lineaId,
+        idParada: dto.idParada,
+        orden: dto.orden,
+        minutosHastaSiguiente: dto.minutosHastaSiguiente,
+      });
+      const persisted = await repo.save(record);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.LINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_PARADA,
+        entityId: String(lineaId),
+        detalle: { idParada: dto.idParada, orden: dto.orden },
+      });
+      return persisted;
     });
-    return this.lineaParadaRepository.save(record);
   }
 
   async updateParada(
     lineaId: string,
     lineaParadaId: string,
-    dto: UpdateLineaParadaDto
+    dto: UpdateLineaParadaDto,
+    actorEmployeeId: string
   ): Promise<LineaParadaEntity> {
     const record = await this.findLineaParadaOrFail(lineaId, lineaParadaId);
 
@@ -173,10 +232,25 @@ export class LineaService {
       record.minutosHastaSiguiente = dto.minutosHastaSiguiente;
     }
 
-    return this.lineaParadaRepository.save(record);
+    const changedFields = Object.keys(dto);
+    return this.lineaParadaRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(LineaParadaEntity);
+      const persisted = await repo.save(record);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_PARADA,
+        entityId: String(lineaId),
+        detalle: { lineaParadaId, changedFields },
+      });
+      return persisted;
+    });
   }
 
-  async removeParada(lineaId: string, lineaParadaId: string): Promise<void> {
+  async removeParada(
+    lineaId: string,
+    lineaParadaId: string,
+    actorEmployeeId: string
+  ): Promise<void> {
     const record = await this.findLineaParadaOrFail(lineaId, lineaParadaId);
 
     // The minimum only guards removal: a new línea must be able to receive
@@ -191,7 +265,16 @@ export class LineaService {
       );
     }
 
-    await this.lineaParadaRepository.remove(record);
+    await this.lineaParadaRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(LineaParadaEntity);
+      await repo.remove(record);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UNLINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_PARADA,
+        entityId: String(lineaId),
+        detalle: { lineaParadaId, idParada: record.idParada },
+      });
+    });
   }
 
   /**
@@ -206,7 +289,8 @@ export class LineaService {
    */
   async reorderParadas(
     lineaId: string,
-    dto: ReorderLineaParadasDto
+    dto: ReorderLineaParadasDto,
+    actorEmployeeId: string
   ): Promise<LineaParadaEntity[]> {
     await this.ensureLineaExists(lineaId);
     const ids = dto.idsLineaParada.map(String);
@@ -232,6 +316,12 @@ export class LineaService {
             { orden: index + 1 }
           );
         }
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.REORDER,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_PARADA,
+          entityId: String(lineaId),
+          detalle: { orden: ids },
+        });
       }
 
       return manager.find(LineaParadaEntity, {

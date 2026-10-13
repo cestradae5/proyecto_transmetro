@@ -4,9 +4,14 @@
 
 import { jest } from "@jest/globals";
 import { NotFoundException } from "@nestjs/common";
-import { In, type Repository } from "typeorm";
+import { In, type EntityManager, type Repository } from "typeorm";
 
 import { EstacionEntity } from "../estacion/estacion.entity.js";
+import type { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 import { CreateParadaDto } from "./dto/create-parada.dto.js";
 import { UpdateParadaDto } from "./dto/update-parada.dto.js";
 import { EstadoParada, ParadaEntity } from "./parada.entity.js";
@@ -19,21 +24,30 @@ type MockRepository = {
   findOne: jest.MockedFunction<(options: unknown) => Promise<ParadaEntity | null>>;
   update: jest.MockedFunction<(criteria: unknown, partial: unknown) => Promise<unknown>>;
   remove: jest.MockedFunction<(entity: ParadaEntity) => Promise<ParadaEntity>>;
+  manager: { transaction: jest.MockedFunction<(cb: (m: EntityManager) => unknown) => Promise<unknown>> };
 };
+
+const ACTOR = "7";
 
 type MockEstacionRepository = {
   find: jest.MockedFunction<(options: unknown) => Promise<Partial<EstacionEntity>[]>>;
 };
 
 function makeMockRepository(): MockRepository {
-  return {
+  const repo: MockRepository = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
+  const manager = { getRepository: () => repo } as unknown as EntityManager;
+  repo.manager.transaction.mockImplementation(
+    async (cb: (m: EntityManager) => unknown) => cb(manager),
+  );
+  return repo;
 }
 
 function makeParada(overrides: Partial<ParadaEntity> = {}): ParadaEntity {
@@ -55,15 +69,18 @@ function asResponse(parada: ParadaEntity, idEstacion: number | null = null) {
 describe("ParadaService", () => {
   let repository: MockRepository;
   let estacionRepository: MockEstacionRepository;
+  let audit: { record: jest.MockedFunction<(...args: any[]) => any> };
   let service: ParadaService;
 
   beforeEach(() => {
     repository = makeMockRepository();
     estacionRepository = { find: jest.fn() };
     estacionRepository.find.mockResolvedValue([]);
+    audit = { record: jest.fn() };
     service = new ParadaService(
       repository as unknown as Repository<ParadaEntity>,
       estacionRepository as unknown as Repository<EstacionEntity>,
+      audit as unknown as InfrastructureAuditService,
     );
   });
 
@@ -80,13 +97,19 @@ describe("ParadaService", () => {
       repository.create.mockReturnValue(created);
       repository.save.mockResolvedValue(saved);
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, ACTOR);
 
       expect(repository.create).toHaveBeenCalledWith(dto);
       expect(repository.save).toHaveBeenCalledWith(created);
       expect(result).toEqual(asResponse(saved));
       // A brand-new parada cannot have an estación: no lookup is needed.
       expect(estacionRepository.find).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: "1",
+        detalle: { nombreParada: "Parada Central", estadoParada: EstadoParada.ACTIVA },
+      });
     });
 
     // NOTE: lat/long range validation (-90..90 / -180..180) is enforced by
@@ -187,11 +210,17 @@ describe("ParadaService", () => {
       repository.update.mockResolvedValue({ affected: 1 });
 
       const dto: UpdateParadaDto = { nombreParada: "Parada Renombrada" };
-      const result = await service.update("1", dto);
+      const result = await service.update("1", dto, ACTOR);
 
       // The service parses the route id to a number: id_parada is a bigint column.
       expect(repository.update).toHaveBeenCalledWith({ idParada: 1 }, dto);
       expect(result).toEqual(asResponse(updated));
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: "1",
+        detalle: { changedFields: ["nombreParada"] },
+      });
     });
 
     it("keeps reporting the estación after an update", async () => {
@@ -200,7 +229,7 @@ describe("ParadaService", () => {
       repository.update.mockResolvedValue({ affected: 1 });
       estacionRepository.find.mockResolvedValue([{ idEstacion: 9, idParada: 1 }]);
 
-      const result = await service.update("1", { nombreParada: "X" });
+      const result = await service.update("1", { nombreParada: "X" }, ACTOR);
 
       expect(result.esEstacion).toBe(true);
       expect(result.idEstacion).toBe(9);
@@ -209,10 +238,11 @@ describe("ParadaService", () => {
     it("throws NotFoundException when updating a parada that does not exist", async () => {
       repository.findOne.mockResolvedValue(null);
 
-      await expect(service.update("missing", { nombreParada: "X" })).rejects.toThrow(
+      await expect(service.update("missing", { nombreParada: "X" }, ACTOR)).rejects.toThrow(
         NotFoundException,
       );
       expect(repository.update).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -222,7 +252,7 @@ describe("ParadaService", () => {
       repository.findOne.mockResolvedValue(existing);
       repository.save.mockResolvedValue(existing);
 
-      await service.remove("1");
+      await service.remove("1", false, ACTOR);
 
       // Soft delete mutates the loaded entity and persists it with save(); it
       // deliberately does not go through update() or remove().
@@ -231,6 +261,12 @@ describe("ParadaService", () => {
       );
       expect(repository.update).not.toHaveBeenCalled();
       expect(repository.remove).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: "1",
+        detalle: { nombreParada: "Parada Central", force: false },
+      });
     });
 
     it("hard-deletes via repository.remove when force is true", async () => {
@@ -238,19 +274,26 @@ describe("ParadaService", () => {
       repository.findOne.mockResolvedValue(existing);
       repository.remove.mockResolvedValue(existing);
 
-      await service.remove("1", true);
+      await service.remove("1", true, ACTOR);
 
       expect(repository.remove).toHaveBeenCalledWith(existing);
       expect(repository.update).not.toHaveBeenCalled();
       expect(repository.save).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: "1",
+        detalle: { nombreParada: "Parada Central", force: true },
+      });
     });
 
     it("throws NotFoundException when removing a parada that does not exist", async () => {
       repository.findOne.mockResolvedValue(null);
 
-      await expect(service.remove("missing")).rejects.toThrow(NotFoundException);
+      await expect(service.remove("missing", false, ACTOR)).rejects.toThrow(NotFoundException);
       expect(repository.update).not.toHaveBeenCalled();
       expect(repository.remove).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

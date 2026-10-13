@@ -22,6 +22,12 @@ describe("AuditLogDetailDialog", () => {
     expect(screen.queryByTestId("audit-detalle")).not.toBeInTheDocument();
   });
 
+  it("shows 'Sistema' and no entity id for a failed login without employee", () => {
+    render(<AuditLogDetailDialog entry={LOGIN_FAILED} onClose={vi.fn()} />);
+    expect(screen.getByText("Sistema (intento de inicio de sesión)")).toBeInTheDocument();
+    expect(screen.getByText("jwt")).toBeInTheDocument();
+  });
+
   it("closes with the button and with Escape", () => {
     const onClose = vi.fn();
     render(<AuditLogDetailDialog entry={ENTRY} onClose={onClose} />);

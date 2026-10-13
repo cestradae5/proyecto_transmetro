@@ -56,6 +56,8 @@ describe("ParadaController", () => {
     controller = new ParadaController(service as unknown as ParadaService);
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to ParadaService", () => {
     it("create() delegates to service.create with the request body", async () => {
       const dto: CreateParadaDto = {
@@ -67,9 +69,9 @@ describe("ParadaController", () => {
       const created = makeParada();
       service.create.mockResolvedValue(created);
 
-      const result = await controller.create(dto);
+      const result = await controller.create(dto, request);
 
-      expect(service.create).toHaveBeenCalledWith(dto);
+      expect(service.create).toHaveBeenCalledWith(dto, "7");
       expect(result).toEqual(created);
     });
 
@@ -98,29 +100,29 @@ describe("ParadaController", () => {
       const updated = makeParada({ nombreParada: "Renombrada" });
       service.update.mockResolvedValue(updated);
 
-      const result = await controller.update("1", dto);
+      const result = await controller.update("1", dto, request);
 
-      expect(service.update).toHaveBeenCalledWith("1", dto);
+      expect(service.update).toHaveBeenCalledWith("1", dto, "7");
       expect(result).toEqual(updated);
     });
 
     it("remove() delegates to service.remove with id and force=false when query is absent", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1", undefined);
+      await controller.remove("1", request, undefined);
 
-      expect(service.remove).toHaveBeenCalledWith("1", false);
+      expect(service.remove).toHaveBeenCalledWith("1", false, "7");
     });
 
     it("remove() forwards force=true only when the query string is exactly 'true'", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1", "true");
-      expect(service.remove).toHaveBeenCalledWith("1", true);
+      await controller.remove("1", request, "true");
+      expect(service.remove).toHaveBeenCalledWith("1", true, "7");
 
       service.remove.mockClear();
-      await controller.remove("1", "1");
-      expect(service.remove).toHaveBeenCalledWith("1", false);
+      await controller.remove("1", request, "1");
+      expect(service.remove).toHaveBeenCalledWith("1", false, "7");
     });
   });
 

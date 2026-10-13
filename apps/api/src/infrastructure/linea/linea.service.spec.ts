@@ -10,8 +10,13 @@ import {
 } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
-import type { Repository } from "typeorm";
+import type { EntityManager, Repository } from "typeorm";
 
+import type { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 import { CreateLineaDto } from "./dto/create-linea.dto.js";
 import { ReorderLineaParadasDto } from "./dto/reorder-linea-paradas.dto.js";
 import { EstadoLinea, LineaEntity, TipoRecorrido } from "./linea.entity.js";
@@ -29,17 +34,26 @@ type MockRepository = {
   findOne: AnyMock;
   count: AnyMock;
   remove: AnyMock;
+  manager: { transaction: AnyMock };
 };
 
+const ACTOR = "7";
+
 function makeMockRepository(): MockRepository {
-  return {
+  const repo: MockRepository = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
     findOne: jest.fn(),
     count: jest.fn(),
     remove: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
+  const manager = { getRepository: () => repo } as unknown as EntityManager;
+  repo.manager.transaction.mockImplementation(
+    async (cb: (m: EntityManager) => unknown) => cb(manager)
+  );
+  return repo;
 }
 
 function makeLinea(overrides: Partial<LineaEntity> = {}): LineaEntity {
@@ -78,6 +92,7 @@ describe("LineaService", () => {
   let parqueoRepo: MockRepository;
   let lineaParadaRepo: MockRepository;
   let paradaRepo: MockRepository;
+  let audit: { record: AnyMock };
   let service: LineaService;
 
   beforeEach(() => {
@@ -85,11 +100,13 @@ describe("LineaService", () => {
     parqueoRepo = makeMockRepository();
     lineaParadaRepo = makeMockRepository();
     paradaRepo = makeMockRepository();
+    audit = { record: jest.fn() };
     service = new LineaService(
       lineaRepo as unknown as Repository<LineaEntity>,
       parqueoRepo as unknown as Repository<ParqueoEntity>,
       lineaParadaRepo as unknown as Repository<LineaParadaEntity>,
-      paradaRepo as unknown as Repository<ParadaEntity>
+      paradaRepo as unknown as Repository<ParadaEntity>,
+      audit as unknown as InfrastructureAuditService
     );
   });
 
@@ -109,12 +126,18 @@ describe("LineaService", () => {
       lineaRepo.create.mockReturnValue(saved);
       lineaRepo.save.mockResolvedValue(saved);
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, ACTOR);
 
       expect(parqueoRepo.count).toHaveBeenCalledWith({
         where: { idParqueo: "10" },
       });
       expect(lineaRepo.save).toHaveBeenCalledWith(saved);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+        entityId: "1",
+        detalle: { numeroLinea: "L1", nombreLinea: "Línea 1" },
+      });
       expect(result).toEqual({
         idLinea: "1",
         numeroLinea: "L1",
@@ -130,8 +153,9 @@ describe("LineaService", () => {
       parqueoRepo.count.mockResolvedValue(0);
       parqueoRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+      await expect(service.create(dto, ACTOR)).rejects.toThrow(NotFoundException);
       expect(lineaRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("creates a línea without parqueo and skips the FK check", async () => {
@@ -140,7 +164,7 @@ describe("LineaService", () => {
       lineaRepo.create.mockReturnValue(saved);
       lineaRepo.save.mockResolvedValue(saved);
 
-      const result = await service.create(withoutParqueo);
+      const result = await service.create(withoutParqueo, ACTOR);
 
       expect(parqueoRepo.count).not.toHaveBeenCalled();
       expect(lineaRepo.create).toHaveBeenCalledWith(
@@ -215,10 +239,16 @@ describe("LineaService", () => {
       lineaRepo.findOne.mockResolvedValue(existing);
       lineaRepo.save.mockImplementation(async (l: LineaEntity) => l);
 
-      const result = await service.update("1", { nombreLinea: "Renombrada" });
+      const result = await service.update("1", { nombreLinea: "Renombrada" }, ACTOR);
 
       expect(parqueoRepo.count).not.toHaveBeenCalled();
       expect(result.nombreLinea).toBe("Renombrada");
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+        entityId: "1",
+        detalle: { changedFields: ["nombreLinea"] },
+      });
     });
 
     it("validates the new parqueo FK when idParqueo is provided", async () => {
@@ -226,17 +256,18 @@ describe("LineaService", () => {
       parqueoRepo.count.mockResolvedValue(0);
       parqueoRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.update("1", { idParqueo: "999" })).rejects.toThrow(
+      await expect(service.update("1", { idParqueo: "999" }, ACTOR)).rejects.toThrow(
         NotFoundException
       );
       expect(lineaRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("clears the parqueo without FK validation when idParqueo is null", async () => {
       lineaRepo.findOne.mockResolvedValue(makeLinea());
       lineaRepo.save.mockImplementation(async (l: LineaEntity) => l);
 
-      const result = await service.update("1", { idParqueo: null });
+      const result = await service.update("1", { idParqueo: null }, ACTOR);
 
       expect(parqueoRepo.count).not.toHaveBeenCalled();
       expect(result.idParqueo).toBeNull();
@@ -245,7 +276,7 @@ describe("LineaService", () => {
     it("throws NotFoundException when the línea does not exist", async () => {
       lineaRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.update("missing", {})).rejects.toThrow(
+      await expect(service.update("missing", {}, ACTOR)).rejects.toThrow(
         NotFoundException
       );
     });
@@ -257,17 +288,23 @@ describe("LineaService", () => {
       lineaRepo.findOne.mockResolvedValue(existing);
       lineaRepo.save.mockResolvedValue(existing);
 
-      await service.remove("1");
+      await service.remove("1", ACTOR);
 
       expect(lineaRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({ idLinea: "1", estadoLinea: EstadoLinea.INACTIVA })
       );
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+        entityId: "1",
+        detalle: { numeroLinea: "L1" },
+      });
     });
 
     it("throws NotFoundException when the línea does not exist", async () => {
       lineaRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.remove("missing")).rejects.toThrow(NotFoundException);
+      await expect(service.remove("missing", ACTOR)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -308,7 +345,7 @@ describe("LineaService", () => {
       lineaParadaRepo.create.mockReturnValue(created);
       lineaParadaRepo.save.mockResolvedValue(created);
 
-      const result = await service.addParada("1", dto);
+      const result = await service.addParada("1", dto, ACTOR);
 
       expect(paradaRepo.count).toHaveBeenCalledWith({ where: { idParada: "5" } });
       expect(lineaParadaRepo.create).toHaveBeenCalledWith({
@@ -319,6 +356,12 @@ describe("LineaService", () => {
       });
       expect(lineaParadaRepo.save).toHaveBeenCalledWith(created);
       expect(result).toEqual(created);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.LINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_PARADA,
+        entityId: "1",
+        detalle: { idParada: "5", orden: 1 },
+      });
     });
 
     it("allows adding to an empty línea (minimum rule only guards removal)", async () => {
@@ -328,17 +371,18 @@ describe("LineaService", () => {
       lineaParadaRepo.create.mockReturnValue(makeLineaParada());
       lineaParadaRepo.save.mockResolvedValue(makeLineaParada());
 
-      await expect(service.addParada("1", dto)).resolves.toBeDefined();
+      await expect(service.addParada("1", dto, ACTOR)).resolves.toBeDefined();
       expect(lineaParadaRepo.count).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the línea does not exist", async () => {
       lineaRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.addParada("missing", dto)).rejects.toThrow(
+      await expect(service.addParada("missing", dto, ACTOR)).rejects.toThrow(
         NotFoundException
       );
       expect(lineaParadaRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the parada does not exist", async () => {
@@ -347,7 +391,7 @@ describe("LineaService", () => {
       paradaRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.addParada("1", { ...dto, idParada: "999" })
+        service.addParada("1", { ...dto, idParada: "999" }, ACTOR)
       ).rejects.toThrow("Parada con ID 999 no encontrada");
       expect(lineaParadaRepo.save).not.toHaveBeenCalled();
     });
@@ -360,7 +404,7 @@ describe("LineaService", () => {
         .mockResolvedValueOnce(makeLineaParada({ idParada: "5", orden: 1 })); // orden taken
 
       const error = await service
-        .addParada("1", { idParada: "6", orden: 1, minutosHastaSiguiente: 3 })
+        .addParada("1", { idParada: "6", orden: 1, minutosHastaSiguiente: 3 }, ACTOR)
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
@@ -374,7 +418,7 @@ describe("LineaService", () => {
       lineaParadaRepo.findOne.mockResolvedValueOnce(makeLineaParada());
 
       const error = await service
-        .addParada("1", { idParada: "5", orden: 4, minutosHastaSiguiente: 3 })
+        .addParada("1", { idParada: "5", orden: 4, minutosHastaSiguiente: 3 }, ACTOR)
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
@@ -394,7 +438,7 @@ describe("LineaService", () => {
       const result = await service.updateParada("1", "100", {
         orden: 2,
         minutosHastaSiguiente: 7,
-      });
+      }, ACTOR);
 
       expect(lineaParadaRepo.findOne).toHaveBeenNthCalledWith(1, {
         where: { idLineaParada: "100", idLinea: "1" },
@@ -413,7 +457,7 @@ describe("LineaService", () => {
 
       const result = await service.updateParada("1", "100", {
         minutosHastaSiguiente: 9,
-      });
+      }, ACTOR);
 
       expect(lineaParadaRepo.findOne).toHaveBeenCalledTimes(1);
       expect(result.minutosHastaSiguiente).toBe(9);
@@ -426,7 +470,7 @@ describe("LineaService", () => {
         .mockResolvedValueOnce(makeLineaParada({ idLineaParada: "101", orden: 2 }));
 
       const error = await service
-        .updateParada("1", "100", { orden: 2 })
+        .updateParada("1", "100", { orden: 2 }, ACTOR)
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
@@ -438,7 +482,7 @@ describe("LineaService", () => {
       lineaParadaRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.updateParada("2", "100", { orden: 3 })
+        service.updateParada("2", "100", { orden: 3 }, ACTOR)
       ).rejects.toThrow(NotFoundException);
       expect(lineaParadaRepo.findOne).toHaveBeenCalledWith({
         where: { idLineaParada: "100", idLinea: "2" },
@@ -473,7 +517,7 @@ describe("LineaService", () => {
 
       const result = await service.reorderParadas("1", {
         idsLineaParada: ["102", "100", "101"],
-      });
+      }, ACTOR);
 
       expect(transaction).toHaveBeenCalledTimes(1);
       expect(manager.find).toHaveBeenNthCalledWith(1, LineaParadaEntity, {
@@ -512,7 +556,7 @@ describe("LineaService", () => {
         .mockResolvedValueOnce([]);
 
       await expect(
-        service.reorderParadas("1", { idsLineaParada: ["101", "102", "100"] })
+        service.reorderParadas("1", { idsLineaParada: ["101", "102", "100"] }, ACTOR)
       ).resolves.toEqual([]);
       expect(manager.update).toHaveBeenCalledTimes(3);
     });
@@ -522,7 +566,7 @@ describe("LineaService", () => {
       manager.find.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
       await expect(
-        service.reorderParadas("1", { idsLineaParada: [] })
+        service.reorderParadas("1", { idsLineaParada: [] }, ACTOR)
       ).resolves.toEqual([]);
       expect(manager.increment).not.toHaveBeenCalled();
       expect(manager.update).not.toHaveBeenCalled();
@@ -538,7 +582,7 @@ describe("LineaService", () => {
       manager.find.mockResolvedValueOnce(current);
 
       const error = await service
-        .reorderParadas("1", { idsLineaParada: ids })
+        .reorderParadas("1", { idsLineaParada: ids }, ACTOR)
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(BadRequestException);
@@ -551,7 +595,7 @@ describe("LineaService", () => {
       lineaRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.reorderParadas("missing", { idsLineaParada: ["100"] })
+        service.reorderParadas("missing", { idsLineaParada: ["100"] }, ACTOR)
       ).rejects.toThrow(NotFoundException);
       expect(transaction).not.toHaveBeenCalled();
     });
@@ -585,12 +629,18 @@ describe("LineaService", () => {
       lineaParadaRepo.count.mockResolvedValue(3);
       lineaParadaRepo.remove.mockResolvedValue(record);
 
-      await service.removeParada("1", "100");
+      await service.removeParada("1", "100", ACTOR);
 
       expect(lineaParadaRepo.count).toHaveBeenCalledWith({
         where: { idLinea: "1" },
       });
       expect(lineaParadaRepo.remove).toHaveBeenCalledWith(record);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UNLINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_PARADA,
+        entityId: "1",
+        detalle: { lineaParadaId: "100", idParada: "5" },
+      });
     });
 
     it("rejects removal with 409 LINEA_MIN_PARADAS when only 2 paradas remain", async () => {
@@ -598,7 +648,7 @@ describe("LineaService", () => {
       lineaParadaRepo.count.mockResolvedValue(2);
 
       const error = await service
-        .removeParada("1", "100")
+        .removeParada("1", "100", ACTOR)
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
@@ -609,7 +659,7 @@ describe("LineaService", () => {
     it("throws NotFoundException when the record belongs to another línea", async () => {
       lineaParadaRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.removeParada("2", "100")).rejects.toThrow(
+      await expect(service.removeParada("2", "100", ACTOR)).rejects.toThrow(
         NotFoundException
       );
       expect(lineaParadaRepo.count).not.toHaveBeenCalled();

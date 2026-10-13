@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -37,9 +38,10 @@ export class AfectacionController {
     type: AfectacionResponseDto,
   })
   create(
-    @Body() createAfectacionDto: CreateAfectacionDto
+    @Body() createAfectacionDto: CreateAfectacionDto,
+    @Req() request: Record<string, any>
   ): Promise<AfectacionResponseDto> {
-    return this.afectacionService.create(createAfectacionDto);
+    return this.afectacionService.create(createAfectacionDto, request.user.employeeId);
   }
 
   @Get()
@@ -81,8 +83,11 @@ export class AfectacionController {
   })
   @ApiResponse({ status: 404, description: "Afectación no encontrada" })
   @ApiResponse({ status: 409, description: "La afectación ya está cerrada" })
-  close(@Param("id") id: string): Promise<AfectacionResponseDto> {
-    return this.afectacionService.close(id);
+  close(
+    @Param("id") id: string,
+    @Req() request: Record<string, any>
+  ): Promise<AfectacionResponseDto> {
+    return this.afectacionService.close(id, request.user.employeeId);
   }
 
   @Patch(":id")
@@ -96,9 +101,10 @@ export class AfectacionController {
   @ApiResponse({ status: 404, description: "Afectación no encontrada" })
   update(
     @Param("id") id: string,
-    @Body() updateAfectacionDto: UpdateAfectacionDto
+    @Body() updateAfectacionDto: UpdateAfectacionDto,
+    @Req() request: Record<string, any>
   ): Promise<AfectacionResponseDto> {
-    return this.afectacionService.update(id, updateAfectacionDto);
+    return this.afectacionService.update(id, updateAfectacionDto, request.user.employeeId);
   }
 
   @Delete(":id")
@@ -109,7 +115,10 @@ export class AfectacionController {
     description: "Afectación marcada como CERRADA",
   })
   @ApiResponse({ status: 404, description: "Afectación no encontrada" })
-  remove(@Param("id") id: string): Promise<void> {
-    return this.afectacionService.remove(id);
+  remove(
+    @Param("id") id: string,
+    @Req() request: Record<string, any>
+  ): Promise<void> {
+    return this.afectacionService.remove(id, request.user.employeeId);
   }
 }

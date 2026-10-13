@@ -187,6 +187,29 @@ Base path: `/infrastructure`. All routes below require
 | PATCH | `/:id` | Update |
 | DELETE | `/:id` | Soft delete → `CERRADA` |
 
+## Audit (bitácora)
+
+Every mutation writes exactly one `tbl_bitacora` row inside the same
+transaction as the write, so a change and its audit row commit or roll back
+together (fleet/personal precedent). A rejected request (400/404/409) writes
+no row.
+
+- Writer: `shared/infrastructure-audit.service.ts` (`InfrastructureAuditService.record`).
+- Actor: `request.user.employeeId` set by `AuthenticationGuard`, passed by each
+  controller as the last service argument (never a route or body param).
+- `modulo` is `infrastructure` (shown as "Infraestructura" in the admin web);
+  `resultado` is `EXITOSO`; `detalle` holds a small non-PII summary
+  (created fields, `changedFields` on update, an identifier on remove).
+
+| Entity type (`entidad_tipo`) | Actions (`accion`) | `entidad_id` |
+| --- | --- | --- |
+| `municipalidad`, `acceso`, `parqueo`, `parada`, `estacion`, `linea`, `afectacion` | `create`, `update`, `remove` (afectación `close` is an `update`) | the row's id |
+| `linea_municipalidad` | `link`, `unlink` | the línea id |
+| `estacion_linea` | `link`, `update`, `unlink` | the estación id |
+| `linea_parada` | `link`, `update`, `unlink`, `reorder` | the línea id |
+
+Constants: `shared/infrastructure-audit.constants.ts`.
+
 ## Known Enum/Schema Gotchas
 
 **Do not assume enums are interchangeable across entities.** Each entity's

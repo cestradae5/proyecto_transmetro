@@ -42,6 +42,8 @@ describe("AccesoController", () => {
     controller = new AccesoController(service as unknown as AccesoService);
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to AccesoService", () => {
     it("list() forwards the parada id", async () => {
       service.list.mockResolvedValue([]);
@@ -59,10 +61,10 @@ describe("AccesoController", () => {
       };
       service.create.mockResolvedValue({ idAcceso: "10" });
 
-      await expect(controller.create("1", dto)).resolves.toEqual({
+      await expect(controller.create("1", dto, request)).resolves.toEqual({
         idAcceso: "10",
       });
-      expect(service.create).toHaveBeenCalledWith("1", dto);
+      expect(service.create).toHaveBeenCalledWith("1", dto, "7");
     });
 
     it("findOne() forwards parada and acceso ids", async () => {
@@ -77,17 +79,17 @@ describe("AccesoController", () => {
       const dto = { nombreAcceso: "Acceso sur" };
       service.update.mockResolvedValue({ idAcceso: "10" });
 
-      await controller.update("1", "10", dto);
+      await controller.update("1", "10", dto, request);
 
-      expect(service.update).toHaveBeenCalledWith("1", "10", dto);
+      expect(service.update).toHaveBeenCalledWith("1", "10", dto, "7");
     });
 
     it("remove() forwards parada and acceso ids", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1", "10");
+      await controller.remove("1", "10", request);
 
-      expect(service.remove).toHaveBeenCalledWith("1", "10");
+      expect(service.remove).toHaveBeenCalledWith("1", "10", "7");
     });
   });
 

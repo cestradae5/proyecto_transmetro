@@ -49,15 +49,17 @@ describe("AfectacionController", () => {
     );
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to AfectacionService", () => {
     it("create() forwards the body", async () => {
       const dto = { motivo: "X" } as never;
       service.create.mockResolvedValue({ idAfectacion: "7" });
 
-      await expect(controller.create(dto)).resolves.toEqual({
+      await expect(controller.create(dto, request)).resolves.toEqual({
         idAfectacion: "7",
       });
-      expect(service.create).toHaveBeenCalledWith(dto);
+      expect(service.create).toHaveBeenCalledWith(dto, "7");
     });
 
     it("findAll() delegates", async () => {
@@ -80,17 +82,17 @@ describe("AfectacionController", () => {
       const dto = { motivo: "Reparación ampliada" };
       service.update.mockResolvedValue({ idAfectacion: "7" });
 
-      await controller.update("7", dto);
+      await controller.update("7", dto, request);
 
-      expect(service.update).toHaveBeenCalledWith("7", dto);
+      expect(service.update).toHaveBeenCalledWith("7", dto, "7");
     });
 
     it("remove() forwards the id", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("7");
+      await controller.remove("7", request);
 
-      expect(service.remove).toHaveBeenCalledWith("7");
+      expect(service.remove).toHaveBeenCalledWith("7", "7");
     });
 
     it("close() forwards the id and returns the closed afectación", async () => {
@@ -99,11 +101,11 @@ describe("AfectacionController", () => {
         estadoAfectacion: "CERRADA",
       });
 
-      await expect(controller.close("7")).resolves.toEqual({
+      await expect(controller.close("7", request)).resolves.toEqual({
         idAfectacion: "7",
         estadoAfectacion: "CERRADA",
       });
-      expect(service.close).toHaveBeenCalledWith("7");
+      expect(service.close).toHaveBeenCalledWith("7", "7");
     });
   });
 

@@ -18,9 +18,11 @@ export const LOGIN_FAILED: AuditLogEntry = {
   module: "authentication",
   action: "LOGIN",
   entityType: "jwt",
-  entityId: "0",
+  // A failed login is recorded with no entity and no employee (API sends null).
+  entityId: null,
   result: "FALLIDO",
   detalle: null,
+  employee: null,
 };
 
 export function page(items: AuditLogEntry[], overrides: Partial<AuditLogPage> = {}): AuditLogPage {

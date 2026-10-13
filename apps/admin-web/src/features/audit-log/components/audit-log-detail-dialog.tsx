@@ -1,6 +1,13 @@
 import { useEffect, useId } from "react";
 import type { AuditLogEntry } from "../types/audit-log.types";
-import { formatAuditDate, moduleLabel, RESULT_LABELS } from "../utils/labels";
+import {
+  entityLabel,
+  formatAuditDate,
+  moduleLabel,
+  RESULT_LABELS,
+  SYSTEM_ACTOR_HINT,
+  SYSTEM_ACTOR_LABEL,
+} from "../utils/labels";
 
 interface AuditLogDetailDialogProps {
   entry: AuditLogEntry;
@@ -20,10 +27,15 @@ export function AuditLogDetailDialog({ entry, onClose }: AuditLogDetailDialogPro
 
   const fields: Array<[string, string]> = [
     ["Fecha y hora", formatAuditDate(entry.createdAt)],
-    ["Usuario", `${entry.employee.name} (${entry.employee.email})`],
+    [
+      "Usuario",
+      entry.employee
+        ? `${entry.employee.name} (${entry.employee.email})`
+        : `${SYSTEM_ACTOR_LABEL} (${SYSTEM_ACTOR_HINT.toLowerCase()})`,
+    ],
     ["Módulo", moduleLabel(entry.module)],
     ["Acción", entry.action],
-    ["Entidad", `${entry.entityType} #${entry.entityId}`],
+    ["Entidad", entityLabel(entry.entityType, entry.entityId)],
     ["Resultado", RESULT_LABELS[entry.result] ?? entry.result],
   ];
 

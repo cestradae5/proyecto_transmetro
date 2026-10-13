@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -37,9 +38,10 @@ export class ParqueoController {
     type: ParqueoResponseDto,
   })
   create(
-    @Body() createParqueoDto: CreateParqueoDto
+    @Body() createParqueoDto: CreateParqueoDto,
+    @Req() request: Record<string, any>
   ): Promise<ParqueoResponseDto> {
-    return this.parqueoService.create(createParqueoDto);
+    return this.parqueoService.create(createParqueoDto, request.user.employeeId);
   }
 
   @Get()
@@ -78,9 +80,10 @@ export class ParqueoController {
   @ApiResponse({ status: 404, description: "Parqueo no encontrado" })
   update(
     @Param("id") id: string,
-    @Body() updateParqueoDto: UpdateParqueoDto
+    @Body() updateParqueoDto: UpdateParqueoDto,
+    @Req() request: Record<string, any>
   ): Promise<ParqueoResponseDto> {
-    return this.parqueoService.update(id, updateParqueoDto);
+    return this.parqueoService.update(id, updateParqueoDto, request.user.employeeId);
   }
 
   @Delete(":id")
@@ -91,7 +94,10 @@ export class ParqueoController {
     description: "Parqueo marcado como CERRADO",
   })
   @ApiResponse({ status: 404, description: "Parqueo no encontrado" })
-  remove(@Param("id") id: string): Promise<void> {
-    return this.parqueoService.remove(id);
+  remove(
+    @Param("id") id: string,
+    @Req() request: Record<string, any>
+  ): Promise<void> {
+    return this.parqueoService.remove(id, request.user.employeeId);
   }
 }

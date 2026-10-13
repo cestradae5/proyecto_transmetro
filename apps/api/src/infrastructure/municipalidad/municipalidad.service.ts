@@ -12,6 +12,11 @@ import {
 import { CreateMunicipalidadDto } from "./dto/create-municipalidad.dto.js";
 import { UpdateMunicipalidadDto } from "./dto/update-municipalidad.dto.js";
 import { MunicipalidadResponseDto } from "./dto/municipalidad-response.dto.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 const PG_UNIQUE_VIOLATION = "23505";
 
@@ -28,17 +33,39 @@ export function isUniqueViolation(error: unknown): boolean {
 export class MunicipalidadService {
   constructor(
     @InjectRepository(MunicipalidadEntity)
-    private readonly municipalidadRepository: Repository<MunicipalidadEntity>
+    private readonly municipalidadRepository: Repository<MunicipalidadEntity>,
+    private readonly audit: InfrastructureAuditService
   ) {}
 
-  async create(dto: CreateMunicipalidadDto): Promise<MunicipalidadResponseDto> {
+  async create(
+    dto: CreateMunicipalidadDto,
+    actorEmployeeId: string
+  ): Promise<MunicipalidadResponseDto> {
     await this.ensureNombreAvailable(dto.nombreMunicipalidad);
 
-    const municipalidad = this.municipalidadRepository.create({
-      ...dto,
-      estadoMunicipalidad: dto.estadoMunicipalidad ?? EstadoMunicipalidad.ACTIVA,
-    });
-    const saved = await this.saveOrConflict(municipalidad);
+    // The write and its audit row commit or roll back together.
+    const saved = await this.municipalidadRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(MunicipalidadEntity);
+        const municipalidad = repo.create({
+          ...dto,
+          estadoMunicipalidad:
+            dto.estadoMunicipalidad ?? EstadoMunicipalidad.ACTIVA,
+        });
+        const persisted = await this.saveOrConflict(repo, municipalidad);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.MUNICIPALIDAD,
+          entityId: persisted.idMunicipalidad,
+          detalle: {
+            nombreMunicipalidad: persisted.nombreMunicipalidad,
+            departamento: persisted.departamento,
+            estadoMunicipalidad: persisted.estadoMunicipalidad,
+          },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(saved);
   }
 
@@ -56,7 +83,8 @@ export class MunicipalidadService {
 
   async update(
     id: string,
-    dto: UpdateMunicipalidadDto
+    dto: UpdateMunicipalidadDto,
+    actorEmployeeId: string
   ): Promise<MunicipalidadResponseDto> {
     const municipalidad = await this.findOrFail(id);
 
@@ -67,18 +95,40 @@ export class MunicipalidadService {
       await this.ensureNombreAvailable(dto.nombreMunicipalidad, id);
     }
 
-    Object.assign(municipalidad, dto);
-    const updated = await this.saveOrConflict(municipalidad);
+    const changedFields = Object.keys(dto);
+    const updated = await this.municipalidadRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(MunicipalidadEntity);
+        Object.assign(municipalidad, dto);
+        const persisted = await this.saveOrConflict(repo, municipalidad);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.MUNICIPALIDAD,
+          entityId: persisted.idMunicipalidad,
+          detalle: { changedFields },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(updated);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actorEmployeeId: string): Promise<void> {
     const municipalidad = await this.findOrFail(id);
 
     // Soft delete like the sibling infrastructure modules: the row (and its
     // línea links) is kept and only marked INACTIVA, which the DB CHECK allows.
-    municipalidad.estadoMunicipalidad = EstadoMunicipalidad.INACTIVA;
-    await this.municipalidadRepository.save(municipalidad);
+    await this.municipalidadRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(MunicipalidadEntity);
+      municipalidad.estadoMunicipalidad = EstadoMunicipalidad.INACTIVA;
+      await repo.save(municipalidad);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.MUNICIPALIDAD,
+        entityId: id,
+        detalle: { nombreMunicipalidad: municipalidad.nombreMunicipalidad },
+      });
+    });
   }
 
   private async findOrFail(id: string): Promise<MunicipalidadEntity> {
@@ -106,10 +156,11 @@ export class MunicipalidadService {
   // The pre-check covers the common case; the unique constraint still guards
   // concurrent writes, so its violation is translated to the same 409.
   private async saveOrConflict(
+    repo: Repository<MunicipalidadEntity>,
     municipalidad: MunicipalidadEntity
   ): Promise<MunicipalidadEntity> {
     try {
-      return await this.municipalidadRepository.save(municipalidad);
+      return await repo.save(municipalidad);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw this.duplicateNombre(municipalidad.nombreMunicipalidad);

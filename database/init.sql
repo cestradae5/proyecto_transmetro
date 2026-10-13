@@ -456,9 +456,9 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
     modulo VARCHAR(60) NOT NULL,
     accion VARCHAR(80) NOT NULL,
     entidad_tipo VARCHAR(60) NOT NULL,
-    entidad_id BIGINT NOT NULL,
+    entidad_id BIGINT,
     resultado VARCHAR(30) NOT NULL CHECK (resultado IN ('EXITOSO', 'FALLIDO', 'ERROR')),
-    id_empleado BIGINT NOT NULL,
+    id_empleado BIGINT,
     detalle JSONB,
     FOREIGN KEY (id_empleado) REFERENCES tbl_empleado (id_emple)
 );
@@ -480,6 +480,14 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
 -- auditoría de auth escritas antes de esta columna conservan detalle = NULL.
 
 ALTER TABLE tbl_bitacora ADD COLUMN IF NOT EXISTS detalle JSONB;
+
+-- tbl_bitacora.id_empleado / entidad_id — nullable. Un login fallido se
+-- registra solo como "ocurrió un intento": sin empleado, sin entidad y sin el
+-- correo intentado. DROP NOT NULL es idempotente (no falla si ya es nullable),
+-- así que las bases existentes se actualizan al re-aplicar este archivo.
+
+ALTER TABLE tbl_bitacora ALTER COLUMN id_empleado DROP NOT NULL;
+ALTER TABLE tbl_bitacora ALTER COLUMN entidad_id DROP NOT NULL;
 
 -- tbl_empleado: perfil de RR. HH. del módulo Personal. Todas las columnas son
 -- nullable para que las filas existentes (p. ej. el admin del seed) sigan

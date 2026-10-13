@@ -6,7 +6,13 @@ import {
   HttpException,
   NotFoundException,
 } from "@nestjs/common";
-import { QueryFailedError, type Repository } from "typeorm";
+import { QueryFailedError, type EntityManager, type Repository } from "typeorm";
+
+import type { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 import {
   EstadoLinea,
@@ -29,17 +35,26 @@ type MockRepository = {
   findOne: AnyMock;
   count: AnyMock;
   remove: AnyMock;
+  manager: { transaction: AnyMock };
 };
 
+const ACTOR = "7";
+
 function makeMockRepository(): MockRepository {
-  return {
+  const repo: MockRepository = {
     create: jest.fn(),
     save: jest.fn(),
     find: jest.fn(),
     findOne: jest.fn(),
     count: jest.fn(),
     remove: jest.fn(),
+    manager: { transaction: jest.fn() },
   };
+  const manager = { getRepository: () => repo } as unknown as EntityManager;
+  repo.manager.transaction.mockImplementation(
+    async (cb: (m: EntityManager) => unknown) => cb(manager)
+  );
+  return repo;
 }
 
 const municipalidad: MunicipalidadEntity = {
@@ -63,16 +78,19 @@ describe("LineaMunicipalidadService", () => {
   let linkRepo: MockRepository;
   let lineaRepo: MockRepository;
   let municipalidadRepo: MockRepository;
+  let audit: { record: AnyMock };
   let service: LineaMunicipalidadService;
 
   beforeEach(() => {
     linkRepo = makeMockRepository();
     lineaRepo = makeMockRepository();
     municipalidadRepo = makeMockRepository();
+    audit = { record: jest.fn() };
     service = new LineaMunicipalidadService(
       linkRepo as unknown as Repository<LineaMunicipalidadEntity>,
       lineaRepo as unknown as Repository<LineaEntity>,
-      municipalidadRepo as unknown as Repository<MunicipalidadEntity>
+      municipalidadRepo as unknown as Repository<MunicipalidadEntity>,
+      audit as unknown as InfrastructureAuditService
     );
   });
 
@@ -171,7 +189,7 @@ describe("LineaMunicipalidadService", () => {
       linkRepo.create.mockImplementation((v) => v);
       linkRepo.save.mockImplementation(async (v) => v);
 
-      const result = await service.add("3", dto);
+      const result = await service.add("3", dto, ACTOR);
 
       expect(linkRepo.create).toHaveBeenCalledWith({
         idLinea: "3",
@@ -182,23 +200,31 @@ describe("LineaMunicipalidadService", () => {
         idMunicipalidad: "4",
         nombreMunicipalidad: "Villa Nueva",
       });
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.LINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_MUNICIPALIDAD,
+        entityId: "3",
+        detalle: { idMunicipalidad: "4" },
+      });
     });
 
     it("throws NotFoundException when the línea does not exist", async () => {
       lineaRepo.count.mockResolvedValue(0);
-      await expect(service.add("99", dto)).rejects.toBeInstanceOf(
+      await expect(service.add("99", dto, ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
       );
       expect(linkRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the municipalidad does not exist", async () => {
       lineaRepo.count.mockResolvedValue(1);
       municipalidadRepo.findOne.mockResolvedValue(null);
-      await expect(service.add("3", dto)).rejects.toBeInstanceOf(
+      await expect(service.add("3", dto, ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
       );
       expect(linkRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("rejects a duplicate link with LINEA_MUNICIPALIDAD_DUPLICATE", async () => {
@@ -206,11 +232,12 @@ describe("LineaMunicipalidadService", () => {
       municipalidadRepo.findOne.mockResolvedValue(municipalidad);
       linkRepo.findOne.mockResolvedValue(makeLink());
 
-      const error = await service.add("3", dto).catch((e) => e);
+      const error = await service.add("3", dto, ACTOR).catch((e) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
       expect(errorCode(error)).toBe("LINEA_MUNICIPALIDAD_DUPLICATE");
       expect(linkRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("translates a concurrent PK violation into 409", async () => {
@@ -226,7 +253,7 @@ describe("LineaMunicipalidadService", () => {
         )
       );
 
-      const error = await service.add("3", dto).catch((e) => e);
+      const error = await service.add("3", dto, ACTOR).catch((e) => e);
 
       expect(error).toBeInstanceOf(ConflictException);
       expect(errorCode(error)).toBe("LINEA_MUNICIPALIDAD_DUPLICATE");
@@ -238,20 +265,27 @@ describe("LineaMunicipalidadService", () => {
       const link = makeLink();
       linkRepo.findOne.mockResolvedValue(link);
 
-      await service.remove("3", "4");
+      await service.remove("3", "4", ACTOR);
 
       expect(linkRepo.findOne).toHaveBeenCalledWith({
         where: { idLinea: "3", idMunicipalidad: "4" },
       });
       expect(linkRepo.remove).toHaveBeenCalledWith(link);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UNLINK,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA_MUNICIPALIDAD,
+        entityId: "3",
+        detalle: { idMunicipalidad: "4" },
+      });
     });
 
     it("throws NotFoundException when the link does not exist", async () => {
       linkRepo.findOne.mockResolvedValue(null);
-      await expect(service.remove("3", "4")).rejects.toBeInstanceOf(
+      await expect(service.remove("3", "4", ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
       );
       expect(linkRepo.remove).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

@@ -21,6 +21,16 @@ describe("AuditLogTable", () => {
     expect(second.getByText("Fallido")).toBeInTheDocument();
   });
 
+  it("renders a failed login without employee as 'Sistema' and its entity without id", () => {
+    render(<AuditLogTable items={[LOGIN_FAILED]} onSelect={vi.fn()} />);
+
+    const row = within(screen.getAllByRole("row")[1]!);
+    expect(row.getByText("Sistema")).toBeInTheDocument();
+    expect(row.getByText("Intento de inicio de sesión")).toBeInTheDocument();
+    expect(row.getByText("jwt")).toBeInTheDocument();
+    expect(row.queryByText(/#/)).not.toBeInTheDocument();
+  });
+
   it("shows the empty state", () => {
     render(<AuditLogTable items={[]} onSelect={vi.fn()} />);
     expect(screen.getByText("No hay registros que coincidan con los filtros.")).toBeInTheDocument();
