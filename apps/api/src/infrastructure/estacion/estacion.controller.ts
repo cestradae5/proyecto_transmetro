@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Query,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -44,9 +45,10 @@ export class EstacionController {
     description: "La parada ya tiene una estación asociada",
   })
   create(
-    @Body() createEstacionDto: CreateEstacionDto
+    @Body() createEstacionDto: CreateEstacionDto,
+    @Req() request: Record<string, any>
   ): Promise<EstacionResponseDto> {
-    return this.estacionService.create(createEstacionDto);
+    return this.estacionService.create(createEstacionDto, request.user.employeeId);
   }
 
   @Get()
@@ -89,9 +91,10 @@ export class EstacionController {
   })
   update(
     @Param("id") id: string,
-    @Body() updateEstacionDto: UpdateEstacionDto
+    @Body() updateEstacionDto: UpdateEstacionDto,
+    @Req() request: Record<string, any>
   ): Promise<EstacionResponseDto> {
-    return this.estacionService.update(id, updateEstacionDto);
+    return this.estacionService.update(id, updateEstacionDto, request.user.employeeId);
   }
 
   @Delete(":id")
@@ -118,8 +121,9 @@ export class EstacionController {
   })
   remove(
     @Param("id") id: string,
+    @Req() request: Record<string, any>,
     @Query("force") force?: string
   ): Promise<void> {
-    return this.estacionService.remove(id, force === "true");
+    return this.estacionService.remove(id, force === "true", request.user.employeeId);
   }
 }

@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
@@ -39,9 +40,10 @@ export class EstacionLineaController {
   @ApiOperation({ summary: "Vincular una línea a una estación" })
   add(
     @Param("id") id: string,
-    @Body() dto: CreateEstacionLineaDto
+    @Body() dto: CreateEstacionLineaDto,
+    @Req() request: Record<string, any>
   ): Promise<EstacionLineaResponseDto> {
-    return this.estacionLineaService.add(id, dto);
+    return this.estacionLineaService.add(id, dto, request.user.employeeId);
   }
 
   @Patch(":lineId")
@@ -50,9 +52,10 @@ export class EstacionLineaController {
   update(
     @Param("id") id: string,
     @Param("lineId") lineId: string,
-    @Body() dto: UpdateEstacionLineaDto
+    @Body() dto: UpdateEstacionLineaDto,
+    @Req() request: Record<string, any>
   ): Promise<EstacionLineaResponseDto> {
-    return this.estacionLineaService.update(id, lineId, dto);
+    return this.estacionLineaService.update(id, lineId, dto, request.user.employeeId);
   }
 
   @Delete(":lineId")
@@ -61,8 +64,9 @@ export class EstacionLineaController {
   @ApiOperation({ summary: "Eliminar el vínculo estación-línea" })
   remove(
     @Param("id") id: string,
-    @Param("lineId") lineId: string
+    @Param("lineId") lineId: string,
+    @Req() request: Record<string, any>
   ): Promise<void> {
-    return this.estacionLineaService.remove(id, lineId);
+    return this.estacionLineaService.remove(id, lineId, request.user.employeeId);
   }
 }

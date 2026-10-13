@@ -12,6 +12,11 @@ import { UpdateEstacionDto } from "./dto/update-estacion.dto.js";
 import { EstacionResponseDto } from "./dto/estacion-response.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 const PG_FOREIGN_KEY_VIOLATION = "23503";
 
@@ -30,11 +35,13 @@ export class EstacionService {
     @InjectRepository(EstacionEntity)
     private readonly estacionRepository: Repository<EstacionEntity>,
     @InjectRepository(ParadaEntity)
-    private readonly paradaRepository: Repository<ParadaEntity>
+    private readonly paradaRepository: Repository<ParadaEntity>,
+    private readonly audit: InfrastructureAuditService
   ) {}
 
   async create(
-    createEstacionDto: CreateEstacionDto
+    createEstacionDto: CreateEstacionDto,
+    actorEmployeeId: string
   ): Promise<EstacionResponseDto> {
     // An estación is a 1:1 extension of a parada: the parada must exist and
     // must not already have an estación (tbl_estacion.id_parada is UNIQUE).
@@ -46,8 +53,23 @@ export class EstacionService {
     );
     await this.ensureParadaWithoutEstacion(createEstacionDto.idParada);
 
-    const estacion = this.estacionRepository.create(createEstacionDto);
-    const saved = await this.estacionRepository.save(estacion);
+    const saved = await this.estacionRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(EstacionEntity);
+        const estacion = repo.create(createEstacionDto);
+        const persisted = await repo.save(estacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
+          entityId: String(persisted.idEstacion),
+          detalle: {
+            nombreEstacion: persisted.nombreEstacion,
+            idParada: persisted.idParada,
+          },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(saved);
   }
 
@@ -68,7 +90,8 @@ export class EstacionService {
 
   async update(
     id: string,
-    updateEstacionDto: UpdateEstacionDto
+    updateEstacionDto: UpdateEstacionDto,
+    actorEmployeeId: string
   ): Promise<EstacionResponseDto> {
     const estacion = await this.estacionRepository.findOne({
       where: { idEstacion: Number(id) },
@@ -96,12 +119,29 @@ export class EstacionService {
       await this.ensureParadaWithoutEstacion(updateEstacionDto.idParada);
     }
 
-    Object.assign(estacion, updateEstacionDto);
-    const updated = await this.estacionRepository.save(estacion);
+    const changedFields = Object.keys(updateEstacionDto);
+    const updated = await this.estacionRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(EstacionEntity);
+        Object.assign(estacion, updateEstacionDto);
+        const persisted = await repo.save(estacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
+          entityId: String(id),
+          detalle: { changedFields },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(updated);
   }
 
-  async remove(id: string, force = false): Promise<void> {
+  async remove(
+    id: string,
+    force: boolean,
+    actorEmployeeId: string
+  ): Promise<void> {
     const estacion = await this.estacionRepository.findOne({
       where: { idEstacion: Number(id) },
     });
@@ -111,8 +151,17 @@ export class EstacionService {
 
     if (!force) {
       // Soft delete: set status to CERRADA
-      estacion.estadoEstacion = "CERRADA";
-      await this.estacionRepository.save(estacion);
+      await this.estacionRepository.manager.transaction(async (manager) => {
+        const repo = manager.getRepository(EstacionEntity);
+        estacion.estadoEstacion = "CERRADA";
+        await repo.save(estacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
+          entityId: String(id),
+          detalle: { nombreEstacion: estacion.nombreEstacion, force: false },
+        });
+      });
       return;
     }
 
@@ -121,7 +170,16 @@ export class EstacionService {
     // tbl_asignacion_estacion, tbl_alerta, ...) make Postgres reject the
     // delete; that is translated to a 409 instead of cascading.
     try {
-      await this.estacionRepository.remove(estacion);
+      await this.estacionRepository.manager.transaction(async (manager) => {
+        const repo = manager.getRepository(EstacionEntity);
+        await repo.remove(estacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
+          entityId: String(id),
+          detalle: { nombreEstacion: estacion.nombreEstacion, force: true },
+        });
+      });
     } catch (error) {
       if (isForeignKeyViolation(error)) {
         throw new ConflictException(
