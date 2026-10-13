@@ -456,9 +456,9 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
     modulo VARCHAR(60) NOT NULL,
     accion VARCHAR(80) NOT NULL,
     entidad_tipo VARCHAR(60) NOT NULL,
-    entidad_id BIGINT NOT NULL,
+    entidad_id BIGINT,
     resultado VARCHAR(30) NOT NULL CHECK (resultado IN ('EXITOSO', 'FALLIDO', 'ERROR')),
-    id_empleado BIGINT NOT NULL,
+    id_empleado BIGINT,
     detalle JSONB,
     FOREIGN KEY (id_empleado) REFERENCES tbl_empleado (id_emple)
 );

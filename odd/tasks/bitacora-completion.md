@@ -44,7 +44,7 @@ without crashing. The read-only viewer already exists (PR #72).
 - [x] T6  `estacion` (+ `estacion-linea`) audit + actor + tests. Commit: feat(api).
 - [x] T7  `linea` (+ `linea-parada`) audit + actor + tests. Commit: feat(api).
 - [x] T8  `afectacion` audit + actor + tests (if it has mutations). Commit: feat(api).
-- [ ] T9  Schema: id_empleado + entidad_id nullable in `database/init.sql` (S6). Commit: feat(db).
+- [x] T9  Schema: id_empleado + entidad_id nullable in `database/init.sql` (S6). Commit: feat(db).
 - [ ] T10 Failed-login records FALLIDO row without crashing, returns 401 (S5). Test-first. Commit: fix(api).
 - [ ] T11 Viewer LEFT JOIN + nullable employee/entityId in DTO/service + update viewer unit/e2e specs (S7). Commit: feat(api).
 - [ ] T12 admin-web: render null employee as "Sistema"/"—" in table + detail dialog + tests (S7). Commit: feat(admin-web).
@@ -67,6 +67,8 @@ without crashing. The read-only viewer already exists (PR #72).
 
 - T8: afectacion create/update/close(UPDATE)/remove audited inside transaction; actor threaded. `npm test -- afectacion` 2 suites / 33.
 - Infra auditing complete (T1-T8). Full api `npm test` 65 suites / 738 passed; `tsc -p tsconfig.build.json --noEmit` exit 0.
+
+- T9: `database/init.sql` tbl_bitacora -> `entidad_id BIGINT` and `id_empleado BIGINT` now nullable (DDL; existing NOT NULL inserts unaffected). Enables the minimal failed-login row (S6). Entity/repository nullability + viewer land in T10/T11.
 
 ## Log
 - L1 (user request, verbatim): "Hola necesito que me ayudes a terminar la bitacora al 100% de usabilidad"
