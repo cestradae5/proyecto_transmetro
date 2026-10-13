@@ -483,19 +483,35 @@ describe("Login JWT stateless transactional contract", () => {
       expect.objectContaining({ message: "Credenciales inválidas." }),
     );
 
-    // The failed attempt is still audited, with no employee row attached and
-    // no session identifier to record.
+    // The failed attempt is still audited: only the fact that it happened.
+    // No employee, no entity id and never the attempted email (S5).
     expect(auditCreate).toHaveBeenCalledTimes(1);
     expect(auditSave).toHaveBeenCalledTimes(1);
-    expect(lastAuditEntry()).toEqual(
+    const entry = lastAuditEntry();
+    expect(entry).toEqual(
       expect.objectContaining({
         action: "LOGIN",
-        entityId: "jwt-login",
+        employee: null,
+        entityId: null,
         entityType: "jwt",
         module: "authentication",
         result: AUDIT_RESULTS.FAILURE,
       }),
     );
+    expect(JSON.stringify(entry).toLowerCase()).not.toContain("inactive@transmetro.gt");
+  });
+
+  it("commits the failed-login row: the transaction resolves and the 401 is thrown afterwards", async () => {
+    const { service, transaction } = makeLoginHarness(null, "ghost@transmetro.gt");
+
+    await expect(service.login("credential")).rejects.toEqual(
+      expect.objectContaining({ message: "Credenciales inválidas." }),
+    );
+
+    // Throwing inside the callback would roll the audit row back; the
+    // transaction must settle successfully so the FALLIDO row is persisted.
+    expect(transaction).toHaveBeenCalledTimes(1);
+    await expect(transaction.mock.results[0]!.value).resolves.toBeNull();
   });
 
   it("looks up the employee with the trimmed, uppercased verified email", async () => {

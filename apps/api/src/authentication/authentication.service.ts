@@ -99,20 +99,23 @@ export class AuthenticationService {
     const { email } = await this.googleVerifier.verify(credential);
     const normalizedEmail = email.trim().toUpperCase(); // case-insensitive lookup
 
-    return this.dataSource.transaction(async (manager: EntityManager) => {
+    const result = await this.dataSource.transaction(async (manager: EntityManager) => {
       // Busca empleado ACTIVO con ROL ACTIVO
       const employee = await this.employeeRepo.findEligibleByEmail(manager, normalizedEmail);
       if (!employee) {
-        // Auditoría de intento fallido
+        // Auditoría de intento fallido: solo registra que ocurrió.
+        // Sin empleado, sin entidad y sin el correo intentado. Se escribe y la
+        // transacción COMMITEA (no se lanza adentro, eso haría rollback de la fila);
+        // el 401 se lanza afuera.
         await this.auditRepo.create(manager, {
           action: "LOGIN",
-          employee: { id: "unknown" } as EmployeeEntity,
-          entityId: "jwt-login",
+          employee: null,
+          entityId: null,
           entityType: "jwt",
           module: "authentication",
           result: AUDIT_RESULTS.FAILURE,
         });
-        throw new InvalidCredentials(); // mensaje genérico
+        return null;
       }
 
       const roleName = employee.role?.name ?? "NONE";
@@ -156,6 +159,11 @@ export class AuthenticationService {
         },
       };
     });
+
+    if (!result) {
+      throw new InvalidCredentials(); // mensaje genérico, tras commitear la fila FALLIDO
+    }
+    return result;
   }
 
   // Verifica JWT y retorna payload decodificado.

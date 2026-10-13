@@ -34,8 +34,8 @@ export class AuditLogEntity {
   @Column({ length: 60, name: "entidad_tipo", type: "varchar" })
   entityType!: string;
 
-  @Column({ name: "entidad_id", type: "bigint" })
-  entityId!: string;
+  @Column({ name: "entidad_id", nullable: true, type: "bigint" })
+  entityId!: string | null;
 
   @Column({ length: 30, name: "resultado", type: "varchar" })
   result!: AuditResult;
@@ -43,9 +43,11 @@ export class AuditLogEntity {
   @Column({ name: "detalle", nullable: true, type: "jsonb" })
   detalle?: Record<string, unknown> | null;
 
+  // Nullable: a failed login records that an attempt happened without tying it
+  // to any employee (and with no attempted email), so id_empleado is null.
   @ManyToOne(() => EmployeeEntity, (employee) => employee.auditLogs, {
-    nullable: false,
+    nullable: true,
   })
   @JoinColumn({ name: "id_empleado" })
-  employee!: Relation<EmployeeEntity>;
+  employee!: Relation<EmployeeEntity> | null;
 }
