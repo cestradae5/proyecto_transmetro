@@ -2,11 +2,18 @@
 
 import { jest } from "@jest/globals";
 import { NotFoundException } from "@nestjs/common";
-import type { Repository } from "typeorm";
+import type { EntityManager, Repository } from "typeorm";
 
 import { ParadaEntity } from "../parada/parada.entity.js";
+import type { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 import { AccesoEntity, EstadoAcceso, TipoAcceso } from "./acceso.entity.js";
 import { AccesoService } from "./acceso.service.js";
+
+const ACTOR = "7";
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -15,6 +22,7 @@ type MockAccesoRepository = {
   save: AnyMock;
   find: AnyMock;
   findOne: AnyMock;
+  manager: { transaction: AnyMock };
 };
 
 type MockParadaRepository = {
@@ -37,6 +45,7 @@ function makeAcceso(overrides: Partial<AccesoEntity> = {}): AccesoEntity {
 describe("AccesoService", () => {
   let accesoRepo: MockAccesoRepository;
   let paradaRepo: MockParadaRepository;
+  let audit: { record: AnyMock };
   let service: AccesoService;
 
   beforeEach(() => {
@@ -45,13 +54,22 @@ describe("AccesoService", () => {
       save: jest.fn(),
       find: jest.fn(),
       findOne: jest.fn(),
+      manager: { transaction: jest.fn() },
     };
+    const manager = {
+      getRepository: () => accesoRepo,
+    } as unknown as EntityManager;
+    accesoRepo.manager.transaction.mockImplementation(
+      async (cb: (m: EntityManager) => unknown) => cb(manager)
+    );
     // validateForeignKey counts the parada; 1 = exists by default.
     paradaRepo = { count: jest.fn() };
     paradaRepo.count.mockResolvedValue(1);
+    audit = { record: jest.fn() };
     service = new AccesoService(
       accesoRepo as unknown as Repository<AccesoEntity>,
-      paradaRepo as unknown as Repository<ParadaEntity>
+      paradaRepo as unknown as Repository<ParadaEntity>,
+      audit as unknown as InfrastructureAuditService
     );
   });
 
@@ -95,7 +113,7 @@ describe("AccesoService", () => {
       accesoRepo.create.mockImplementation((v) => v);
       accesoRepo.save.mockImplementation(async (v) => ({ ...v, idAcceso: "11" }));
 
-      const result = await service.create("1", dto);
+      const result = await service.create("1", dto, ACTOR);
 
       expect(accesoRepo.create).toHaveBeenCalledWith({
         ...dto,
@@ -111,16 +129,28 @@ describe("AccesoService", () => {
         tipoAcceso: TipoAcceso.RAMPA,
         estadoAcceso: EstadoAcceso.HABILITADO,
       });
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.ACCESO,
+        entityId: "11",
+        detalle: {
+          idParada: "1",
+          nombreAcceso: "Acceso norte",
+          tipoAcceso: TipoAcceso.RAMPA,
+          estadoAcceso: EstadoAcceso.HABILITADO,
+        },
+      });
     });
 
     it("keeps an explicit estado", async () => {
       accesoRepo.create.mockImplementation((v) => v);
       accesoRepo.save.mockImplementation(async (v) => ({ ...v, idAcceso: "12" }));
 
-      const result = await service.create("1", {
-        ...dto,
-        estadoAcceso: EstadoAcceso.DESHABILITADO,
-      });
+      const result = await service.create(
+        "1",
+        { ...dto, estadoAcceso: EstadoAcceso.DESHABILITADO },
+        ACTOR
+      );
 
       expect(result.estadoAcceso).toBe(EstadoAcceso.DESHABILITADO);
     });
@@ -128,10 +158,11 @@ describe("AccesoService", () => {
     it("throws NotFoundException when the parada does not exist", async () => {
       paradaMissing();
 
-      await expect(service.create("99", dto)).rejects.toBeInstanceOf(
+      await expect(service.create("99", dto, ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
       );
       expect(accesoRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -181,10 +212,12 @@ describe("AccesoService", () => {
       accesoRepo.findOne.mockResolvedValue(makeAcceso());
       accesoRepo.save.mockImplementation(async (v) => v);
 
-      const result = await service.update("1", "10", {
-        nombreAcceso: "Acceso sur",
-        tipoAcceso: TipoAcceso.ELEVADOR,
-      });
+      const result = await service.update(
+        "1",
+        "10",
+        { nombreAcceso: "Acceso sur", tipoAcceso: TipoAcceso.ELEVADOR },
+        ACTOR
+      );
 
       expect(result).toEqual(
         expect.objectContaining({
@@ -195,15 +228,24 @@ describe("AccesoService", () => {
           latitud: 14.6349,
         })
       );
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.ACCESO,
+        entityId: "10",
+        detalle: { idParada: "1", changedFields: ["nombreAcceso", "tipoAcceso"] },
+      });
     });
 
     it("ignores an idParada smuggled into the body", async () => {
       accesoRepo.findOne.mockResolvedValue(makeAcceso());
       accesoRepo.save.mockImplementation(async (v) => v);
 
-      const result = await service.update("1", "10", {
-        idParada: "2",
-      } as unknown as { nombreAcceso: string });
+      const result = await service.update(
+        "1",
+        "10",
+        { idParada: "2" } as unknown as { nombreAcceso: string },
+        ACTOR
+      );
 
       expect(result.idParada).toBe("1");
     });
@@ -212,16 +254,17 @@ describe("AccesoService", () => {
       accesoRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.update("2", "10", { nombreAcceso: "X" })
+        service.update("2", "10", { nombreAcceso: "X" }, ACTOR)
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(accesoRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the parada does not exist", async () => {
       paradaMissing();
 
       await expect(
-        service.update("99", "10", { nombreAcceso: "X" })
+        service.update("99", "10", { nombreAcceso: "X" }, ACTOR)
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(accesoRepo.save).not.toHaveBeenCalled();
     });
@@ -232,7 +275,7 @@ describe("AccesoService", () => {
       accesoRepo.findOne.mockResolvedValue(makeAcceso());
       accesoRepo.save.mockImplementation(async (v) => v);
 
-      await service.remove("1", "10");
+      await service.remove("1", "10", ACTOR);
 
       expect(accesoRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -240,21 +283,28 @@ describe("AccesoService", () => {
           estadoAcceso: EstadoAcceso.DESHABILITADO,
         })
       );
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.ACCESO,
+        entityId: "10",
+        detalle: { idParada: "1", nombreAcceso: "Acceso norte" },
+      });
     });
 
     it("throws NotFoundException when the acceso is missing", async () => {
       accesoRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.remove("1", "404")).rejects.toBeInstanceOf(
+      await expect(service.remove("1", "404", ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
       );
       expect(accesoRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the parada does not exist", async () => {
       paradaMissing();
 
-      await expect(service.remove("99", "10")).rejects.toBeInstanceOf(
+      await expect(service.remove("99", "10", ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
       );
       expect(accesoRepo.save).not.toHaveBeenCalled();

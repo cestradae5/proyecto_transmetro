@@ -38,7 +38,7 @@ without crashing. The read-only viewer already exists (PR #72).
 ## Tasks
 - [x] T1  Shared infra audit helper + constants in `infrastructure/shared/` (DataSource + AuditRepository, writes inside caller tx). Route: inline. Commit: feat(api) infra audit foundation.
 - [x] T2  `municipalidad` create/update/delete audit + actor threading + tests. Commit: feat(api).
-- [ ] T3  `acceso` audit + actor + tests. Commit: feat(api).
+- [x] T3  `acceso` audit + actor + tests. Commit: feat(api).
 - [ ] T4  `parqueo` audit + actor + tests. Commit: feat(api).
 - [ ] T5  `parada` audit + actor + tests. Commit: feat(api).
 - [ ] T6  `estacion` (+ `estacion-linea`) audit + actor + tests. Commit: feat(api).
@@ -54,6 +54,8 @@ without crashing. The read-only viewer already exists (PR #72).
 - T1: added `infrastructure/shared/infrastructure-audit.{constants,service,service.spec}.ts`; registered `InfrastructureAuditService` provider in `InfrastructureModule` (AuditRepository is exported by AuthenticationModule, already imported). Test-first: `npm test -- infrastructure-audit.service` 2/2; `tsc -p tsconfig.build.json --noEmit` exit 0.
 
 - T2: municipalidad create/update/remove and linea-municipalidad add(LINK)/remove(UNLINK) now write audit inside `repo.manager.transaction`; actor threaded controller->service via `request.user.employeeId`. Reference pattern for T3-T8. Test-first: `npm test -- municipalidad` 4 suites / 52; `tsc -p tsconfig.build.json --noEmit` exit 0. Commit pending.
+
+- T3: acceso create/update/remove audited (CREATE/UPDATE/REMOVE, entityType acceso, entityId=String(accesoId)) inside transaction; actor threaded. `npm test -- acceso` 2 suites / 33; tsc exit 0.
 
 ## Log
 - L1 (user request, verbatim): "Hola necesito que me ayudes a terminar la bitacora al 100% de usabilidad"
