@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -46,9 +47,10 @@ export class MunicipalidadController {
     description: "Ya existe una municipalidad con ese nombre",
   })
   create(
-    @Body() dto: CreateMunicipalidadDto
+    @Body() dto: CreateMunicipalidadDto,
+    @Req() request: Record<string, any>
   ): Promise<MunicipalidadResponseDto> {
-    return this.municipalidadService.create(dto);
+    return this.municipalidadService.create(dto, request.user.employeeId);
   }
 
   @Get()
@@ -104,9 +106,10 @@ export class MunicipalidadController {
   })
   update(
     @Param("id") id: string,
-    @Body() dto: UpdateMunicipalidadDto
+    @Body() dto: UpdateMunicipalidadDto,
+    @Req() request: Record<string, any>
   ): Promise<MunicipalidadResponseDto> {
-    return this.municipalidadService.update(id, dto);
+    return this.municipalidadService.update(id, dto, request.user.employeeId);
   }
 
   @Delete(":id")
@@ -117,7 +120,10 @@ export class MunicipalidadController {
     description: "Municipalidad marcada como INACTIVA",
   })
   @ApiResponse({ status: 404, description: "Municipalidad no encontrada" })
-  remove(@Param("id") id: string): Promise<void> {
-    return this.municipalidadService.remove(id);
+  remove(
+    @Param("id") id: string,
+    @Req() request: Record<string, any>
+  ): Promise<void> {
+    return this.municipalidadService.remove(id, request.user.employeeId);
   }
 }

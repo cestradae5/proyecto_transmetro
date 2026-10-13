@@ -39,6 +39,8 @@ describe("LineaMunicipalidadController", () => {
     );
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to LineaMunicipalidadService", () => {
     it("list() forwards the línea id", async () => {
       service.list.mockResolvedValue([]);
@@ -52,19 +54,19 @@ describe("LineaMunicipalidadController", () => {
       const dto = { idMunicipalidad: "4" };
       service.add.mockResolvedValue({ idLinea: "3", idMunicipalidad: "4" });
 
-      await expect(controller.add("3", dto)).resolves.toEqual({
+      await expect(controller.add("3", dto, request)).resolves.toEqual({
         idLinea: "3",
         idMunicipalidad: "4",
       });
-      expect(service.add).toHaveBeenCalledWith("3", dto);
+      expect(service.add).toHaveBeenCalledWith("3", dto, "7");
     });
 
     it("remove() forwards línea id and municipalidad id", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("3", "4");
+      await controller.remove("3", "4", request);
 
-      expect(service.remove).toHaveBeenCalledWith("3", "4");
+      expect(service.remove).toHaveBeenCalledWith("3", "4", "7");
     });
   });
 

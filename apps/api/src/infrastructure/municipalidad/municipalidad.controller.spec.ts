@@ -71,15 +71,17 @@ describe("MunicipalidadController", () => {
     });
   });
 
+  const request = { user: { employeeId: "7" } } as unknown as Record<string, any>;
+
   describe("delegation to MunicipalidadService", () => {
-    it("create() forwards the body", async () => {
+    it("create() forwards the body and the actor's employeeId from request.user", async () => {
       const dto = { nombreMunicipalidad: "Mixco", departamento: "Guatemala" };
       service.create.mockResolvedValue({ idMunicipalidad: "1" });
 
-      await expect(controller.create(dto)).resolves.toEqual({
+      await expect(controller.create(dto, request)).resolves.toEqual({
         idMunicipalidad: "1",
       });
-      expect(service.create).toHaveBeenCalledWith(dto);
+      expect(service.create).toHaveBeenCalledWith(dto, "7");
     });
 
     it("findAll() delegates", async () => {
@@ -98,21 +100,21 @@ describe("MunicipalidadController", () => {
       expect(service.findOne).toHaveBeenCalledWith("1");
     });
 
-    it("update() forwards id and body", async () => {
+    it("update() forwards id, body and the actor's employeeId", async () => {
       const dto = { departamento: "Sacatepéquez" };
       service.update.mockResolvedValue({ idMunicipalidad: "1" });
 
-      await controller.update("1", dto);
+      await controller.update("1", dto, request);
 
-      expect(service.update).toHaveBeenCalledWith("1", dto);
+      expect(service.update).toHaveBeenCalledWith("1", dto, "7");
     });
 
-    it("remove() forwards the id", async () => {
+    it("remove() forwards the id and the actor's employeeId", async () => {
       service.remove.mockResolvedValue(undefined);
 
-      await controller.remove("1");
+      await controller.remove("1", request);
 
-      expect(service.remove).toHaveBeenCalledWith("1");
+      expect(service.remove).toHaveBeenCalledWith("1", "7");
     });
   });
 
