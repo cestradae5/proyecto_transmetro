@@ -12,17 +12,19 @@ interface AuditLogRow {
   module: string;
   action: string;
   entityType: string;
-  entityId: string;
+  entityId: string | null;
   result: AuditResult;
   detalle: Record<string, unknown> | null;
-  employeeId: string;
-  employeeName: string;
-  employeeEmail: string;
+  employeeId: string | null;
+  employeeName: string | null;
+  employeeEmail: string | null;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
-const FROM_CLAUSE = "FROM tbl_bitacora b JOIN tbl_empleado e ON e.id_emple = b.id_empleado";
+// LEFT JOIN: failed-login rows have no employee (id_empleado NULL) and must
+// still be listed. A user text filter naturally excludes them.
+const FROM_CLAUSE = "FROM tbl_bitacora b LEFT JOIN tbl_empleado e ON e.id_emple = b.id_empleado";
 
 // Read-only view over tbl_bitacora. Every filter value is bound as a
 // parameter; the log is never written from here. Stateless dataSource
@@ -128,9 +130,12 @@ function toItem(row: AuditLogRow): AuditLogItemDto {
     module: row.module,
     action: row.action,
     entityType: row.entityType,
-    entityId: String(row.entityId),
+    entityId: row.entityId === null ? null : String(row.entityId),
     result: row.result,
     detalle: row.detalle ?? null,
-    employee: { id: String(row.employeeId), name: row.employeeName, email: row.employeeEmail },
+    employee:
+      row.employeeId === null
+        ? null
+        : { id: String(row.employeeId), name: row.employeeName ?? "", email: row.employeeEmail ?? "" },
   };
 }

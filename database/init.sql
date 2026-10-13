@@ -481,6 +481,14 @@ CREATE TABLE IF NOT EXISTS tbl_bitacora (
 
 ALTER TABLE tbl_bitacora ADD COLUMN IF NOT EXISTS detalle JSONB;
 
+-- tbl_bitacora.id_empleado / entidad_id — nullable. Un login fallido se
+-- registra solo como "ocurrió un intento": sin empleado, sin entidad y sin el
+-- correo intentado. DROP NOT NULL es idempotente (no falla si ya es nullable),
+-- así que las bases existentes se actualizan al re-aplicar este archivo.
+
+ALTER TABLE tbl_bitacora ALTER COLUMN id_empleado DROP NOT NULL;
+ALTER TABLE tbl_bitacora ALTER COLUMN entidad_id DROP NOT NULL;
+
 -- tbl_empleado: perfil de RR. HH. del módulo Personal. Todas las columnas son
 -- nullable para que las filas existentes (p. ej. el admin del seed) sigan
 -- funcionando. La API exige el DPI como obligatorio; la columna queda nullable
