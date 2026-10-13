@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   Put,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -47,8 +48,11 @@ export class LineaController {
     status: 404,
     description: "Parqueo no encontrado (solo si se envía idParqueo)",
   })
-  create(@Body() createLineaDto: CreateLineaDto): Promise<LineaResponseDto> {
-    return this.lineaService.create(createLineaDto);
+  create(
+    @Body() createLineaDto: CreateLineaDto,
+    @Req() request: Record<string, any>
+  ): Promise<LineaResponseDto> {
+    return this.lineaService.create(createLineaDto, request.user.employeeId);
   }
 
   @Get()
@@ -87,9 +91,10 @@ export class LineaController {
   @ApiResponse({ status: 404, description: "Línea o parqueo no encontrado" })
   update(
     @Param("id") id: string,
-    @Body() updateLineaDto: UpdateLineaDto
+    @Body() updateLineaDto: UpdateLineaDto,
+    @Req() request: Record<string, any>
   ): Promise<LineaResponseDto> {
-    return this.lineaService.update(id, updateLineaDto);
+    return this.lineaService.update(id, updateLineaDto, request.user.employeeId);
   }
 
   @Delete(":id")
@@ -100,8 +105,11 @@ export class LineaController {
     description: "Línea marcada como INACTIVA",
   })
   @ApiResponse({ status: 404, description: "Línea no encontrada" })
-  remove(@Param("id") id: string): Promise<void> {
-    return this.lineaService.remove(id);
+  remove(
+    @Param("id") id: string,
+    @Req() request: Record<string, any>
+  ): Promise<void> {
+    return this.lineaService.remove(id, request.user.employeeId);
   }
 
   @Get(":id/paradas")
@@ -128,9 +136,10 @@ export class LineaController {
   })
   addParada(
     @Param("id") id: string,
-    @Body() dto: AddLineaParadaDto
+    @Body() dto: AddLineaParadaDto,
+    @Req() request: Record<string, any>
   ): Promise<LineaParadaEntity> {
-    return this.lineaService.addParada(id, dto);
+    return this.lineaService.addParada(id, dto, request.user.employeeId);
   }
 
   @Put(":id/paradas/orden")
@@ -150,9 +159,10 @@ export class LineaController {
   @ApiResponse({ status: 404, description: "Línea no encontrada" })
   reorderParadas(
     @Param("id") id: string,
-    @Body() dto: ReorderLineaParadasDto
+    @Body() dto: ReorderLineaParadasDto,
+    @Req() request: Record<string, any>
   ): Promise<LineaParadaEntity[]> {
-    return this.lineaService.reorderParadas(id, dto);
+    return this.lineaService.reorderParadas(id, dto, request.user.employeeId);
   }
 
   @Patch(":id/paradas/:lineaParadaId")
@@ -164,9 +174,10 @@ export class LineaController {
   updateParada(
     @Param("id") id: string,
     @Param("lineaParadaId") lineaParadaId: string,
-    @Body() dto: UpdateLineaParadaDto
+    @Body() dto: UpdateLineaParadaDto,
+    @Req() request: Record<string, any>
   ): Promise<LineaParadaEntity> {
-    return this.lineaService.updateParada(id, lineaParadaId, dto);
+    return this.lineaService.updateParada(id, lineaParadaId, dto, request.user.employeeId);
   }
 
   @Delete(":id/paradas/:lineaParadaId")
@@ -181,8 +192,9 @@ export class LineaController {
   })
   removeParada(
     @Param("id") id: string,
-    @Param("lineaParadaId") lineaParadaId: string
+    @Param("lineaParadaId") lineaParadaId: string,
+    @Req() request: Record<string, any>
   ): Promise<void> {
-    return this.lineaService.removeParada(id, lineaParadaId);
+    return this.lineaService.removeParada(id, lineaParadaId, request.user.employeeId);
   }
 }
