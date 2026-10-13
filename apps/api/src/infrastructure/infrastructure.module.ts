@@ -35,6 +35,7 @@ import { EstacionLineaService } from "./estacion/estacion-linea.service.js";
 import { MunicipalidadService } from "./municipalidad/municipalidad.service.js";
 import { LineaMunicipalidadService } from "./municipalidad/linea-municipalidad.service.js";
 import { AccesoService } from "./acceso/acceso.service.js";
+import { InfrastructureAuditService } from "./shared/infrastructure-audit.service.js";
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { AccesoService } from "./acceso/acceso.service.js";
     MunicipalidadService,
     LineaMunicipalidadService,
     AccesoService,
+    InfrastructureAuditService,
   ],
   exports: [
     ParadaService,
