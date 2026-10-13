@@ -76,8 +76,11 @@ without crashing. The read-only viewer already exists (PR #72).
 
 - T12: admin-web AuditLogEntry.employee/entityId nullable; table shows "Sistema" / "Intento de inicio de sesión" and dialog "Sistema (intento de inicio de sesión)"; entity rendered without "#id" when null (`entityLabel`). Fixture LOGIN_FAILED now mirrors the API (null employee/entity). RED 4 failed (old code crashed on null employee) -> GREEN audit-log 4 files / 22; web `tsc -b` exit 0; full web `vitest run` 72 files / 559 passed.
 
+- T13: unit api `npm test` 65 suites / 740; api tsc exit 0; web `vitest run` 72 files / 559; web `tsc -b` exit 0. Schema upgrade applied (user-authorized, L5) with idempotent DROP NOT NULL on transmetro_test and transmetro: both columns `is_nullable=YES`, transmetro kept its 13 rows. New `apps/api/test/bitacora-completion.e2e-spec.ts` (4 tests, real DB): municipalidad POST writes one audit row with actor; 409 writes no row/no data; failed login persists FALLIDO row with NULL employee/entity and no email then rejects; GET /audit-log returns it with employee null. 4/4. Mutation check: throwing inside the transaction -> 2 tests fail (row rolled back). Leftovers after run: 0 audit rows, 0 e2e employees, 0 e2e municipalidades. Full `npm run test:e2e` is flaky with rotating failures (health/piloto/asignacion-unidad/audit-log); same rotating failures reproduced twice on origin/main 3c75201 -> pre-existing parallel shared-DB interference, each suite passes alone. Independent verifier: unavailable (subagent runtime lacks Read/Bash/Grep in this environment, 4/4 workers blocked). Docs: infrastructure README Audit section; audit-log-viewer.md follow-ups marked resolved.
+
 ## Log
 - L1 (user request, verbatim): "Hola necesito que me ayudes a terminar la bitacora al 100% de usabilidad"
 - L2 (user decision): scope = (1) Auditar CRUD de Infraestructura, (2) Corregir auditoría de login fallido.
 - L3 (user decision, failed login): see S5 verbatim — only record that a failed login happened, no user/email.
+- L5 (user decision): apply the schema change "en transmetro_test y transmetro".
 - L4 (git): branched `feat/bitacora-completion` from `origin/main` @ 3c75201; prior `feat/administrative-reports` WIP stashed (`stash@{0}`).

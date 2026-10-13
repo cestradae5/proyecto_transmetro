@@ -25,8 +25,7 @@ Let authorized users (permission `AUDITORIA_BITACORA_CONSULTAR`) browse `tbl_bit
 - [x] A4 DB-backed e2e for `/audit-log` against `transmetro_test` (gap: A1 unit specs mock SQL)
 
 ## Pending follow-ups
-- Infrastructure CRUD does not write `tbl_bitacora` yet (REQ-FUNC-012 gap).
-- Pre-existing: failed-login audit in `authentication.service.ts` writes `employee: { id: "unknown" }` into a BIGINT FK column; that insert likely fails, so failed logins are probably not recorded. Not verified against a DB.
+- Resolved by `odd/tasks/bitacora-completion.md`: Infrastructure CRUD now writes `tbl_bitacora`, and failed logins are recorded (NULL employee/entity, no email) and listed by the viewer via LEFT JOIN.
 
 ## Progress / evidence
 Branch: `feat/audit-log-viewer` (from main @ 2ba9f0a).
