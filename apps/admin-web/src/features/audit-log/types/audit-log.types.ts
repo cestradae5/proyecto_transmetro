@@ -6,10 +6,11 @@ export interface AuditLogEntry {
   module: string;
   action: string;
   entityType: string;
-  entityId: string;
+  /** Null for a failed login (no entity, no employee). */
+  entityId: string | null;
   result: AuditResult;
   detalle: Record<string, unknown> | null;
-  employee: { id: string; name: string; email: string };
+  employee: { id: string; name: string; email: string } | null;
 }
 
 export interface AuditLogPage {

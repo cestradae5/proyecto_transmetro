@@ -47,7 +47,7 @@ without crashing. The read-only viewer already exists (PR #72).
 - [x] T9  Schema: id_empleado + entidad_id nullable in `database/init.sql` (S6). Commit: feat(db).
 - [x] T10 Failed-login records FALLIDO row without crashing, returns 401 (S5). Test-first. Commit: fix(api).
 - [x] T11 Viewer LEFT JOIN + nullable employee/entityId in DTO/service + update viewer unit/e2e specs (S7). Commit: feat(api).
-- [ ] T12 admin-web: render null employee as "Sistema"/"—" in table + detail dialog + tests (S7). Commit: feat(admin-web).
+- [x] T12 admin-web: render null employee as "Sistema"/"—" in table + detail dialog + tests (S7). Commit: feat(admin-web).
 - [ ] T13 Full verification (api jest, web vitest, api tsc, web tsc, DB-backed e2e) + independent verifier for schema/contract (S6/S7).
 
 ## Progress / evidence
@@ -73,6 +73,8 @@ without crashing. The read-only viewer already exists (PR #72).
 - T10: failed login writes `{action LOGIN, employee null, entityId null, entityType jwt, module authentication, result FALLIDO}` with no email; the transaction now returns null and commits, InvalidCredentials (401) is thrown AFTER it (previously thrown inside -> rollback, row never persisted, plus the 'unknown'/'jwt-login' BIGINT values broke the insert). AuditLogEntity.employee/entityId and NewAuditRecord made nullable. RED observed (1 failed) -> GREEN `npm test -- authentication` 10 suites / 111; tsc exit 0.
 
 - T11: GET /audit-log now LEFT JOINs tbl_empleado; AuditLogItemDto.employee and entityId nullable; null employee row mapped to `employee: null`. init.sql upgrade section adds idempotent `ALTER COLUMN id_empleado/entidad_id DROP NOT NULL` (CREATE TABLE IF NOT EXISTS alone would not upgrade existing DBs). Reports audit summary left as-is: by-action counts failed logins, by-user INNER JOIN correctly excludes anonymous attempts. RED (1 failed) -> GREEN `npm test -- audit-log` 3 suites / 17; tsc exit 0. ALTER not yet applied to any DB (psql not on PATH).
+
+- T12: admin-web AuditLogEntry.employee/entityId nullable; table shows "Sistema" / "Intento de inicio de sesión" and dialog "Sistema (intento de inicio de sesión)"; entity rendered without "#id" when null (`entityLabel`). Fixture LOGIN_FAILED now mirrors the API (null employee/entity). RED 4 failed (old code crashed on null employee) -> GREEN audit-log 4 files / 22; web `tsc -b` exit 0; full web `vitest run` 72 files / 559 passed.
 
 ## Log
 - L1 (user request, verbatim): "Hola necesito que me ayudes a terminar la bitacora al 100% de usabilidad"

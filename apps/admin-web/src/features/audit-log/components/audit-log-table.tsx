@@ -1,5 +1,13 @@
 import type { AuditLogEntry } from "../types/audit-log.types";
-import { formatAuditDate, moduleLabel, RESULT_LABELS, RESULT_STYLES } from "../utils/labels";
+import {
+  entityLabel,
+  formatAuditDate,
+  moduleLabel,
+  RESULT_LABELS,
+  RESULT_STYLES,
+  SYSTEM_ACTOR_HINT,
+  SYSTEM_ACTOR_LABEL,
+} from "../utils/labels";
 
 interface AuditLogTableProps {
   items: AuditLogEntry[];
@@ -31,12 +39,12 @@ export function AuditLogTable({ items, onSelect }: AuditLogTableProps) {
             <tr key={entry.id} className="border-b border-slate-50 align-top">
               <td className="py-2 pr-4 whitespace-nowrap">{formatAuditDate(entry.createdAt)}</td>
               <td className="py-2 pr-4">
-                <span className="block text-slate-900">{entry.employee.name}</span>
-                <span className="block text-xs text-slate-500">{entry.employee.email}</span>
+                <span className="block text-slate-900">{entry.employee?.name ?? SYSTEM_ACTOR_LABEL}</span>
+                <span className="block text-xs text-slate-500">{entry.employee?.email ?? SYSTEM_ACTOR_HINT}</span>
               </td>
               <td className="py-2 pr-4">{moduleLabel(entry.module)}</td>
               <td className="py-2 pr-4 font-mono text-xs">{entry.action}</td>
-              <td className="py-2 pr-4">{`${entry.entityType} #${entry.entityId}`}</td>
+              <td className="py-2 pr-4">{entityLabel(entry.entityType, entry.entityId)}</td>
               <td className="py-2 pr-4">
                 <span className={`inline-block px-2 py-0.5 rounded-full border text-xs ${RESULT_STYLES[entry.result] ?? ""}`}>
                   {RESULT_LABELS[entry.result] ?? entry.result}
