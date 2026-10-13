@@ -13,6 +13,11 @@ import { AfectacionResponseDto } from "./dto/afectacion-response.dto.js";
 import { validateForeignKey } from "../shared/validators.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
 import { EstacionEntity } from "../estacion/estacion.entity.js";
+import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import {
+  INFRASTRUCTURE_AUDIT_ACTIONS,
+  INFRASTRUCTURE_ENTITY_TYPES,
+} from "../shared/infrastructure-audit.constants.js";
 
 @Injectable()
 export class AfectacionService {
@@ -22,11 +27,13 @@ export class AfectacionService {
     @InjectRepository(ParadaEntity)
     private readonly paradaRepository: Repository<ParadaEntity>,
     @InjectRepository(EstacionEntity)
-    private readonly estacionRepository: Repository<EstacionEntity>
+    private readonly estacionRepository: Repository<EstacionEntity>,
+    private readonly audit: InfrastructureAuditService
   ) {}
 
   async create(
-    createAfectacionDto: CreateAfectacionDto
+    createAfectacionDto: CreateAfectacionDto,
+    actorEmployeeId: string
   ): Promise<AfectacionResponseDto> {
     // XOR validation: exactly one must be provided
     const hasParada = !!createAfectacionDto.idParada;
@@ -55,8 +62,24 @@ export class AfectacionService {
       );
     }
 
-    const afectacion = this.afectacionRepository.create(createAfectacionDto);
-    const saved = await this.afectacionRepository.save(afectacion);
+    const saved = await this.afectacionRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(AfectacionEntity);
+        const afectacion = repo.create(createAfectacionDto);
+        const persisted = await repo.save(afectacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+          entityId: String(persisted.idAfectacion),
+          detalle: {
+            tipoAfectacion: persisted.tipoAfectacion,
+            idParada: persisted.idParada ?? null,
+            idEstacion: persisted.idEstacion ?? null,
+          },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(saved);
   }
 
@@ -77,7 +100,8 @@ export class AfectacionService {
 
   async update(
     id: string,
-    updateAfectacionDto: UpdateAfectacionDto
+    updateAfectacionDto: UpdateAfectacionDto,
+    actorEmployeeId: string
   ): Promise<AfectacionResponseDto> {
     const afectacion = await this.afectacionRepository.findOne({
       where: { idAfectacion: id },
@@ -116,12 +140,25 @@ export class AfectacionService {
       afectacion.idParada = undefined;
     }
 
-    Object.assign(afectacion, updateAfectacionDto);
-    const updated = await this.afectacionRepository.save(afectacion);
+    const changedFields = Object.keys(updateAfectacionDto);
+    const updated = await this.afectacionRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(AfectacionEntity);
+        Object.assign(afectacion, updateAfectacionDto);
+        const persisted = await repo.save(afectacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+          entityId: String(id),
+          detalle: { changedFields },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(updated);
   }
 
-  async close(id: string): Promise<AfectacionResponseDto> {
+  async close(id: string, actorEmployeeId: string): Promise<AfectacionResponseDto> {
     const afectacion = await this.afectacionRepository.findOne({
       where: { idAfectacion: id },
     });
@@ -135,13 +172,25 @@ export class AfectacionService {
       );
     }
 
-    afectacion.estadoAfectacion = EstadoAfectacion.CERRADA;
-    afectacion.fechaFin = new Date();
-    const closed = await this.afectacionRepository.save(afectacion);
+    const closed = await this.afectacionRepository.manager.transaction(
+      async (manager) => {
+        const repo = manager.getRepository(AfectacionEntity);
+        afectacion.estadoAfectacion = EstadoAfectacion.CERRADA;
+        afectacion.fechaFin = new Date();
+        const persisted = await repo.save(afectacion);
+        await this.audit.record(manager, actorEmployeeId, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+          entityId: String(id),
+          detalle: { estadoAfectacion: EstadoAfectacion.CERRADA, closed: true },
+        });
+        return persisted;
+      }
+    );
     return this.toResponseDto(closed);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actorEmployeeId: string): Promise<void> {
     const afectacion = await this.afectacionRepository.findOne({
       where: { idAfectacion: id },
     });
@@ -150,8 +199,17 @@ export class AfectacionService {
     }
 
     // Soft delete: set status to CERRADA
-    afectacion.estadoAfectacion = "CERRADA" as any;
-    await this.afectacionRepository.save(afectacion);
+    await this.afectacionRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(AfectacionEntity);
+      afectacion.estadoAfectacion = "CERRADA" as any;
+      await repo.save(afectacion);
+      await this.audit.record(manager, actorEmployeeId, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
+        entityId: String(id),
+        detalle: { tipoAfectacion: afectacion.tipoAfectacion },
+      });
+    });
   }
 
   private toResponseDto(afectacion: AfectacionEntity): AfectacionResponseDto {

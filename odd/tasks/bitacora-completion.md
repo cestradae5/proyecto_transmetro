@@ -43,7 +43,7 @@ without crashing. The read-only viewer already exists (PR #72).
 - [x] T5  `parada` audit + actor + tests. Commit: feat(api).
 - [x] T6  `estacion` (+ `estacion-linea`) audit + actor + tests. Commit: feat(api).
 - [x] T7  `linea` (+ `linea-parada`) audit + actor + tests. Commit: feat(api).
-- [ ] T8  `afectacion` audit + actor + tests (if it has mutations). Commit: feat(api).
+- [x] T8  `afectacion` audit + actor + tests (if it has mutations). Commit: feat(api).
 - [ ] T9  Schema: id_empleado + entidad_id nullable in `database/init.sql` (S6). Commit: feat(db).
 - [ ] T10 Failed-login records FALLIDO row without crashing, returns 401 (S5). Test-first. Commit: fix(api).
 - [ ] T11 Viewer LEFT JOIN + nullable employee/entityId in DTO/service + update viewer unit/e2e specs (S7). Commit: feat(api).
@@ -64,6 +64,9 @@ without crashing. The read-only viewer already exists (PR #72).
 - T6: estacion create/update/remove(soft+force, FK->409 preserved) and estacion-linea add(LINK)/update/remove(UNLINK) audited inside transaction; entityId=estacion id; actor threaded. `npm test -- estacion` 9 suites / 80; tsc exit 0.
 
 - T7: linea create/update/remove + addParada(LINK)/updateParada/removeParada(UNLINK)/reorderParadas(REORDER) audited; reorder audits inside its existing transaction only when paradas exist; actor threaded on all 7 endpoints. `npm test -- linea/linea` 2 suites / 71; tsc exit 0.
+
+- T8: afectacion create/update/close(UPDATE)/remove audited inside transaction; actor threaded. `npm test -- afectacion` 2 suites / 33.
+- Infra auditing complete (T1-T8). Full api `npm test` 65 suites / 738 passed; `tsc -p tsconfig.build.json --noEmit` exit 0.
 
 ## Log
 - L1 (user request, verbatim): "Hola necesito que me ayudes a terminar la bitacora al 100% de usabilidad"
