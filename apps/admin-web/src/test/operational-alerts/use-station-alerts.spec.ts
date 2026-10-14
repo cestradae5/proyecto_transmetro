@@ -35,10 +35,15 @@ const ALERT: Alerta = {
   estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
   autor: { idEmpleado: "5", nombre: "Piloto Uno" },
   observaciones: [],
+  linea: { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
 };
 
 const PAYLOAD: StationAlerts = {
   station: { idEstacion: "22", nombreEstacion: "Estación Centro" },
+  lineas: [
+    { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
+    { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+  ],
   alerts: [ALERT],
 };
 
@@ -59,8 +64,33 @@ describe("useStationAlerts", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(mockGet).toHaveBeenCalledWith("/operations/alerts/my-station");
     expect(result.current.data).toEqual(PAYLOAD);
+    expect(result.current.lineFilter).toBeNull();
     expect(result.current.noStation).toBe(false);
     expect(result.current.error).toBeNull();
+  });
+
+  it("filters by line server side and keeps the filter while polling (S6)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockGet.mockResolvedValue(PAYLOAD);
+    const { result } = renderHook(() => useStationAlerts());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      result.current.setLineFilter("6");
+    });
+    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith("/operations/alerts/my-station?idLinea=6"));
+    expect(result.current.lineFilter).toBe("6");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    });
+    expect(mockGet).toHaveBeenLastCalledWith("/operations/alerts/my-station?idLinea=6");
+
+    await act(async () => {
+      result.current.setLineFilter(null);
+    });
+    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith("/operations/alerts/my-station"));
+    expect(result.current.lineFilter).toBeNull();
   });
 
   it("flags noStation when the operator has no station (OperatorHasNoStation)", async () => {

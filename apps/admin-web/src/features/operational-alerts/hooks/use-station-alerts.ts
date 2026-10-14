@@ -7,8 +7,12 @@ import { usePolling } from './use-polling';
 const MY_STATION_PATH = '/operations/alerts/my-station';
 
 export interface UseStationAlertsResult {
-  /** The operator's station and its alerts, newest first; refreshed every POLL_INTERVAL_MS. */
+  /** The operator's station, its lines and its alerts, newest first; refreshed every POLL_INTERVAL_MS. */
   data: StationAlerts | null;
+  /** Line whose alerts are listed; null lists every line of the station. */
+  lineFilter: string | null;
+  /** Changes the line filter (applied server side) and reloads. */
+  setLineFilter: (idLinea: string | null) => void;
   /** The operator has no ACTIVA station: an expected state, not an error. */
   noStation: boolean;
   loading: boolean;
@@ -24,6 +28,12 @@ export function useStationAlerts(): UseStationAlertsResult {
   const [noStation, setNoStation] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lineFilter, setLineFilterState] = useState<string | null>(null);
+  // Read by every fetch, so polling keeps the current filter.
+  const lineFilterRef = useRef<string | null>(null);
+  // Only the latest request may update state, so an answer for a previous
+  // filter cannot overwrite the current one.
+  const requestSeq = useRef(0);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -35,14 +45,18 @@ export function useStationAlerts(): UseStationAlertsResult {
 
   // Polling refetches are silent: `loading` is only true until the first answer.
   const fetchStation = useCallback(async () => {
+    const seq = ++requestSeq.current;
     try {
-      const result = await apiClient.get<StationAlerts>(MY_STATION_PATH);
-      if (!mounted.current) return;
+      const filter = lineFilterRef.current;
+      const result = await apiClient.get<StationAlerts>(
+        filter ? `${MY_STATION_PATH}?idLinea=${encodeURIComponent(filter)}` : MY_STATION_PATH,
+      );
+      if (!mounted.current || seq !== requestSeq.current) return;
       setData(result);
       setNoStation(false);
       setError(null);
     } catch (err: unknown) {
-      if (!mounted.current) return;
+      if (!mounted.current || seq !== requestSeq.current) return;
       if (getAlertErrorCode(err) === ALERT_ERROR_CODES.OPERATOR_HAS_NO_STATION) {
         setData(null);
         setNoStation(true);
@@ -66,6 +80,15 @@ export function useStationAlerts(): UseStationAlertsResult {
     await fetchStation();
   }, [fetchStation]);
 
+  const setLineFilter = useCallback(
+    (idLinea: string | null) => {
+      lineFilterRef.current = idLinea;
+      setLineFilterState(idLinea);
+      fetchStation();
+    },
+    [fetchStation],
+  );
+
   const updateStatus = async (
     idAlerta: string,
     estado: EstadoAlertaDestino,
@@ -85,5 +108,5 @@ export function useStationAlerts(): UseStationAlertsResult {
     return updated;
   };
 
-  return { data, noStation, loading, error, refresh, updateStatus };
+  return { data, lineFilter, setLineFilter, noStation, loading, error, refresh, updateStatus };
 }

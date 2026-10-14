@@ -35,6 +35,7 @@ const ALERT: Alerta = {
   estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
   autor: { idEmpleado: "5", nombre: "Piloto Uno" },
   observaciones: [],
+    linea: null,
 };
 
 function hookState(overrides: Record<string, unknown> = {}) {
