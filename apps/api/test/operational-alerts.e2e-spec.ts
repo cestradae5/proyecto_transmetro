@@ -9,6 +9,9 @@
 //   - S7/S8: only the destination station's operator sees and moves the alert,
 //     forward only, writing one tbl_historial_estado row per change.
 //   - S10: permissions are enforced server side.
+//   - S12-S14: central users (OPERADOR_CENTRAL, ADMINISTRADOR_SISTEMA) see
+//     every station's alerts grouped line -> station -> unit and advance any
+//     of them with the same rules and history.
 //
 // `npm run test:e2e` hardcodes DATABASE_NAME=transmetro_test. Requires
 // apps/api/.env exported and database/init.sql applied. Everything created
@@ -47,6 +50,10 @@ describe("Operational alerts (e2e)", () => {
   let pilotToken = "";
   let op1Token = "";
   let op2Token = "";
+  let centralId = "";
+  let centralToken = "";
+  let adminToken = "";
+  let centralAlertId = "";
   let station1 = "";
   let station3 = "";
   let stationOffLine = "";
@@ -117,6 +124,8 @@ describe("Operational alerts (e2e)", () => {
     ({ id: pilotId, token: pilotToken } = await createEmployee("PILOTO", "pilot"));
     ({ id: op1Id, token: op1Token } = await createEmployee("OPERADOR_ESTACION", "op1"));
     ({ id: op2Id, token: op2Token } = await createEmployee("OPERADOR_ESTACION", "op2"));
+    ({ id: centralId, token: centralToken } = await createEmployee("OPERADOR_CENTRAL", "central"));
+    ({ token: adminToken } = await createEmployee("ADMINISTRADOR_SISTEMA", "admin"));
 
     const linea = await one<{ id: string }>(
       `INSERT INTO tbl_linea (numero_linea, nombre_linea, color_hex, estado_linea, tipo_recorrido)
@@ -368,5 +377,103 @@ describe("Operational alerts (e2e)", () => {
       .expect(403);
     await api().get("/operations/alerts/my-unit/destinations").set("Authorization", `Bearer ${op1Token}`).expect(403);
     expect(await alertCount()).toBe(1);
+  });
+
+  // Central view. The shared test DB may hold other alerts, so assertions
+  // target this run's line group only.
+  const ourLine = (body: { lineas: { idLinea: string | null }[] }) =>
+    body.lineas.find((l) => l.idLinea === ids.linea) as {
+      numeroLinea: string;
+      nombreLinea: string;
+      estaciones: { idEstacion: string; unidades: { idUnidad: string; alerts: { idAlerta: string }[] }[] }[];
+    };
+
+  it("S12: the central operator and the admin see every station's alerts grouped line -> station -> unit", async () => {
+    const created = await api()
+      .post("/operations/alerts")
+      .set("Authorization", `Bearer ${pilotToken}`)
+      .send({ tipoAlerta: "RETRASO", idEstacionDestino: station3 })
+      .expect(201);
+    centralAlertId = created.body.idAlerta;
+
+    for (const token of [centralToken, adminToken]) {
+      const res = await api().get("/operations/alerts/central").set("Authorization", `Bearer ${token}`).expect(200);
+      const line = ourLine(res.body);
+      expect(line.numeroLinea).toBe(runTag.slice(-12));
+      expect(line.nombreLinea).toBe(`${runTag} Línea`);
+      expect(
+        line.estaciones.map((e) => ({
+          idEstacion: e.idEstacion,
+          unidades: e.unidades.map((u) => ({ idUnidad: u.idUnidad, alerts: u.alerts.map((a) => a.idAlerta) })),
+        })),
+      ).toEqual([
+        { idEstacion: station1, unidades: [{ idUnidad: ids.unidad, alerts: [alertId] }] },
+        { idEstacion: station3, unidades: [{ idUnidad: ids.unidad, alerts: [centralAlertId] }] },
+      ]);
+    }
+  });
+
+  it("S13: the central operator advances another station's alert and one history row is written", async () => {
+    const res = await api()
+      .patch(`/operations/alerts/central/${centralAlertId}/status`)
+      .set("Authorization", `Bearer ${centralToken}`)
+      .send({ estado: "EN_ATENCION", observacion: "Central atiende" })
+      .expect(200);
+    expect(res.body.estadoAlerta).toBe("EN_ATENCION");
+
+    const history = await rows<Record<string, string>>(
+      `SELECT estado_anterior, estado_nuevo, observacion, id_empleado::text AS id_empleado
+         FROM tbl_historial_estado WHERE id_alerta = $1`,
+      [centralAlertId],
+    );
+    expect(history).toEqual([
+      { estado_anterior: "PENDIENTE", estado_nuevo: "EN_ATENCION", observacion: "Central atiende", id_empleado: centralId },
+    ]);
+
+    const inbox = await api().get("/operations/alerts/my-station").set("Authorization", `Bearer ${op2Token}`).expect(200);
+    expect(inbox.body.alerts.map((a: { idAlerta: string; estadoAlerta: string }) => [a.idAlerta, a.estadoAlerta])).toEqual([
+      [centralAlertId, "EN_ATENCION"],
+    ]);
+  });
+
+  it("S13: central non-forward transitions are 409 and unknown alerts 404, changing nothing", async () => {
+    const conflict = await api()
+      .patch(`/operations/alerts/central/${centralAlertId}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ estado: "RECIBIDA" })
+      .expect(409);
+    expect(conflict.body.error).toBe("InvalidAlertTransition");
+
+    await api()
+      .patch("/operations/alerts/central/999999999999/status")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ estado: "RESUELTA" })
+      .expect(404);
+
+    const stored = await one<{ estado: string }>(
+      `SELECT estado_alerta AS "estado" FROM tbl_alerta WHERE id_alerta = $1`,
+      [centralAlertId],
+    );
+    expect(stored.estado).toBe("EN_ATENCION");
+    const n = await one<{ n: string }>(`SELECT COUNT(*) AS "n" FROM tbl_historial_estado WHERE id_alerta = $1`, [
+      centralAlertId,
+    ]);
+    expect(Number(n.n)).toBe(1);
+  });
+
+  it("S14: pilots and station operators cannot use the central endpoints (403)", async () => {
+    for (const token of [pilotToken, op1Token]) {
+      await api().get("/operations/alerts/central").set("Authorization", `Bearer ${token}`).expect(403);
+      await api()
+        .patch(`/operations/alerts/central/${centralAlertId}/status`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ estado: "RESUELTA" })
+        .expect(403);
+    }
+    const stored = await one<{ estado: string }>(
+      `SELECT estado_alerta AS "estado" FROM tbl_alerta WHERE id_alerta = $1`,
+      [centralAlertId],
+    );
+    expect(stored.estado).toBe("EN_ATENCION");
   });
 });
