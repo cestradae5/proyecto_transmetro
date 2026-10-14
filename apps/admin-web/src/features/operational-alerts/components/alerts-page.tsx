@@ -1,16 +1,21 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../authentication/auth-context';
 import { hasPermission } from '../../fleet/permissions';
-import { ALERTS_STATION_PERMISSION, ALERTS_UNIT_PERMISSION } from '../permissions';
+import { ALERTS_CENTRAL_PERMISSION, ALERTS_STATION_PERMISSION, ALERTS_UNIT_PERMISSION } from '../permissions';
+import { CentralAlertsView } from './central-alerts-view';
 import { PilotAlertsView } from './pilot-alerts-view';
 import { StationAlertsView } from './station-alerts-view';
 
-/** "/alerts": one screen per role, chosen by permission (module scope is enforced by the route guard). */
+/**
+ * "/alerts": one screen per role, chosen by permission (module scope is enforced by the route guard).
+ * The central view goes first: the admin holds every permission, pilot and station ones included.
+ */
 export function AlertsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const renderView = () => {
+    if (hasPermission(user, ALERTS_CENTRAL_PERMISSION)) return <CentralAlertsView />;
     if (hasPermission(user, ALERTS_UNIT_PERMISSION)) return <PilotAlertsView />;
     if (hasPermission(user, ALERTS_STATION_PERMISSION)) return <StationAlertsView />;
     return (

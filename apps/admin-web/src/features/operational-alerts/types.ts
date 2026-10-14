@@ -44,3 +44,28 @@ export interface StationAlerts {
   station: { idEstacion: string; nombreEstacion: string };
   alerts: Alerta[];
 }
+
+export interface CentralAlertsUnidad {
+  idUnidad: string;
+  numeroPlaca: string;
+  /** Newest first. */
+  alerts: Alerta[];
+}
+
+export interface CentralAlertsEstacion {
+  idEstacion: string;
+  nombreEstacion: string;
+  unidades: CentralAlertsUnidad[];
+}
+
+export interface CentralAlertsLinea {
+  /** null: units without a line assignment ("Sin línea", always last). */
+  idLinea: string | null;
+  numeroLinea: string | null;
+  nombreLinea: string;
+  estaciones: CentralAlertsEstacion[];
+}
+
+export interface CentralAlerts {
+  lineas: CentralAlertsLinea[];
+}

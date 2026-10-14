@@ -18,6 +18,9 @@ vi.mock("../../features/operational-alerts/components/pilot-alerts-view", () => 
 vi.mock("../../features/operational-alerts/components/station-alerts-view", () => ({
   StationAlertsView: () => <div>Station alerts view</div>,
 }));
+vi.mock("../../features/operational-alerts/components/central-alerts-view", () => ({
+  CentralAlertsView: () => <div>Central alerts view</div>,
+}));
 
 import { App } from "../../app/app";
 
@@ -70,8 +73,26 @@ describe("/alerts routes", () => {
     expect(screen.queryByText("Pilot alerts view")).not.toBeInTheDocument();
   });
 
-  it("tells any other role with the module that there is no view for it yet", () => {
+  it("shows the central view to a user with ALERTAS_OPERATIVAS_GESTIONAR (central operator)", () => {
     signIn(["operational_alerts"], ["ALERTAS_OPERATIVAS_GESTIONAR"]);
+    renderApp("/alerts");
+    expect(screen.getByText("Central alerts view")).toBeInTheDocument();
+    expect(screen.queryByText("Station alerts view")).not.toBeInTheDocument();
+  });
+
+  it("prefers the central view for an admin who also holds the pilot and station permissions", () => {
+    signIn(
+      ["operational_alerts"],
+      ["ALERTAS_UNIDAD_GESTIONAR", "ALERTAS_ESTACION_GESTIONAR", "ALERTAS_OPERATIVAS_GESTIONAR"],
+    );
+    renderApp("/alerts");
+    expect(screen.getByText("Central alerts view")).toBeInTheDocument();
+    expect(screen.queryByText("Pilot alerts view")).not.toBeInTheDocument();
+    expect(screen.queryByText("Station alerts view")).not.toBeInTheDocument();
+  });
+
+  it("tells any other role with the module that there is no view for it yet", () => {
+    signIn(["operational_alerts"], ["METRICAS_UNIDAD_REPORTAR"]);
     renderApp("/alerts");
     expect(
       screen.getByText("Su rol no tiene una vista de alertas operativas en esta versión."),

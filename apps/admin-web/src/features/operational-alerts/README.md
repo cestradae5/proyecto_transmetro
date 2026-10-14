@@ -2,15 +2,18 @@
 
 Route `/alerts`, guarded by `AuthenticationGuard requiredModule="operational_alerts"`
 and reached from the "Alertas Operativas" landing card. The page picks one view
-by permission:
+by permission, in this order (the admin holds every permission, so the central
+view must win):
 
 | Permission | Role (seed) | View |
 |---|---|---|
+| `ALERTAS_OPERATIVAS_GESTIONAR` | `ADMINISTRADOR_SISTEMA`, `OPERADOR_CENTRAL` | `CentralAlertsView`: every station's alerts grouped line -> station -> unit (units without line under "Sin línea"), total and per-station pending counts, same per-alert actions as the station inbox via `PATCH central/:id/status` |
 | `ALERTAS_UNIDAD_GESTIONAR` | `PILOTO` | `PilotAlertsView`: pick a station of the unit's line (the suggested one is preselected), tap a predefined type, confirm, and follow "Mis alertas" |
 | `ALERTAS_ESTACION_GESTIONAR` | `OPERADOR_ESTACION` | `StationAlertsView`: the station's inbox with a pending count; each alert moves forward (Marcar recibida / En atención / Resolver) with an optional observation |
-| anything else | e.g. `OPERADOR_CENTRAL` | message: no view for the role in this version |
+| anything else | e.g. `GUARDIA` with the module | message: no view for the role in this version |
 
-Both views poll the API every 10 s (`POLL_INTERVAL_MS`); refetches are silent.
+`AlertCard` (state badge, observation, forward-only actions) is shared by the
+station and central views. All views poll the API every 10 s (`POLL_INTERVAL_MS`); refetches are silent.
 Expected empty states (pilot without unit or line, operator without station)
 come from the backend error codes in `errors.ts`, not from error banners.
 
