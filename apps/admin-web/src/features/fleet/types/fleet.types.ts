@@ -86,6 +86,8 @@ export interface StationAssignment {
   nombreEstacion: string;
   estadoAsignacion: EstadoAsignacionEstacion;
   fechaAsignacion: string;
+  /** ACTIVA lines of the station, i.e. the lines the operator serves (read-only; managed in Infrastructure). */
+  lineas?: { idLinea: string; numeroLinea: string; nombreLinea: string }[];
 }
 
 /** Eligible station operator from `GET /fleet/station-operators`; `idEstacionActual` is their ACTIVA station. */

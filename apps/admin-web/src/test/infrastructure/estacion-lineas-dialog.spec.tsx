@@ -1,14 +1,27 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { EstacionLineasDialog } from "../../features/fleet/components/estaciones/estacion-lineas-dialog";
-import { useEstacionLineas } from "../../features/fleet/hooks/use-estacion-lineas";
+import { EstacionLineasDialog } from "../../features/infrastructure/components/estacion-lineas/estacion-lineas-dialog";
+import { useEstacionLineas } from "../../features/infrastructure/hooks/use-estacion-lineas";
+import { useEstacionLineasDisponibles } from "../../features/infrastructure/hooks/use-estacion-lineas-disponibles";
 import type { Linea } from "../../features/infrastructure/types/infrastructure.types";
 
-vi.mock("../../features/fleet/hooks/use-estacion-lineas", () => ({ useEstacionLineas: vi.fn() }));
+vi.mock("../../features/infrastructure/hooks/use-estacion-lineas", () => ({ useEstacionLineas: vi.fn() }));
+vi.mock("../../features/infrastructure/hooks/use-estacion-lineas-disponibles", () => ({
+  useEstacionLineasDisponibles: vi.fn(),
+}));
+
+// Only l2 passes through the station (and is not linked yet); l3 does not.
+const disponibles = {
+  items: [{ idLinea: "l2", numeroLinea: "2", nombreLinea: "Azul" }],
+  loading: false,
+  error: null as string | null,
+  refresh: vi.fn(),
+};
 
 const LINEAS = [
   { idLinea: "l1", numeroLinea: "1", nombreLinea: "Roja" },
   { idLinea: "l2", numeroLinea: "2", nombreLinea: "Azul" },
+  { idLinea: "l3", numeroLinea: "3", nombreLinea: "Verde" },
 ] as Linea[];
 
 const hook = {
@@ -34,16 +47,39 @@ beforeEach(() => {
   hook.updateLine = vi.fn().mockResolvedValue(undefined);
   hook.removeLine = vi.fn().mockResolvedValue(undefined);
   vi.mocked(useEstacionLineas).mockReturnValue(hook as never);
+  disponibles.items = [{ idLinea: "l2", numeroLinea: "2", nombreLinea: "Azul" }];
+  disponibles.refresh = vi.fn();
+  vi.mocked(useEstacionLineasDisponibles).mockReturnValue(disponibles as never);
 });
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("EstacionLineasDialog", () => {
-  it("lists linked lines and offers only unlinked ones to add", () => {
+  it("lists linked lines and offers only lines whose route stops at the station (S11)", () => {
     renderDialog();
+    expect(vi.mocked(useEstacionLineasDisponibles)).toHaveBeenCalledWith("10");
     expect(screen.getByText("1 - Roja")).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "2 - Azul" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "1 - Roja" })).not.toBeInTheDocument();
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
+    expect(options).toContain("2 - Azul");
+    expect(options).not.toContain("3 - Verde");
+    expect(options).not.toContain("1 - Roja");
+  });
+
+  it("explains when no other line passes through the station", () => {
+    disponibles.items = [];
+    renderDialog();
+    expect(screen.getByText("Ninguna otra línea pasa por la parada de esta estación.")).toBeInTheDocument();
+  });
+
+  it("refreshes the available lines after adding or removing one", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderDialog();
+    fireEvent.change(screen.getByLabelText("Línea"), { target: { value: "l2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Agregar línea" }));
+    await waitFor(() => expect(disponibles.refresh).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Quitar" }));
+    await waitFor(() => expect(disponibles.refresh).toHaveBeenCalledTimes(2));
   });
 
   it("adds a line with the chosen tipoPunto", async () => {

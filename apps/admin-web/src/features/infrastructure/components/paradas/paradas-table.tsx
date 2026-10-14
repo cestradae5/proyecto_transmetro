@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Estacion, Linea, Parada, ParadaFormValues } from '../../types/infrastructure.types';
-import { EstacionLineasDialog } from '../../../fleet/components/estaciones/estacion-lineas-dialog';
+import { EstacionLineasDialog } from '../estacion-lineas/estacion-lineas-dialog';
 import { ParadaDialog } from './parada-dialog';
 import { AccesosDialog } from './accesos-dialog';
 

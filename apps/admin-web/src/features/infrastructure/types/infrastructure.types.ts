@@ -108,6 +108,13 @@ export interface Linea {
   estadoLinea: EstadoLinea;
 }
 
+/** Line that can be linked to a station, from `GET /infrastructure/stations/:id/lines/available`. */
+export interface LineaDisponible {
+  idLinea: string;
+  numeroLinea: string;
+  nombreLinea: string;
+}
+
 export interface Municipalidad {
   idMunicipalidad: string;
   nombreMunicipalidad: string;

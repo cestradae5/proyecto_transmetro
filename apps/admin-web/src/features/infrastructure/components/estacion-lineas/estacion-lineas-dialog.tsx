@@ -1,7 +1,8 @@
 import { useId, useState } from 'react';
-import type { Linea } from '../../../infrastructure/types/infrastructure.types';
+import type { Linea } from '../../types/infrastructure.types';
 import { useEstacionLineas } from '../../hooks/use-estacion-lineas';
-import type { EstadoAsignacionEstacion, TipoPuntoEstacionLinea } from '../../types/fleet.types';
+import { useEstacionLineasDisponibles } from '../../hooks/use-estacion-lineas-disponibles';
+import type { EstadoAsignacionEstacion, TipoPuntoEstacionLinea } from '../../../fleet/types/fleet.types';
 
 interface EstacionLineasDialogProps {
   stationId: string;
@@ -20,9 +21,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : 'Error al guardar la línea';
 }
 
+/**
+ * Lines of one station (Infrastructure). A station operator serves exactly the
+ * station's ACTIVA lines, so this is the only place they are managed. Only lines
+ * whose route stops at the station can be added.
+ */
 export function EstacionLineasDialog({ stationId, stationName, lineas, onClose }: EstacionLineasDialogProps) {
   const uid = useId();
   const { items, loading, error: loadError, refresh, addLine, updateLine, removeLine } = useEstacionLineas(stationId);
+  const disponibles = useEstacionLineasDisponibles(stationId);
 
   const [idLinea, setIdLinea] = useState('');
   const [tipoPunto, setTipoPunto] = useState<TipoPuntoEstacionLinea>('PRINCIPAL');
@@ -34,8 +41,6 @@ export function EstacionLineasDialog({ stationId, stationName, lineas, onClose }
     return linea ? `${linea.numeroLinea} - ${linea.nombreLinea}` : fallback ?? id;
   };
 
-  const linkedIds = new Set(items.map((i) => i.idLinea));
-  const availableLines = lineas.filter((l) => !linkedIds.has(l.idLinea));
 
   const run = async (action: () => Promise<unknown>) => {
     setSubmitting(true);
@@ -55,12 +60,15 @@ export function EstacionLineasDialog({ stationId, stationName, lineas, onClose }
     e.preventDefault();
     if (!idLinea) return;
     const ok = await run(() => addLine({ idLinea, tipoPunto }));
-    if (ok) setIdLinea('');
+    if (ok) {
+      setIdLinea('');
+      await disponibles.refresh();
+    }
   };
 
-  const handleRemove = (id: string, label: string) => {
+  const handleRemove = async (id: string, label: string) => {
     if (!confirm(`¿Está seguro de quitar la línea ${label} de la estación ${stationName}?`)) return;
-    return run(() => removeLine(id));
+    if (await run(() => removeLine(id))) await disponibles.refresh();
   };
 
   const lineSelectId = `${uid}-linea`;
@@ -134,10 +142,16 @@ export function EstacionLineasDialog({ stationId, stationName, lineas, onClose }
               <label htmlFor={lineSelectId} className="block text-sm font-medium text-slate-700 mb-1">Línea</label>
               <select id={lineSelectId} value={idLinea} onChange={(e) => setIdLinea(e.target.value)} className={SELECT_CLASS}>
                 <option value="">Seleccione una línea</option>
-                {availableLines.map((l) => (
+                {disponibles.items.map((l) => (
                   <option key={l.idLinea} value={l.idLinea}>{`${l.numeroLinea} - ${l.nombreLinea}`}</option>
                 ))}
               </select>
+              {!disponibles.loading && !disponibles.error && disponibles.items.length === 0 && (
+                <p className="mt-1 text-xs text-slate-500">Ninguna otra línea pasa por la parada de esta estación.</p>
+              )}
+              {disponibles.error && (
+                <p className="mt-1 text-xs text-red-600">No se pudieron cargar las líneas disponibles: {disponibles.error}</p>
+              )}
             </div>
             <div>
               <label htmlFor={tipoSelectId} className="block text-sm font-medium text-slate-700 mb-1">Tipo de punto</label>
