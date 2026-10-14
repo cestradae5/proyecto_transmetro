@@ -15,6 +15,7 @@ import {
   UnitHasNoLine,
 } from "../shared/operations.errors.js";
 import {
+  CENTRAL_ALERTS_LIMIT,
   ESTADOS_ALERTA,
   SENT_ALERTS_LIMIT,
   STATION_ALERTS_LIMIT,
@@ -23,10 +24,12 @@ import {
   type EstadoAlerta,
 } from "./alerta.constants.js";
 import type {
+  AlertaCentralLineaDto,
   AlertaDestinationDto,
   AlertaDestinationsResponseDto,
   AlertaEstacionDto,
   AlertaResponseDto,
+  CentralAlertsResponseDto,
   StationAlertsResponseDto,
 } from "./dto/alerta-response.dto.js";
 import type { CreateAlertaDto } from "./dto/create-alerta.dto.js";
@@ -67,13 +70,19 @@ interface AlertRow {
   nombreEmpleado: string;
 }
 
+interface CentralAlertRow extends AlertRow {
+  idLinea: string | null;
+  numeroLinea: string | null;
+  nombreLinea: string | null;
+}
+
 interface LockedAlertRow {
   estadoAlerta: EstadoAlerta;
   idEstacionDestino: string | null;
 }
 
-const ALERT_SELECT = `
-  SELECT a.id_alerta AS "idAlerta",
+const ALERT_COLUMNS = `
+         a.id_alerta AS "idAlerta",
          a.tipo_alerta AS "tipoAlerta",
          a.tipo_origen AS "tipoOrigen",
          a.tipo_destino AS "tipoDestino",
@@ -85,11 +94,17 @@ const ALERT_SELECT = `
          e.id_estacion AS "idEstacion",
          e.nombre_estacion AS "nombreEstacion",
          emp.id_emple AS "idEmpleado",
-         emp.nombre_emple AS "nombreEmpleado"
+         emp.nombre_emple AS "nombreEmpleado"`;
+
+const ALERT_FROM = `
     FROM tbl_alerta a
     LEFT JOIN tbl_unidad u ON u.id_unidad = a.id_unidad
     LEFT JOIN tbl_estacion e ON e.id_estacion = a.id_estacion_destino
    INNER JOIN tbl_empleado emp ON emp.id_emple = a.id_empleado`;
+
+const ALERT_SELECT = `SELECT ${ALERT_COLUMNS} ${ALERT_FROM}`;
+
+const NO_LINE_NAME = "Sin línea";
 
 const NUMERIC_ID = /^\d+$/;
 
@@ -168,17 +183,59 @@ export class AlertaService {
     return { station, alerts: rows.map((row) => this.toDto(row)) };
   }
 
+  // Central view (ALERTAS_OPERATIVAS_GESTIONAR): the newest unit -> station
+  // alerts of every station, grouped line -> station -> unit. tbl_alerta has
+  // no line, so an alert is grouped under the line currently assigned to its
+  // unit; units without line go to a last "Sin línea" group.
+  async getCentral(): Promise<CentralAlertsResponseDto> {
+    const rows = (await this.dataSource.query(
+      `SELECT ${ALERT_COLUMNS},
+              l.id_linea AS "idLinea",
+              l.numero_linea AS "numeroLinea",
+              l.nombre_linea AS "nombreLinea"
+       ${ALERT_FROM}
+         LEFT JOIN tbl_asignacion_unidad au ON au.id_unidad = a.id_unidad
+         LEFT JOIN tbl_linea l ON l.id_linea = au.id_linea
+        WHERE a.tipo_origen = $1 AND a.tipo_destino = $2
+        ORDER BY a.fecha_creacion DESC, a.id_alerta DESC
+        LIMIT ${CENTRAL_ALERTS_LIMIT}`,
+      [TIPO_ORIGEN_UNIDAD, TIPO_DESTINO_ESTACION],
+    )) as CentralAlertRow[];
+    return { lineas: this.groupCentral(rows) };
+  }
+
   async updateStatus(
     employeeId: string,
     idAlerta: string,
     dto: UpdateAlertaStatusDto,
+  ): Promise<AlertaResponseDto> {
+    return this.transition(employeeId, idAlerta, dto, true);
+  }
+
+  // Central users advance any alert: same rules and history as the station
+  // operator, without station scoping.
+  async updateCentralStatus(
+    employeeId: string,
+    idAlerta: string,
+    dto: UpdateAlertaStatusDto,
+  ): Promise<AlertaResponseDto> {
+    return this.transition(employeeId, idAlerta, dto, false);
+  }
+
+  private async transition(
+    employeeId: string,
+    idAlerta: string,
+    dto: UpdateAlertaStatusDto,
+    scopeToOperatorStation: boolean,
   ): Promise<AlertaResponseDto> {
     if (!NUMERIC_ID.test(idAlerta)) {
       throw new AlertNotFound(idAlerta);
     }
 
     await this.dataSource.transaction(async (manager) => {
-      const station = await this.findOperatorStation(manager, employeeId);
+      const station = scopeToOperatorStation
+        ? await this.findOperatorStation(manager, employeeId)
+        : null;
 
       // Row lock: two operators of the same station cannot both apply a
       // transition computed from the same previous state.
@@ -193,7 +250,7 @@ export class AlertaService {
       const alert = locked[0];
       // An alert of another station is reported as missing, not forbidden,
       // so operators cannot probe other stations' alert ids.
-      if (!alert || String(alert.idEstacionDestino) !== station.idEstacion) {
+      if (!alert || (station && String(alert.idEstacionDestino) !== station.idEstacion)) {
         throw new AlertNotFound(idAlerta);
       }
 
@@ -325,6 +382,56 @@ export class AlertaService {
       orden: station.orden === null || station.orden === undefined ? null : Number(station.orden),
       suggested: index === suggestedIndex,
     }));
+  }
+
+  private groupCentral(rows: CentralAlertRow[]): AlertaCentralLineaDto[] {
+    const lineas = new Map<string, AlertaCentralLineaDto>();
+    for (const row of rows) {
+      const lineKey = row.idLinea === null || row.idLinea === undefined ? "" : String(row.idLinea);
+      let linea = lineas.get(lineKey);
+      if (!linea) {
+        linea = lineKey
+          ? {
+              idLinea: lineKey,
+              numeroLinea: String(row.numeroLinea),
+              nombreLinea: String(row.nombreLinea),
+              estaciones: [],
+            }
+          : { idLinea: null, numeroLinea: null, nombreLinea: NO_LINE_NAME, estaciones: [] };
+        lineas.set(lineKey, linea);
+      }
+
+      const alert = this.toDto(row);
+      let estacion = linea.estaciones.find(
+        (e) => e.idEstacion === alert.estacionDestino.idEstacion,
+      );
+      if (!estacion) {
+        estacion = { ...alert.estacionDestino, unidades: [] };
+        linea.estaciones.push(estacion);
+      }
+      let unidad = estacion.unidades.find((u) => u.idUnidad === alert.unidad.idUnidad);
+      if (!unidad) {
+        unidad = { ...alert.unidad, alerts: [] };
+        estacion.unidades.push(unidad);
+      }
+      // Rows come newest first, so each unit's alerts stay newest first.
+      unidad.alerts.push(alert);
+    }
+
+    const byText = (a: string, b: string) =>
+      a.localeCompare(b, "es", { numeric: true, sensitivity: "base" });
+    const sorted = [...lineas.values()].sort((a, b) => {
+      if (a.numeroLinea === null) return 1;
+      if (b.numeroLinea === null) return -1;
+      return byText(a.numeroLinea, b.numeroLinea);
+    });
+    for (const linea of sorted) {
+      linea.estaciones.sort((a, b) => byText(a.nombreEstacion, b.nombreEstacion));
+      for (const estacion of linea.estaciones) {
+        estacion.unidades.sort((a, b) => byText(a.numeroPlaca, b.numeroPlaca));
+      }
+    }
+    return sorted;
   }
 
   private toDto(row: AlertRow): AlertaResponseDto {

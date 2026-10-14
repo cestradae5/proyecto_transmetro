@@ -16,18 +16,23 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagg
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { Permissions } from "../../authentication/permissions.decorator.js";
 import { DomainExceptionFilter } from "../../shared/errors/domain-exception.filter.js";
-import { ALERTAS_ESTACION_GESTIONAR, ALERTAS_UNIDAD_GESTIONAR } from "./alerta.constants.js";
+import {
+  ALERTAS_ESTACION_GESTIONAR,
+  ALERTAS_OPERATIVAS_GESTIONAR,
+  ALERTAS_UNIDAD_GESTIONAR,
+} from "./alerta.constants.js";
 import { AlertaService } from "./alerta.service.js";
 import type {
   AlertaDestinationsResponseDto,
   AlertaResponseDto,
+  CentralAlertsResponseDto,
   StationAlertsResponseDto,
 } from "./dto/alerta-response.dto.js";
 import { CreateAlertaDto } from "./dto/create-alerta.dto.js";
 import { UpdateAlertaStatusDto } from "./dto/update-alerta-status.dto.js";
 
-// Static segments (my-unit/destinations, sent, my-station) never collide
-// with ":id/status", which always ends in the literal "status".
+// Static segments (my-unit/destinations, sent, my-station, central) never
+// collide with ":id/status" (two segments) or "central/:id/status" (three).
 @ApiTags("Operación - Alertas")
 @Controller("operations/alerts")
 @UseGuards(AuthenticationGuard)
@@ -86,5 +91,27 @@ export class AlertaController {
     @Body() dto: UpdateAlertaStatusDto,
   ): Promise<AlertaResponseDto> {
     return this.alertaService.updateStatus(request.user.employeeId, id, dto);
+  }
+
+  @Get("central")
+  @Permissions(ALERTAS_OPERATIVAS_GESTIONAR)
+  @ApiOperation({ summary: "Alertas de todas las estaciones agrupadas por línea, estación y unidad" })
+  @ApiResponse({ status: 200, description: "Últimas 300 alertas unidad → estación agrupadas" })
+  getCentral(): Promise<CentralAlertsResponseDto> {
+    return this.alertaService.getCentral();
+  }
+
+  @Patch("central/:id/status")
+  @Permissions(ALERTAS_OPERATIVAS_GESTIONAR)
+  @ApiOperation({ summary: "Avanzar el estado de cualquier alerta (operación central)" })
+  @ApiResponse({ status: 200, description: "Alerta actualizada" })
+  @ApiResponse({ status: 404, description: "Alerta inexistente" })
+  @ApiResponse({ status: 409, description: "Transición de estado no permitida" })
+  updateCentralStatus(
+    @Req() request: Record<string, any>,
+    @Param("id") id: string,
+    @Body() dto: UpdateAlertaStatusDto,
+  ): Promise<AlertaResponseDto> {
+    return this.alertaService.updateCentralStatus(request.user.employeeId, id, dto);
   }
 }

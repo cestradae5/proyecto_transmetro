@@ -22,7 +22,13 @@ const handler = (name: string) =>
 
 describe("AlertaController", () => {
   let service: Record<
-    "getDestinations" | "listSent" | "create" | "getMyStation" | "updateStatus",
+    | "getDestinations"
+    | "listSent"
+    | "create"
+    | "getMyStation"
+    | "updateStatus"
+    | "getCentral"
+    | "updateCentralStatus",
     AnyMock
   >;
   let controller: AlertaController;
@@ -35,6 +41,8 @@ describe("AlertaController", () => {
       create: jest.fn(),
       getMyStation: jest.fn(),
       updateStatus: jest.fn(),
+      getCentral: jest.fn(),
+      updateCentralStatus: jest.fn(),
     };
     controller = new AlertaController(service as unknown as AlertaService);
   });
@@ -53,7 +61,9 @@ describe("AlertaController", () => {
     ["create", RequestMethod.POST, "/", "ALERTAS_UNIDAD_GESTIONAR"],
     ["getMyStation", RequestMethod.GET, "my-station", "ALERTAS_ESTACION_GESTIONAR"],
     ["updateStatus", RequestMethod.PATCH, ":id/status", "ALERTAS_ESTACION_GESTIONAR"],
-  ])("%s is %s %s and requires %s (S10)", (name, method, path, permission) => {
+    ["getCentral", RequestMethod.GET, "central", "ALERTAS_OPERATIVAS_GESTIONAR"],
+    ["updateCentralStatus", RequestMethod.PATCH, "central/:id/status", "ALERTAS_OPERATIVAS_GESTIONAR"],
+  ])("%s is %s %s and requires %s (S10, S14)", (name, method, path, permission) => {
     expect(Reflect.getMetadata(METHOD_METADATA, handler(name))).toBe(method);
     expect(Reflect.getMetadata(PATH_METADATA, handler(name))).toBe(path);
     expect(Reflect.getMetadata(PERMISSIONS_KEY, handler(name))).toEqual([permission]);
@@ -75,11 +85,17 @@ describe("AlertaController", () => {
     await expect(controller.create(request, dto)).resolves.toBe("create");
     await expect(controller.getMyStation(request)).resolves.toBe("getMyStation");
     await expect(controller.updateStatus(request, "100", status)).resolves.toBe("updateStatus");
+    await expect(controller.getCentral()).resolves.toBe("getCentral");
+    await expect(controller.updateCentralStatus(request, "100", status)).resolves.toBe(
+      "updateCentralStatus",
+    );
 
     expect(service.getDestinations).toHaveBeenCalledWith("5");
     expect(service.listSent).toHaveBeenCalledWith("5");
     expect(service.create).toHaveBeenCalledWith("5", dto);
     expect(service.getMyStation).toHaveBeenCalledWith("5");
     expect(service.updateStatus).toHaveBeenCalledWith("5", "100", status);
+    expect(service.getCentral).toHaveBeenCalledWith();
+    expect(service.updateCentralStatus).toHaveBeenCalledWith("5", "100", status);
   });
 });

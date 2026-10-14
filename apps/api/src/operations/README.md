@@ -2,7 +2,8 @@
 
 Operational alerts, v1: a pilot sends a predefined alert from their unit to a
 station of the unit's line, and the operator of that station moves it through
-its states. Station -> central alerts, news (`tbl_novedad`) and
+its states. Central users (admin and central operator) see and advance the
+alerts of every station. Station -> central alerts, news (`tbl_novedad`) and
 `tbl_afectacion_operativa` are not implemented yet.
 
 Spec: `odd/tasks/operational-alerts.md`.
@@ -20,9 +21,12 @@ are ISO 8601.
 | POST | `/` | `ALERTAS_UNIDAD_GESTIONAR` | `{ tipoAlerta, idEstacionDestino }` -> 201 alert |
 | GET | `my-station` | `ALERTAS_ESTACION_GESTIONAR` | `{ station, alerts }` for the caller's station, newest first, max 100 |
 | PATCH | `:id/status` | `ALERTAS_ESTACION_GESTIONAR` | `{ estado, observacion? }` -> 200 alert |
+| GET | `central` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ lineas: [{ idLinea, numeroLinea, nombreLinea, estaciones: [{ idEstacion, nombreEstacion, unidades: [{ idUnidad, numeroPlaca, alerts }] }] }] }` from the newest 300 alerts |
+| PATCH | `central/:id/status` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ estado, observacion? }` -> 200 alert, any station |
 
 Seeded roles: `PILOTO` has `ALERTAS_UNIDAD_GESTIONAR`; `OPERADOR_ESTACION` has
-`ALERTAS_ESTACION_GESTIONAR`.
+`ALERTAS_ESTACION_GESTIONAR`; `OPERADOR_CENTRAL` and `ADMINISTRADOR_SISTEMA`
+have `ALERTAS_OPERATIVAS_GESTIONAR`.
 
 ## Rules
 
@@ -46,6 +50,14 @@ Seeded roles: `PILOTO` has `ALERTAS_UNIDAD_GESTIONAR`; `OPERADOR_ESTACION` has
   `ACTIVA` `tbl_asignacion_estacion` station. Another station's alert -> 404
   (not 403), so ids of other stations cannot be probed. Operator without
   station -> 404.
+- **Central view**: alerts are grouped line -> station -> unit. `tbl_alerta`
+  stores no line, so an alert goes under the line currently assigned to its
+  unit (`tbl_asignacion_unidad`); units without line go to a last group with
+  `idLinea: null` and `nombreLinea: "Sin línea"`. Lines sort by number,
+  stations by name, units by plate, alerts newest first.
+- **Central transitions**: `central/:id/status` applies the same forward-only
+  rules, row lock and history row (author = caller) as the station route,
+  without station scoping. Unknown alert -> 404.
 
 ## Not in v1
 

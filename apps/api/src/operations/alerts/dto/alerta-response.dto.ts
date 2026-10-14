@@ -53,3 +53,28 @@ export class StationAlertsResponseDto {
   @ApiProperty({ type: AlertaEstacionDto }) station!: AlertaEstacionDto;
   @ApiProperty({ type: [AlertaResponseDto] }) alerts!: AlertaResponseDto[];
 }
+
+export class AlertaCentralUnidadDto {
+  @ApiProperty() idUnidad!: string;
+  @ApiProperty() numeroPlaca!: string;
+  @ApiProperty({ type: [AlertaResponseDto], description: "Más recientes primero" })
+  alerts!: AlertaResponseDto[];
+}
+
+export class AlertaCentralEstacionDto {
+  @ApiProperty() idEstacion!: string;
+  @ApiProperty() nombreEstacion!: string;
+  @ApiProperty({ type: [AlertaCentralUnidadDto] }) unidades!: AlertaCentralUnidadDto[];
+}
+
+export class AlertaCentralLineaDto {
+  @ApiProperty({ nullable: true, type: String, description: "null: unidades sin línea asignada" })
+  idLinea!: string | null;
+  @ApiProperty({ nullable: true, type: String }) numeroLinea!: string | null;
+  @ApiProperty() nombreLinea!: string;
+  @ApiProperty({ type: [AlertaCentralEstacionDto] }) estaciones!: AlertaCentralEstacionDto[];
+}
+
+export class CentralAlertsResponseDto {
+  @ApiProperty({ type: [AlertaCentralLineaDto] }) lineas!: AlertaCentralLineaDto[];
+}

@@ -332,4 +332,191 @@ describe("AlertaService", () => {
       expect(managerQuery).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("getCentral (S12, S14)", () => {
+    const row = (
+      idAlerta: string,
+      linea: { idLinea: string; numeroLinea: string; nombreLinea: string } | null,
+      idEstacion: string,
+      nombreEstacion: string,
+      idUnidad: string,
+      numeroPlaca: string,
+    ) => ({
+      ...ALERT_ROW,
+      idAlerta,
+      idEstacion,
+      nombreEstacion,
+      idUnidad,
+      numeroPlaca,
+      idLinea: linea?.idLinea ?? null,
+      numeroLinea: linea?.numeroLinea ?? null,
+      nombreLinea: linea?.nombreLinea ?? null,
+    });
+    const L1 = { idLinea: "1", numeroLinea: "1", nombreLinea: "Línea 1" };
+    const L12 = { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" };
+    const L2 = { idLinea: "2", numeroLinea: "2", nombreLinea: "Línea 2" };
+    const dto = (idAlerta: string, idEstacion: string, nombreEstacion: string, idUnidad: string, numeroPlaca: string) => ({
+      ...ALERT_DTO,
+      idAlerta,
+      unidad: { idUnidad, numeroPlaca },
+      estacionDestino: { idEstacion, nombreEstacion },
+    });
+
+    it("queries the newest 300 unit->station alerts with the unit's current line", async () => {
+      setup([[]]);
+
+      await expect(service.getCentral()).resolves.toEqual({ lineas: [] });
+
+      const [sql, params] = query.mock.calls[0]!;
+      expect(sql).toContain("tbl_asignacion_unidad");
+      expect(sql).toContain("tbl_linea");
+      expect(sql).toContain("a.tipo_origen = $1 AND a.tipo_destino = $2");
+      expect(sql).toContain("ORDER BY a.fecha_creacion DESC");
+      expect(sql).toContain("LIMIT 300");
+      expect(params).toEqual(["UNIDAD", "ESTACION"]);
+    });
+
+    it("groups line -> station -> unit, sorted, keeping alerts newest first and no-line last", async () => {
+      setup([
+        [
+          row("9", null, "30", "Estación Oeste", "8", "P-999ZZZ"),
+          row("8", L12, "22", "Estación Centro", "7", "P-123ABC"),
+          row("7", L2, "25", "Estación Sur", "6", "P-500BBB"),
+          row("6", L2, "21", "Estación Norte", "5", "P-400AAA"),
+          row("5", L2, "25", "Estación Sur", "4", "P-100AAA"),
+          row("4", L2, "25", "Estación Sur", "6", "P-500BBB"),
+          row("3", L1, "20", "Estación Uno", "3", "P-300CCC"),
+        ],
+      ]);
+
+      const result = await service.getCentral();
+
+      expect(result).toEqual({
+        lineas: [
+          {
+            ...L1,
+            estaciones: [
+              {
+                idEstacion: "20",
+                nombreEstacion: "Estación Uno",
+                unidades: [
+                  { idUnidad: "3", numeroPlaca: "P-300CCC", alerts: [dto("3", "20", "Estación Uno", "3", "P-300CCC")] },
+                ],
+              },
+            ],
+          },
+          {
+            ...L2,
+            estaciones: [
+              {
+                idEstacion: "21",
+                nombreEstacion: "Estación Norte",
+                unidades: [
+                  { idUnidad: "5", numeroPlaca: "P-400AAA", alerts: [dto("6", "21", "Estación Norte", "5", "P-400AAA")] },
+                ],
+              },
+              {
+                idEstacion: "25",
+                nombreEstacion: "Estación Sur",
+                unidades: [
+                  { idUnidad: "4", numeroPlaca: "P-100AAA", alerts: [dto("5", "25", "Estación Sur", "4", "P-100AAA")] },
+                  {
+                    idUnidad: "6",
+                    numeroPlaca: "P-500BBB",
+                    alerts: [
+                      dto("7", "25", "Estación Sur", "6", "P-500BBB"),
+                      dto("4", "25", "Estación Sur", "6", "P-500BBB"),
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            ...L12,
+            estaciones: [
+              {
+                idEstacion: "22",
+                nombreEstacion: "Estación Centro",
+                unidades: [
+                  { idUnidad: "7", numeroPlaca: "P-123ABC", alerts: [dto("8", "22", "Estación Centro", "7", "P-123ABC")] },
+                ],
+              },
+            ],
+          },
+          {
+            idLinea: null,
+            numeroLinea: null,
+            nombreLinea: "Sin línea",
+            estaciones: [
+              {
+                idEstacion: "30",
+                nombreEstacion: "Estación Oeste",
+                unidades: [
+                  { idUnidad: "8", numeroPlaca: "P-999ZZZ", alerts: [dto("9", "30", "Estación Oeste", "8", "P-999ZZZ")] },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+  });
+
+  describe("updateCentralStatus (S13)", () => {
+    const lockedRow = (estadoAlerta: string, idEstacionDestino = "23") => [
+      { estadoAlerta, idEstacionDestino },
+    ];
+
+    it("advances an alert of any station without a station lookup and writes one history row", async () => {
+      setup([[{ ...ALERT_ROW, estadoAlerta: "EN_ATENCION" }]], [lockedRow("PENDIENTE"), [], []]);
+
+      const result = await service.updateCentralStatus("1", "100", {
+        estado: "EN_ATENCION",
+        observacion: "Central atiende",
+      });
+
+      expect(result).toEqual({ ...ALERT_DTO, estadoAlerta: "EN_ATENCION" });
+      expect(transaction).toHaveBeenCalledTimes(1);
+      expect(managerQuery).toHaveBeenCalledTimes(3);
+      const [lockSql, lockParams] = managerQuery.mock.calls[0]!;
+      expect(lockSql).toContain("FOR UPDATE");
+      expect(lockParams).toEqual(["100"]);
+      expect(managerQuery.mock.calls[1]![1]).toEqual(["EN_ATENCION", "100"]);
+      const [historySql, historyParams] = managerQuery.mock.calls[2]!;
+      expect(historySql).toContain("INSERT INTO tbl_historial_estado");
+      expect(historyParams).toEqual(["PENDIENTE", "EN_ATENCION", "Central atiende", "100", "1"]);
+    });
+
+    it.each([
+      ["RECIBIDA", "RECIBIDA"],
+      ["RESUELTA", "EN_ATENCION"],
+    ])("rejects %s -> %s with InvalidAlertTransition and writes nothing", async (from, to) => {
+      setup([], [lockedRow(from)]);
+
+      await expect(
+        service.updateCentralStatus("1", "100", { estado: to as "RECIBIDA" }),
+      ).rejects.toBeInstanceOf(InvalidAlertTransition);
+      expect(managerQuery).toHaveBeenCalledTimes(1);
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it("throws AlertNotFound when the alert does not exist", async () => {
+      setup([], [[]]);
+
+      await expect(
+        service.updateCentralStatus("1", "100", { estado: "RECIBIDA" }),
+      ).rejects.toBeInstanceOf(AlertNotFound);
+      expect(managerQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws AlertNotFound for a non-numeric id without querying", async () => {
+      setup([], []);
+
+      await expect(
+        service.updateCentralStatus("1", "abc", { estado: "RECIBIDA" }),
+      ).rejects.toBeInstanceOf(AlertNotFound);
+      expect(transaction).not.toHaveBeenCalled();
+    });
+  });
 });
