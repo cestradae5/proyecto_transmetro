@@ -15,6 +15,13 @@ export class AlertaAutorDto {
   @ApiProperty() nombre!: string;
 }
 
+export class AlertaObservacionDto {
+  @ApiProperty({ description: "Estado al que pasó la alerta con esta observación" }) estadoNuevo!: string;
+  @ApiProperty() observacion!: string;
+  @ApiProperty({ description: "ISO 8601" }) fechaCambio!: string;
+  @ApiProperty({ type: AlertaAutorDto }) autor!: AlertaAutorDto;
+}
+
 export class AlertaResponseDto {
   @ApiProperty() idAlerta!: string;
   @ApiProperty() tipoAlerta!: string;
@@ -26,6 +33,11 @@ export class AlertaResponseDto {
   @ApiProperty({ type: AlertaUnidadDto }) unidad!: AlertaUnidadDto;
   @ApiProperty({ type: AlertaEstacionDto }) estacionDestino!: AlertaEstacionDto;
   @ApiProperty({ type: AlertaAutorDto }) autor!: AlertaAutorDto;
+  @ApiProperty({
+    type: [AlertaObservacionDto],
+    description: "Observaciones de los cambios de estado, las más antiguas primero",
+  })
+  observaciones!: AlertaObservacionDto[];
 }
 
 export class AlertaDestinationDto {

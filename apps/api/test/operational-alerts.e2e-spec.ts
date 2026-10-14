@@ -461,6 +461,33 @@ describe("Operational alerts (e2e)", () => {
     expect(Number(n.n)).toBe(1);
   });
 
+  it("S15: the pilot, the station operator and central users see the observations, oldest first", async () => {
+    // A blank observation is not listed.
+    await api()
+      .patch(`/operations/alerts/central/${centralAlertId}/status`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ estado: "RESUELTA", observacion: "   " })
+      .expect(200);
+
+    type Obs = { estadoNuevo: string; observacion: string; fechaCambio: string; autor: { idEmpleado: string } };
+    const pick = (obs: Obs[]) => obs.map((o) => [o.estadoNuevo, o.observacion, o.autor.idEmpleado]);
+    const first = [["RECIBIDA", "Unidad en camino", op1Id]];
+    const second = [["EN_ATENCION", "Central atiende", centralId]];
+
+    const sent = await api().get("/operations/alerts/sent").set("Authorization", `Bearer ${pilotToken}`).expect(200);
+    const byId = new Map(sent.body.map((a: { idAlerta: string; observaciones: Obs[] }) => [a.idAlerta, a.observaciones]));
+    expect(pick(byId.get(alertId) as Obs[])).toEqual(first);
+    expect(pick(byId.get(centralAlertId) as Obs[])).toEqual(second);
+    expect((byId.get(alertId) as Obs[])[0]!.fechaCambio).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+    const inbox = await api().get("/operations/alerts/my-station").set("Authorization", `Bearer ${op1Token}`).expect(200);
+    expect(pick(inbox.body.alerts[0].observaciones)).toEqual(first);
+
+    const central = await api().get("/operations/alerts/central").set("Authorization", `Bearer ${centralToken}`).expect(200);
+    const station3Alert = ourLine(central.body).estaciones[1]!.unidades[0]!.alerts[0] as unknown as { observaciones: Obs[] };
+    expect(pick(station3Alert.observaciones)).toEqual(second);
+  });
+
   it("S14: pilots and station operators cannot use the central endpoints (403)", async () => {
     for (const token of [pilotToken, op1Token]) {
       await api().get("/operations/alerts/central").set("Authorization", `Bearer ${token}`).expect(403);
@@ -470,10 +497,9 @@ describe("Operational alerts (e2e)", () => {
         .send({ estado: "RESUELTA" })
         .expect(403);
     }
-    const stored = await one<{ estado: string }>(
-      `SELECT estado_alerta AS "estado" FROM tbl_alerta WHERE id_alerta = $1`,
-      [centralAlertId],
-    );
-    expect(stored.estado).toBe("EN_ATENCION");
+    const n = await one<{ n: string }>(`SELECT COUNT(*) AS "n" FROM tbl_historial_estado WHERE id_alerta = $1`, [
+      centralAlertId,
+    ]);
+    expect(Number(n.n)).toBe(2);
   });
 });

@@ -58,6 +58,7 @@ const ALERT_DTO = {
   unidad: { idUnidad: "7", numeroPlaca: "P-123ABC" },
   estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
   autor: { idEmpleado: "5", nombre: "Piloto Uno" },
+  observaciones: [],
 };
 
 const STATION_ROW = { idEstacion: "22", nombreEstacion: "Estación Centro" };
@@ -194,6 +195,71 @@ describe("AlertaService", () => {
         service.create("5", { tipoAlerta: "ACCIDENTE", idEstacionDestino: "22" }),
       ).rejects.toBeInstanceOf(UnitHasNoLine);
       expect(query).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("observaciones (S15)", () => {
+    it("selects the alert's non-blank history observations, oldest first, with their author", async () => {
+      setup([[]]);
+
+      await service.listSent("5");
+
+      const [sql] = query.mock.calls[0]!;
+      expect(sql).toContain("FROM tbl_historial_estado h");
+      expect(sql).toContain("h.id_alerta = a.id_alerta");
+      expect(sql).toContain("btrim(h.observacion) <> ''");
+      expect(sql).toContain("ORDER BY h.fecha_cambio, h.id_historial_estado");
+      expect(sql).toContain(`AS "observaciones"`);
+    });
+
+    it("maps observations into every returned alert with ISO dates and string ids", async () => {
+      setup([
+        [
+          {
+            ...ALERT_ROW,
+            estadoAlerta: "EN_ATENCION",
+            observaciones: [
+              {
+                estadoNuevo: "RECIBIDA",
+                observacion: "Unidad en camino",
+                fechaCambio: "2026-10-13T04:05:00-06:00",
+                idEmpleado: 8,
+                nombre: "Operador Uno",
+              },
+              {
+                estadoNuevo: "EN_ATENCION",
+                observacion: "Central atiende",
+                fechaCambio: "2026-10-13T10:20:00.5+00:00",
+                idEmpleado: "1",
+                nombre: "Central Uno",
+              },
+            ],
+          },
+        ],
+      ]);
+
+      const result = await service.listSent("5");
+
+      expect(result).toEqual([
+        {
+          ...ALERT_DTO,
+          estadoAlerta: "EN_ATENCION",
+          observaciones: [
+            {
+              estadoNuevo: "RECIBIDA",
+              observacion: "Unidad en camino",
+              fechaCambio: "2026-10-13T10:05:00.000Z",
+              autor: { idEmpleado: "8", nombre: "Operador Uno" },
+            },
+            {
+              estadoNuevo: "EN_ATENCION",
+              observacion: "Central atiende",
+              fechaCambio: "2026-10-13T10:20:00.500Z",
+              autor: { idEmpleado: "1", nombre: "Central Uno" },
+            },
+          ],
+        },
+      ]);
     });
   });
 

@@ -50,6 +50,11 @@ have `ALERTAS_OPERATIVAS_GESTIONAR`.
   `ACTIVA` `tbl_asignacion_estacion` station. Another station's alert -> 404
   (not 403), so ids of other stations cannot be probed. Operator without
   station -> 404.
+- **Observations**: every alert carries `observaciones`, the
+  `tbl_historial_estado` rows with a non-blank observation, oldest first,
+  each `{ estadoNuevo, observacion, fechaCambio, autor }`. They come with the
+  alert, so the pilot (`sent`), the station operator and central users see
+  them; who sees which alert is unchanged.
 - **Central view**: alerts are grouped line -> station -> unit. `tbl_alerta`
   stores no line, so an alert goes under the line currently assigned to its
   unit (`tbl_asignacion_unidad`); units without line go to a last group with

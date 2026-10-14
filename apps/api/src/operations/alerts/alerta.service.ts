@@ -68,6 +68,16 @@ interface AlertRow {
   nombreEstacion: string | null;
   idEmpleado: string;
   nombreEmpleado: string;
+  observaciones?: ObservacionRow[] | null;
+}
+
+// One json_agg element of ALERT_COLUMNS' "observaciones" subquery.
+interface ObservacionRow {
+  estadoNuevo: string;
+  observacion: string;
+  fechaCambio: string;
+  idEmpleado: string | number;
+  nombre: string;
 }
 
 interface CentralAlertRow extends AlertRow {
@@ -94,7 +104,20 @@ const ALERT_COLUMNS = `
          e.id_estacion AS "idEstacion",
          e.nombre_estacion AS "nombreEstacion",
          emp.id_emple AS "idEmpleado",
-         emp.nombre_emple AS "nombreEmpleado"`;
+         emp.nombre_emple AS "nombreEmpleado",
+         COALESCE((
+           SELECT json_agg(json_build_object(
+                    'estadoNuevo', h.estado_nuevo,
+                    'observacion', h.observacion,
+                    'fechaCambio', h.fecha_cambio,
+                    'idEmpleado', h.id_empleado::text,
+                    'nombre', he.nombre_emple)
+                  ORDER BY h.fecha_cambio, h.id_historial_estado)
+             FROM tbl_historial_estado h
+            INNER JOIN tbl_empleado he ON he.id_emple = h.id_empleado
+            WHERE h.id_alerta = a.id_alerta
+              AND h.observacion IS NOT NULL AND btrim(h.observacion) <> ''
+         ), '[]'::json) AS "observaciones"`;
 
 const ALERT_FROM = `
     FROM tbl_alerta a
@@ -449,6 +472,12 @@ export class AlertaService {
         nombreEstacion: row.nombreEstacion ?? "",
       },
       autor: { idEmpleado: String(row.idEmpleado), nombre: row.nombreEmpleado },
+      observaciones: (row.observaciones ?? []).map((obs) => ({
+        estadoNuevo: obs.estadoNuevo,
+        observacion: obs.observacion,
+        fechaCambio: new Date(obs.fechaCambio).toISOString(),
+        autor: { idEmpleado: String(obs.idEmpleado), nombre: obs.nombre },
+      })),
     };
   }
 }
