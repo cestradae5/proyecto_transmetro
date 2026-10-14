@@ -7,11 +7,12 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseFilters,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { Permissions } from "../../authentication/permissions.decorator.js";
@@ -73,17 +74,30 @@ export class AlertaController {
 
   @Get("my-station")
   @Permissions(ALERTAS_ESTACION_GESTIONAR)
-  @ApiOperation({ summary: "Alertas recibidas por la estación asignada al operador" })
+  @ApiOperation({
+    summary: "Alertas recibidas por la estación del operador, enviadas desde sus líneas activas",
+  })
+  @ApiQuery({
+    name: "idLinea",
+    required: false,
+    description: "Solo las alertas de esta línea; una línea que no es de la estación devuelve una lista vacía",
+  })
   @ApiResponse({ status: 404, description: "El operador no tiene una estación asignada" })
-  getMyStation(@Req() request: Record<string, any>): Promise<StationAlertsResponseDto> {
-    return this.alertaService.getMyStation(request.user.employeeId);
+  getMyStation(
+    @Req() request: Record<string, any>,
+    @Query("idLinea") idLinea?: string,
+  ): Promise<StationAlertsResponseDto> {
+    return this.alertaService.getMyStation(request.user.employeeId, idLinea);
   }
 
   @Patch(":id/status")
   @Permissions(ALERTAS_ESTACION_GESTIONAR)
   @ApiOperation({ summary: "Avanzar el estado de una alerta de mi estación" })
   @ApiResponse({ status: 200, description: "Alerta actualizada" })
-  @ApiResponse({ status: 404, description: "Alerta inexistente o de otra estación" })
+  @ApiResponse({
+    status: 404,
+    description: "Alerta inexistente, de otra estación o de una línea que la estación ya no atiende",
+  })
   @ApiResponse({ status: 409, description: "Transición de estado no permitida" })
   updateStatus(
     @Req() request: Record<string, any>,

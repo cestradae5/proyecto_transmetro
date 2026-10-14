@@ -22,6 +22,12 @@ export class AlertaObservacionDto {
   @ApiProperty({ type: AlertaAutorDto }) autor!: AlertaAutorDto;
 }
 
+export class AlertaLineaDto {
+  @ApiProperty() idLinea!: string;
+  @ApiProperty() numeroLinea!: string;
+  @ApiProperty() nombreLinea!: string;
+}
+
 export class AlertaResponseDto {
   @ApiProperty() idAlerta!: string;
   @ApiProperty() tipoAlerta!: string;
@@ -38,6 +44,12 @@ export class AlertaResponseDto {
     description: "Observaciones de los cambios de estado, las más antiguas primero",
   })
   observaciones!: AlertaObservacionDto[];
+  @ApiProperty({
+    type: AlertaLineaDto,
+    nullable: true,
+    description: "Línea desde la que se envió la alerta; null en alertas antiguas de unidades sin línea",
+  })
+  linea!: AlertaLineaDto | null;
 }
 
 export class AlertaDestinationDto {
@@ -49,12 +61,6 @@ export class AlertaDestinationDto {
   suggested!: boolean;
 }
 
-export class AlertaLineaDto {
-  @ApiProperty() idLinea!: string;
-  @ApiProperty() numeroLinea!: string;
-  @ApiProperty() nombreLinea!: string;
-}
-
 export class AlertaDestinationsResponseDto {
   @ApiProperty({ type: AlertaUnidadDto }) unidad!: AlertaUnidadDto;
   @ApiProperty({ type: AlertaLineaDto }) linea!: AlertaLineaDto;
@@ -63,6 +69,8 @@ export class AlertaDestinationsResponseDto {
 
 export class StationAlertsResponseDto {
   @ApiProperty({ type: AlertaEstacionDto }) station!: AlertaEstacionDto;
+  @ApiProperty({ type: [AlertaLineaDto], description: "Líneas ACTIVAS de la estación" })
+  lineas!: AlertaLineaDto[];
   @ApiProperty({ type: [AlertaResponseDto] }) alerts!: AlertaResponseDto[];
 }
 

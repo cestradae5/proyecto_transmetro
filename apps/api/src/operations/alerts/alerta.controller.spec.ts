@@ -83,7 +83,7 @@ describe("AlertaController", () => {
     await expect(controller.getDestinations(request)).resolves.toBe("getDestinations");
     await expect(controller.listSent(request)).resolves.toBe("listSent");
     await expect(controller.create(request, dto)).resolves.toBe("create");
-    await expect(controller.getMyStation(request)).resolves.toBe("getMyStation");
+    await expect(controller.getMyStation(request, "6")).resolves.toBe("getMyStation");
     await expect(controller.updateStatus(request, "100", status)).resolves.toBe("updateStatus");
     await expect(controller.getCentral()).resolves.toBe("getCentral");
     await expect(controller.updateCentralStatus(request, "100", status)).resolves.toBe(
@@ -93,7 +93,7 @@ describe("AlertaController", () => {
     expect(service.getDestinations).toHaveBeenCalledWith("5");
     expect(service.listSent).toHaveBeenCalledWith("5");
     expect(service.create).toHaveBeenCalledWith("5", dto);
-    expect(service.getMyStation).toHaveBeenCalledWith("5");
+    expect(service.getMyStation).toHaveBeenCalledWith("5", "6");
     expect(service.updateStatus).toHaveBeenCalledWith("5", "100", status);
     expect(service.getCentral).toHaveBeenCalledWith();
     expect(service.updateCentralStatus).toHaveBeenCalledWith("5", "100", status);
