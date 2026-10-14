@@ -13,6 +13,7 @@ import { canOpenReportsPage, canViewAuditLog } from "../features/reports/permiss
 import { MiUnidadPage } from "../features/fleet/components/mi-unidad/mi-unidad-page";
 import { MiEstacionPage } from "../features/fleet/components/mi-estacion/mi-estacion-page";
 import { OperatorOnlyRoute } from "../features/fleet/operator-only-route";
+import { AlertsPage } from "../features/operational-alerts";
 import { AuthProvider } from "../features/authentication/auth-context";
 import { AuthenticationGuard } from "../features/dashboard/protected-route";
 
@@ -30,6 +31,7 @@ export function App() {
           <Route path="/fleet" element={<AuthenticationGuard requiredModule="fleet"><OperatorOnlyRoute><FleetPage /></OperatorOnlyRoute></AuthenticationGuard>} />
           <Route path="/fleet/my-unit" element={<AuthenticationGuard requiredModule="fleet"><MiUnidadPage /></AuthenticationGuard>} />
           <Route path="/fleet/my-station" element={<AuthenticationGuard requiredModule="fleet"><MiEstacionPage /></AuthenticationGuard>} />
+          <Route path="/alerts" element={<AuthenticationGuard requiredModule="operational_alerts"><AlertsPage /></AuthenticationGuard>} />
           <Route path="/personal" element={<AuthenticationGuard requiredModule="personnel"><PersonalPage /></AuthenticationGuard>} />
           <Route path="/reports" element={<AuthenticationGuard requiredModule="reports"><ReportsHubPage /></AuthenticationGuard>} />
           <Route path="/reports/audit-log" element={<AuthenticationGuard requiredModule="reports"><ReportsPermissionRoute allowed={canViewAuditLog}><AuditLogPage /></ReportsPermissionRoute></AuthenticationGuard>} />

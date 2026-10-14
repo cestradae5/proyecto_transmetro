@@ -58,6 +58,8 @@ export function LandingPage() {
                   navigate(fleetDestination());
                 } else if (module === 'personnel') {
                   navigate('/personal');
+                } else if (module === 'operational_alerts') {
+                  navigate('/alerts');
                 } else if (module === 'reports') {
                   navigate('/reports');
                 } else if (module === 'self_profile') {
@@ -68,6 +70,7 @@ export function LandingPage() {
                 module === 'infrastructure' ||
                 module === 'fleet' ||
                 module === 'personnel' ||
+                module === 'operational_alerts' ||
                 module === 'reports' ||
                 module === 'self_profile';
               
