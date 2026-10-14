@@ -1,0 +1,31 @@
+# Alert line scoping (station <-> line)
+
+Branch `feat/operational-alerts` (continues `operational-alerts.md`). Fixes the station-operator assignment flow: alerts are scoped to the line they were sent from, operators see and answer only alerts of their station's active lines, and station lines are managed only from Infrastructure.
+
+## Specs
+- S1 (user, verbatim): "1. El piloto solo puede envair alertas a las estaciones de su linea asignada." Unchanged rule (already enforced by `create`, 400 `DestinationNotOnLine`); it must keep holding.
+- S2 (user, verbatim): "2. EL operador solo puede ver las alertas de su linea y responderle a sus unidades que solo pertenecen a esa linea." Bug (user, verbatim): "asigne un operador a otra estación y le asigne una linea diferente a su estación y le llegaron alertas de otras lienas."
+- S3 Alert line snapshot (orchestrator proposal, user "Ok"): `tbl_alerta` gains nullable `id_linea` (FK `tbl_linea`). `POST /operations/alerts` stores the line assigned to the pilot's unit at creation time. Existing alerts are backfilled once with the line currently assigned to their unit; alerts whose unit has no line stay `NULL` (user "Ok" to: "completarlas con la línea actual de su unidad y dejar en `NULL` las de unidades sin línea. Las que queden en `NULL` solo se verían en la vista central, bajo "Sin línea", y nunca en una estación").
+- S4 Operator scope: `GET /operations/alerts/my-station` returns only alerts whose destination is the operator's station AND whose `id_linea` is an ACTIVA line of that station (`tbl_estacion_linea`). Removing or deactivating a line of the station hides its alerts from the operator. `NULL`-line alerts never appear for a station.
+- S5 Operator response scope: `PATCH /operations/alerts/:id/status` on an alert outside S4's scope -> 404 `AlertNotFound`, state and history unchanged.
+- S6 Line filter (user, verbatim): "si el operador tiene 3 lineas, puede ir filtrando entre las 3?" — answer accepted: `my-station` response gains `lineas: [{ idLinea, numeroLinea, nombreLinea }]` (the station's ACTIVA lines) and accepts optional `?idLinea=`; filtering happens server side. An `idLinea` that is not an ACTIVA line of the station returns `alerts: []` (no leak). Web inbox shows chips "Todas" + one per line.
+- S7 Every `AlertaDto` gains `linea: { idLinea, numeroLinea, nombreLinea } | null` from the stored `id_linea`.
+- S8 Central view groups by the stored `a.id_linea` (not the unit's current line); `NULL` -> "Sin línea" group last, as today.
+- S9 (user, verbatim): "debemos de hacer que la linea se inserte automaticamente dependiendo de la estacion, si al operador le asigno una estacion de la linea 6, el operador automaticamente se le asigna la linea, si la estacion comparte con otras lineas tambien se le asignan". The operator's lines are derived from the station (no operator-line data). Fleet station-operator assignments table removes the "Líneas" button and shows the station's ACTIVA lines read-only.
+- S10 Station-line management stays only in Infrastructure ("Líneas de la estación" on the line card and paradas table). `EstacionLineasDialog` moves from `features/fleet` to `features/infrastructure`.
+- S11 A station can be linked only to a line whose route includes the station's parada (`tbl_linea_parada`): the dialog lists only those lines and `POST /infrastructure/stations/:id/lines` rejects others with 400. Existing links are left untouched.
+
+## Tasks
+- [ ] T1 [S3] DB: `id_linea` column + one-time backfill in `database/init.sql`; apply to `transmetro_test` — route: inline
+- [ ] T2 [S1-S8] API alerts: store line, station+line scoping, `?idLinea`, `linea` on DTO, central grouping, specs, README — route: inline
+- [ ] T3 [S11] API station-line route validation + spec — route: inline
+- [ ] T4 [S1-S6, S8, S11] e2e against `transmetro_test` — route: inline
+- [ ] T5 [S6, S7, S9-S11] Web: inbox line chips, line label on cards, fleet read-only lines, move dialog, filtered options, tests, README — route: inline
+- [ ] T6 [all] Full checks + independent verifier (risk items 1 data, 2 scoping) — route: gentle-ai-verify
+
+## Log
+- L1 (user): "Tenemos que arreglar el flujo de asignación de estación-operador, porque hay un fallo de asignación. 1. El piloto solo puede envair alertas a las estaciones de su linea asignada. 2. EL operador solo puede ver las alertas de su linea y responderle a sus unidades que solo pertenecen a esa linea. Acabo de ver el flujo y me perdi un poco, asigne un operador a otra estación y le asigne una linea diferente a su estación y le llegaron alertas de otras lienas. Tengo esta idea, que las alertas lleguen de la slineas a las estaciones, ósea que si el piloto esta en la linea 2 y envia la alerta, solo las estaciones que están en la linea 2 reciben esa alerta. Dime si esta idea esta mejor, dame tu otra opción para evaluarlo."
+- L2 (exploration): `getMyStation` filters only `a.id_estacion_destino`; `tbl_alerta` has no line; central derives line from the unit's current assignment; `tbl_estacion_linea` is N:M. Fleet "Líneas" button (`asignaciones-estacion-table.tsx:94`) edits `tbl_estacion_linea` (the station), not the operator.
+- L3 (user): "ok, el problema esta que en la asignacion de operador estacion existe la opcion de agregar lineas, yo considero que debemos de cmabiar eso para que el usuario no se confunda, debemos de hacer que la linea se inserte automaticamente dependiendo de la estacion, si al operador le asigno una estacion de la linea 6, el operador automaticamente se le asigna la linea, si la estacion comparte con otras lineas tambien se le asignan, evalua esta propuestas sus pros y contras"
+- L4 (user): "una estacion comparte varias lineas. Si vamos con los 3 puntos que me propusiste, el punto 2 ya tiene ui de linea de la estacion (evalua si es lo que queremos), en el punto 3 si el operador tiene 3 lineas, puede ir filtrando entre las 3?" Exploration: Infrastructure already reuses `EstacionLineasDialog` (`linea-card.tsx:168`, `paradas-table.tsx:149`); its selector offers every unlinked line (`estacion-lineas-dialog.tsx:38`).
+- L5 (user): "Ok" — to the 3-point plan, server-side line filter, route-restricted line selector and the backfill criterion.
