@@ -3,6 +3,7 @@ import { formatReportDate } from '../../fleet/utils/format';
 import { TIPO_ALERTA_LABEL, TIPOS_ALERTA } from '../constants';
 import { usePilotAlerts } from '../hooks/use-pilot-alerts';
 import type { Alerta, TipoAlerta } from '../types';
+import { AlertObservations } from './alert-observations';
 import { AlertStateBadge } from './alert-state-badge';
 
 function EmptyState({ icon, title, hint }: { icon: string; title: string; hint: string }) {
@@ -29,14 +30,17 @@ function SentAlerts({ sent, sentError }: { sent: Alerta[]; sentError: string | n
       ) : (
         <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl">
           {sent.map((alert) => (
-            <li key={alert.idAlerta} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-slate-900">{TIPO_ALERTA_LABEL[alert.tipoAlerta] ?? alert.tipoAlerta}</p>
-                <p className="text-xs text-slate-500">
-                  <span>{alert.estacionDestino.nombreEstacion}</span> · {formatReportDate(alert.fechaCreacion)}
-                </p>
+            <li key={alert.idAlerta} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{TIPO_ALERTA_LABEL[alert.tipoAlerta] ?? alert.tipoAlerta}</p>
+                  <p className="text-xs text-slate-500">
+                    <span>{alert.estacionDestino.nombreEstacion}</span> · {formatReportDate(alert.fechaCreacion)}
+                  </p>
+                </div>
+                <AlertStateBadge estado={alert.estadoAlerta} />
               </div>
-              <AlertStateBadge estado={alert.estadoAlerta} />
+              <AlertObservations observaciones={alert.observaciones} />
             </li>
           ))}
         </ul>

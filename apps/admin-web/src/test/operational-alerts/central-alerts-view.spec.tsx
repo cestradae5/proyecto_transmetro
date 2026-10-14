@@ -26,6 +26,7 @@ function alert(id: string, estadoAlerta: EstadoAlerta, overrides: Partial<Alerta
     unidad: { idUnidad: "7", numeroPlaca: "P-123ABC" },
     estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
     autor: { idEmpleado: "5", nombre: "Piloto Uno" },
+    observaciones: [],
     ...overrides,
   };
 }
@@ -161,6 +162,46 @@ describe("CentralAlertsView", () => {
     expect(await within(unit("P-300CCC")).findByRole("alert")).toHaveTextContent(
       "La alerta ya cambió de estado. Actualice la lista e intente de nuevo",
     );
+  });
+
+  it("shows the alert's observations to central users (S15)", () => {
+    const data: CentralAlerts = {
+      lineas: [
+        {
+          ...DATA.lineas[0]!,
+          estaciones: [
+            {
+              idEstacion: "20",
+              nombreEstacion: "Estación Norte",
+              unidades: [
+                {
+                  idUnidad: "3",
+                  numeroPlaca: "P-300CCC",
+                  alerts: [
+                    alert("1", "EN_ATENCION", {
+                      observaciones: [
+                        {
+                          estadoNuevo: "EN_ATENCION",
+                          observacion: "Central atiende",
+                          fechaCambio: "2026-10-13T10:05:00.000Z",
+                          autor: { idEmpleado: "1", nombre: "Central Uno" },
+                        },
+                      ],
+                    }),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    mockedHook.mockReturnValue(hookState(data));
+
+    render(<CentralAlertsView />);
+
+    const list = within(unit("P-300CCC")).getByRole("list", { name: "Observaciones" });
+    expect(within(list).getByRole("listitem")).toHaveTextContent(/Central atiende.*Central Uno · En atención/);
   });
 
   it("shows an empty message when there are no alerts", () => {

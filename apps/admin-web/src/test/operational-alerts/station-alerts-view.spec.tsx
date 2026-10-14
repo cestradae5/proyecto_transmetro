@@ -26,6 +26,7 @@ function alert(id: string, estadoAlerta: EstadoAlerta, overrides: Partial<Alerta
     unidad: { idUnidad: "7", numeroPlaca: `P-${id}` },
     estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
     autor: { idEmpleado: "5", nombre: "Piloto Uno" },
+    observaciones: [],
     ...overrides,
   };
 }
@@ -115,6 +116,30 @@ describe("StationAlertsView", () => {
     fireEvent.click(within(card("P-1")).getByRole("button", { name: "Marcar recibida" }));
 
     await waitFor(() => expect(state.updateStatus).toHaveBeenCalledWith("1", "RECIBIDA", "Unidad en camino"));
+  });
+
+  it("shows the alert's previous observations to the station operator (S15)", () => {
+    mockedHook.mockReturnValue(
+      hookState([
+        alert("1", "RECIBIDA", {
+          observaciones: [
+            {
+              estadoNuevo: "RECIBIDA",
+              observacion: "Unidad en camino",
+              fechaCambio: "2026-10-13T10:01:00.000Z",
+              autor: { idEmpleado: "8", nombre: "Operador Uno" },
+            },
+          ],
+        }),
+        alert("2", "PENDIENTE"),
+      ]),
+    );
+
+    render(<StationAlertsView />);
+
+    const list = within(card("P-1")).getByRole("list", { name: "Observaciones" });
+    expect(within(list).getByRole("listitem")).toHaveTextContent(/Unidad en camino.*Operador Uno · Recibida/);
+    expect(within(card("P-2")).queryByRole("list", { name: "Observaciones" })).not.toBeInTheDocument();
   });
 
   it("limits the observation to 500 characters", () => {

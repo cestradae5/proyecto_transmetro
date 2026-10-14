@@ -25,6 +25,16 @@ export interface Alerta {
   unidad: { idUnidad: string; numeroPlaca: string };
   estacionDestino: { idEstacion: string; nombreEstacion: string };
   autor: { idEmpleado: string; nombre: string };
+  /** State-change observations (non-blank), oldest first. */
+  observaciones: AlertaObservacion[];
+}
+
+export interface AlertaObservacion {
+  /** State the alert moved to with this observation. */
+  estadoNuevo: EstadoAlerta;
+  observacion: string;
+  fechaCambio: string;
+  autor: { idEmpleado: string; nombre: string };
 }
 
 export interface AlertaDestination {

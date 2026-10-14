@@ -34,6 +34,7 @@ const ALERT: Alerta = {
   unidad: { idUnidad: "7", numeroPlaca: "P-123ABC" },
   estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
   autor: { idEmpleado: "5", nombre: "Piloto Uno" },
+  observaciones: [],
 };
 
 function hookState(overrides: Record<string, unknown> = {}) {
@@ -145,6 +146,38 @@ describe("PilotAlertsView", () => {
     expect(within(list).getByText("Falla mecánica")).toBeInTheDocument();
     expect(within(list).getByText("Estación Centro")).toBeInTheDocument();
     expect(within(list).getByText("En atención")).toBeInTheDocument();
+  });
+
+  it("shows the pilot each sent alert's observations, oldest first, with author and state (S15)", () => {
+    const withObs: Alerta = {
+      ...ALERT,
+      observaciones: [
+        {
+          estadoNuevo: "RECIBIDA",
+          observacion: "Unidad en camino",
+          fechaCambio: "2026-10-13T10:01:00.000Z",
+          autor: { idEmpleado: "8", nombre: "Operador Uno" },
+        },
+        {
+          estadoNuevo: "EN_ATENCION",
+          observacion: "Central atiende",
+          fechaCambio: "2026-10-13T10:05:00.000Z",
+          autor: { idEmpleado: "1", nombre: "Central Uno" },
+        },
+      ],
+    };
+    mockedHook.mockReturnValue(hookState({ sent: [withObs, { ...ALERT, idAlerta: "101", tipoAlerta: "RETRASO" }] }));
+
+    render(<PilotAlertsView />);
+
+    const lists = within(screen.getByRole("region", { name: "Mis alertas" })).getAllByRole("list", {
+      name: "Observaciones",
+    });
+    expect(lists).toHaveLength(1);
+    const items = within(lists[0]!).getAllByRole("listitem");
+    expect(items.map((i) => i.querySelector("p")?.textContent)).toEqual(["Unidad en camino", "Central atiende"]);
+    expect(items[0]).toHaveTextContent(/Operador Uno · Recibida/);
+    expect(items[1]).toHaveTextContent(/Central Uno · En atención/);
   });
 
   it("shows an empty sent list message", () => {

@@ -34,6 +34,7 @@ const ALERT: Alerta = {
   unidad: { idUnidad: "7", numeroPlaca: "P-123ABC" },
   estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
   autor: { idEmpleado: "5", nombre: "Piloto Uno" },
+  observaciones: [],
 };
 
 const PAYLOAD: StationAlerts = {

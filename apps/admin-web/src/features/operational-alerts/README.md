@@ -13,7 +13,10 @@ view must win):
 | anything else | e.g. `GUARDIA` with the module | message: no view for the role in this version |
 
 `AlertCard` (state badge, observation, forward-only actions) is shared by the
-station and central views. All views poll the API every 10 s (`POLL_INTERVAL_MS`); refetches are silent.
+station and central views. `AlertObservations` lists an alert's
+`observaciones` (author, state, date; oldest first) in the pilot's "Mis
+alertas" and in every `AlertCard`, so pilots, station operators and central
+users all see the notes written on state changes. All views poll the API every 10 s (`POLL_INTERVAL_MS`); refetches are silent.
 Expected empty states (pilot without unit or line, operator without station)
 come from the backend error codes in `errors.ts`, not from error banners.
 

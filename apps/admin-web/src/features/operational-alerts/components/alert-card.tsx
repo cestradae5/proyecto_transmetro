@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatReportDate } from '../../fleet/utils/format';
 import { ESTADOS_ALERTA, TIPO_ALERTA_LABEL } from '../constants';
 import type { Alerta, EstadoAlertaDestino } from '../types';
+import { AlertObservations } from './alert-observations';
 import { AlertStateBadge } from './alert-state-badge';
 
 const ACTION_LABEL: Record<EstadoAlertaDestino, string> = {
@@ -56,6 +57,8 @@ export function AlertCard({ alert, onUpdate }: AlertCardProps) {
         </div>
         <AlertStateBadge estado={alert.estadoAlerta} />
       </div>
+
+      <AlertObservations observaciones={alert.observaciones} />
 
       {error && (
         <div role="alert" className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
