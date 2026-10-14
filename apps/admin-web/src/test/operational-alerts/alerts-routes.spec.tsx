@@ -63,6 +63,13 @@ describe("/alerts routes", () => {
     expect(screen.queryByText("Station alerts view")).not.toBeInTheDocument();
   });
 
+  it("shows the station view to a user with ALERTAS_ESTACION_GESTIONAR", () => {
+    signIn(["operational_alerts"], ["ALERTAS_ESTACION_GESTIONAR"]);
+    renderApp("/alerts");
+    expect(screen.getByText("Station alerts view")).toBeInTheDocument();
+    expect(screen.queryByText("Pilot alerts view")).not.toBeInTheDocument();
+  });
+
   it("tells any other role with the module that there is no view for it yet", () => {
     signIn(["operational_alerts"], ["ALERTAS_OPERATIVAS_GESTIONAR"]);
     renderApp("/alerts");

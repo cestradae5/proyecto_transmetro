@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../authentication/auth-context';
 import { hasPermission } from '../../fleet/permissions';
-import { ALERTS_UNIT_PERMISSION } from '../permissions';
+import { ALERTS_STATION_PERMISSION, ALERTS_UNIT_PERMISSION } from '../permissions';
 import { PilotAlertsView } from './pilot-alerts-view';
+import { StationAlertsView } from './station-alerts-view';
 
 /** "/alerts": one screen per role, chosen by permission (module scope is enforced by the route guard). */
 export function AlertsPage() {
@@ -11,6 +12,7 @@ export function AlertsPage() {
 
   const renderView = () => {
     if (hasPermission(user, ALERTS_UNIT_PERMISSION)) return <PilotAlertsView />;
+    if (hasPermission(user, ALERTS_STATION_PERMISSION)) return <StationAlertsView />;
     return (
       <div className="py-12 text-center">
         <span className="material-symbols-outlined text-4xl text-slate-300">warning</span>
