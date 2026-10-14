@@ -1,0 +1,38 @@
+# Operational alerts v1 (unit -> station)
+
+Branch `feat/operational-alerts` from main @ 155b67e. First functional version of operational alerts: pilots send predefined alerts from their unit to a station of their line; station operators receive them and move them through their states. Each role sees its own screen.
+
+## Specs
+- S1 (user, verbatim): "necesitamos habilitar las alertas operativas y que esta primera version sea funcional, que las alertas de las unidades lleguen a sus estaciones, que exista el front del piloto y del operador de estacion cada uno viendo su pantalla segun su rol"
+- S2 Destination (user decision: "El piloto elige una estación de su línea (Recomendado)"): the pilot picks the destination among the stations of the line assigned to their unit (ACTIVA `tbl_estacion_linea`), preselecting the one closest to the unit's last reported stop (`id_linea_parada_actual`, by stop order; tie -> the station ahead). A destination outside the unit's line is rejected (400). A pilot without unit -> 404; unit without line assignment -> 404.
+- S3 Types (user decision: "Catálogo fijo propuesto (Recomendado)"): fixed catalog `ACCIDENTE`, `FALLA_MECANICA`, `EMERGENCIA_MEDICA`, `INCIDENTE_SEGURIDAD`, `RETRASO`, `UNIDAD_LLENA`; constants in code, no new table. Any other value -> 400.
+- S4 Scope (user decision: "No, solo unidad → estación (Recomendado)"): only unit -> station alerts (`tipo_origen=UNIDAD`, `tipo_destino=ESTACION`). Station -> central and a central view are out of scope.
+- S5 Refresh (user decision: "Polling cada ~10 s (Recomendado)"): both screens refresh every ~10 s; the station screen highlights/counts pending alerts.
+- S6 Creation: `POST` by a pilot (`ALERTAS_UNIDAD_GESTIONAR`) with `{ tipoAlerta, idEstacionDestino }`; server derives `id_unidad` from the pilot's assignment and `id_empleado` from the token; `estado_alerta=PENDIENTE`. Responds 201 with the alert.
+- S7 Station inbox: an operator (`ALERTAS_ESTACION_GESTIONAR`) lists only the alerts whose destination is their ACTIVA assigned station, newest first, with unit plate, type, state, author, dates. Operator without station -> 404.
+- S8 State changes: the operator advances an alert of their own station forward only: PENDIENTE -> RECIBIDA -> EN_ATENCION -> RESUELTA (skipping forward allowed, backwards/same state -> 409), optional `observacion`. Each change writes one `tbl_historial_estado` row and updates `fecha_actualizacion` in one transaction. An alert of another station -> 404 (no leak).
+- S9 Pilot history: a pilot lists the alerts they sent (newest first) with their current state.
+- S10 Screens by role: landing card "Alertas Operativas" navigates to `/alerts`; a pilot sees the send screen + their alerts, a station operator sees their station inbox; anyone else with the module is told there is no view for their role in this version. Endpoints enforce the permissions server side (403 otherwise).
+- S11 API contract (orchestrator, derived from S2-S10; ids are strings, dates ISO):
+  - New module `apps/api/src/operations/` (`OperationsModule`, registered in `AppModule`), controller path `operations/alerts`, `AuthenticationGuard` + `@Permissions` + `DomainExceptionFilter` like `fleet/estacion-operador`.
+  - `AlertaDto = { idAlerta, tipoAlerta, tipoOrigen, tipoDestino, estadoAlerta, fechaCreacion, fechaActualizacion, unidad: { idUnidad, numeroPlaca }, estacionDestino: { idEstacion, nombreEstacion }, autor: { idEmpleado, nombre } }`.
+  - `GET /operations/alerts/my-unit/destinations` [ALERTAS_UNIDAD_GESTIONAR] -> `{ unidad: { idUnidad, numeroPlaca }, linea: { idLinea, numeroLinea, nombreLinea }, destinations: [{ idEstacion, nombreEstacion, orden, suggested }] }` ordered by `orden`, exactly one `suggested: true` when the list is not empty (closest to last reported stop; no reported stop -> first by orden).
+  - `GET /operations/alerts/sent` [ALERTAS_UNIDAD_GESTIONAR] -> `AlertaDto[]` authored by the caller, newest first, max 50.
+  - `POST /operations/alerts` [ALERTAS_UNIDAD_GESTIONAR] body `{ tipoAlerta, idEstacionDestino }` -> 201 `AlertaDto`.
+  - `GET /operations/alerts/my-station` [ALERTAS_ESTACION_GESTIONAR] -> `{ station: { idEstacion, nombreEstacion }, alerts: AlertaDto[] }` newest first, max 100.
+  - `PATCH /operations/alerts/:id/status` [ALERTAS_ESTACION_GESTIONAR] body `{ estado: 'RECIBIDA'|'EN_ATENCION'|'RESUELTA', observacion?: string (max 500) }` -> 200 `AlertaDto`.
+  - Errors: 400 validation or destination not on the unit's line; 403 missing permission; 404 pilot without unit, unit without line, operator without station, alert not found or not of the operator's station; 409 non-forward transition.
+
+## Tasks
+- [x] T1 [S2-S4, S6-S9] API `operations/alerts` module (constants, DTOs, service, controller, specs) — route: inline (worker failed) — commit: see Log L5
+- T2 [S2, S5, S9, S10] Web pilot screen (type buttons, destination select, my alerts, polling) + `/alerts` route + landing link — route: inline/worker — commit: pending
+- T3 [S5, S7, S8, S10] Web station operator inbox (pending count, state actions, observation, polling) — route: inline/worker — commit: pending
+- T4 [S6-S8] DB-backed e2e for the alert flow against `transmetro_test` — commit: pending
+- T5 [all] Full verification (api jest, web vitest, both tsc) + independent verifier (permission scoping, risk item 2) + README/docs — commit: pending
+
+## Log
+- L1 (user): "necesitamos habilitar las alertas operativas y que esta primera version sea funcional, que las alertas de las unidades lleguen a sus estaciones, que exista el front del piloto y del operador de estacion cada uno viendo su pantalla segun su rol"
+- L2 (user answers): destination "El piloto elige una estación de su línea (Recomendado)"; types "Catálogo fijo propuesto (Recomendado)"; scope "No, solo unidad → estación (Recomendado)"; refresh "Polling cada ~10 s (Recomendado)".
+- L3 (exploration): `tbl_alerta`, `tbl_historial_estado`, `tbl_afectacion_operativa` already exist in `database/init.sql`; permissions `ALERTAS_UNIDAD_GESTIONAR` (PILOTO) and `ALERTAS_ESTACION_GESTIONAR` (OPERADOR_ESTACION) are seeded and map to module `operational_alerts`; landing card exists but is not navigable. No schema change needed. `tbl_afectacion_operativa` and `tbl_bitacora` writes are out of scope for v1 (alert trace = `tbl_historial_estado`).
+- L4 (routing): both background `gentle-ai-worker` runs (API, web) failed with "assistant reported an error" and 0 tool calls; same runtime failure as earlier features. Not retried; T1-T3 implemented inline.
+- L5 (T1 evidence, test-first): RED `npm test -- operations` 3 suites failed (modules missing) -> GREEN 3 suites / 56 tests (service: destinations/suggestion tie rules, create derivation and rejections, sent, station scoping, forward-only transitions with history row, row lock, other-station -> 404; controller: routes, permissions, 201; DTOs: catalog, numeric id, estado, observacion 500/501). Full api `npm test` 68 suites / 796 passed; `tsc -p tsconfig.build.json --noEmit` exit 0. Docs: `apps/api/src/operations/README.md`.
