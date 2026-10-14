@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -12,10 +13,12 @@ import {
 } from "./estacion-linea.entity.js";
 import {
   CreateEstacionLineaDto,
+  EstacionLineaAvailableDto,
   EstacionLineaResponseDto,
   UpdateEstacionLineaDto,
 } from "./dto/estacion-linea.dto.js";
 import { LineaEntity } from "../linea/linea.entity.js";
+import { LineaParadaEntity } from "../linea/linea-parada.entity.js";
 import { validateForeignKey } from "../shared/validators.js";
 import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
 import {
@@ -32,7 +35,9 @@ export class EstacionLineaService {
     private readonly estacionRepository: Repository<EstacionEntity>,
     @InjectRepository(LineaEntity)
     private readonly lineaRepository: Repository<LineaEntity>,
-    private readonly audit: InfrastructureAuditService
+    private readonly audit: InfrastructureAuditService,
+    @InjectRepository(LineaParadaEntity)
+    private readonly lineaParadaRepository: Repository<LineaParadaEntity>
   ) {}
 
   async list(estacionId: string): Promise<EstacionLineaResponseDto[]> {
@@ -42,6 +47,33 @@ export class EstacionLineaService {
       relations: { linea: true },
     });
     return links.map((l) => this.toResponseDto(l));
+  }
+
+  /**
+   * Lines that can still be linked: their route includes the station's
+   * parada and they are not linked yet. Sorted by line number.
+   */
+  async available(estacionId: string): Promise<EstacionLineaAvailableDto[]> {
+    await this.ensureEstacionExists(estacionId);
+    const idParada = await this.findEstacionParada(estacionId);
+    const [stops, links] = await Promise.all([
+      this.lineaParadaRepository.find({
+        where: { idParada },
+        relations: { linea: true },
+      }),
+      this.estacionLineaRepository.find({ where: { idEstacion: estacionId } }),
+    ]);
+    const linked = new Set(links.map((l) => String(l.idLinea)));
+    return stops
+      .filter((stop) => stop.linea && !linked.has(String(stop.idLinea)))
+      .map((stop) => ({
+        idLinea: String(stop.linea!.idLinea),
+        numeroLinea: stop.linea!.numeroLinea,
+        nombreLinea: stop.linea!.nombreLinea,
+      }))
+      .sort((a, b) =>
+        a.numeroLinea.localeCompare(b.numeroLinea, "es", { numeric: true })
+      );
   }
 
   async add(
@@ -64,6 +96,19 @@ export class EstacionLineaService {
       throw new ConflictException(
         `La línea ${dto.idLinea} ya está vinculada a la estación ${estacionId}`,
         "ESTACION_LINEA_DUPLICATE"
+      );
+    }
+
+    // Only a line that stops at the station can be linked to it; otherwise
+    // its pilots would see a station their route never reaches.
+    const idParada = await this.findEstacionParada(estacionId);
+    const onRoute = await this.lineaParadaRepository.count({
+      where: { idLinea: dto.idLinea, idParada },
+    });
+    if (onRoute === 0) {
+      throw new BadRequestException(
+        `La ruta de la línea ${dto.idLinea} no pasa por la parada de la estación ${estacionId}`,
+        "ESTACION_LINEA_NOT_ON_ROUTE"
       );
     }
 
@@ -149,6 +194,16 @@ export class EstacionLineaService {
       "idEstacion",
       "Estación"
     );
+  }
+
+  private async findEstacionParada(estacionId: string): Promise<string> {
+    const estacion = await this.estacionRepository.findOne({
+      where: { idEstacion: estacionId as unknown as number },
+    });
+    if (!estacion) {
+      throw new NotFoundException(`Estación ${estacionId} no encontrada`);
+    }
+    return String(estacion.idParada);
   }
 
   private async findLinkOrFail(

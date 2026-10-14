@@ -11,10 +11,11 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { EstacionLineaService } from "./estacion-linea.service.js";
 import {
   CreateEstacionLineaDto,
+  EstacionLineaAvailableDto,
   EstacionLineaResponseDto,
   UpdateEstacionLineaDto,
 } from "./dto/estacion-linea.dto.js";
@@ -35,9 +36,23 @@ export class EstacionLineaController {
     return this.estacionLineaService.list(id);
   }
 
+  // Static segment: GET has no ":lineId" route, so it cannot collide.
+  @Get("available")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
+  @ApiOperation({
+    summary: "Líneas que se pueden vincular: su ruta pasa por la parada de la estación y aún no están vinculadas",
+  })
+  available(@Param("id") id: string): Promise<EstacionLineaAvailableDto[]> {
+    return this.estacionLineaService.available(id);
+  }
+
   @Post()
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({ summary: "Vincular una línea a una estación" })
+  @ApiResponse({
+    status: 400,
+    description: "ESTACION_LINEA_NOT_ON_ROUTE: la ruta de la línea no pasa por la parada de la estación",
+  })
   add(
     @Param("id") id: string,
     @Body() dto: CreateEstacionLineaDto,

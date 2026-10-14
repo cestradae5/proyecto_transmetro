@@ -90,7 +90,7 @@ estación exists.
 | Parqueo | standalone, no FK to estación (`id_estacion` was dropped) | no `idEstacion` field |
 | Estación → Parada | `tbl_estacion.id_parada` NOT NULL UNIQUE (1:1 extension of a parada) | `idParada` required on create; unknown parada → 404; parada that already has an estación → 409 `PARADA_ALREADY_HAS_ESTACION`; cannot be cleared to `null` (400) |
 | Línea ↔ Parada | `tbl_linea_parada` (ordered N:M) | `/infrastructure/lineas/:id/paradas` |
-| Línea ↔ Estación | `tbl_estacion_linea` (N:M) | `/infrastructure/stations/:id/lines` |
+| Línea ↔ Estación | `tbl_estacion_linea` (N:M) | `/infrastructure/stations/:id/lines`; a línea can be linked only when its route (`tbl_linea_parada`) includes the estación's parada, otherwise 400 `ESTACION_LINEA_NOT_ON_ROUTE` (existing links are not re-validated); `GET .../lines/available` lists the líneas that pass that check and are not linked yet, `{ idLinea, numeroLinea, nombreLinea }` by number. A station operator's líneas are the estación's `ACTIVA` links |
 | Línea ↔ Municipalidad | `tbl_linea_municipalidad` (N:M, composite PK) | `/infrastructure/lineas/:id/municipalidades`; unknown línea/municipalidad → 404; duplicate link → 409 `LINEA_MUNICIPALIDAD_DUPLICATE` |
 | Acceso → Parada | `tbl_acceso.id_parada` NOT NULL FK | `/infrastructure/paradas/:id/accesos`; the parada comes from the route (no `idParada` in the body, cannot be moved); unknown parada → 404; acceso of another parada → 404 |
 | Parada → Estación (derived) | reverse of `tbl_estacion.id_parada` | parada responses expose read-only `esEstacion` and `idEstacion` (`null` when the parada is not an estación); `findAll` resolves them with a single `IN` query; estaciones are still created through `/infrastructure/estaciones` |
