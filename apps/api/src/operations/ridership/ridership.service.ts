@@ -250,7 +250,7 @@ export class RidershipService {
   // parada counts is accepted (S4: the parada count floors at 0); the bus
   // limits are strict.
   async reportStop(employeeId: string, dto: StopReportRequestDto): Promise<StopReportDto> {
-    const idParadaUnidad = await this.dataSource.transaction(async (manager) => {
+    const stored = await this.dataSource.transaction(async (manager) => {
       const unit = await this.findPilotUnit(manager, employeeId, true);
       if (unit.idParadaActual === null) throw new NoCurrentStop();
       const parada = await this.lockParada(manager, unit.idParadaActual);
@@ -279,14 +279,13 @@ export class RidershipService {
           extraWaitMinutes(after, unit.capacidadPasajeros),
         ],
       )) as { id: string }[];
-      return String(inserted[0]!.id);
+      const rows = (await manager.query(`${REPORT_SELECT} WHERE pu.id_parada_unidad = $1`, [
+        String(inserted[0]!.id),
+      ])) as ReportRow[];
+      return { row: rows[0]!, capacity: unit.capacidadPasajeros };
     });
 
-    const rows = (await this.dataSource.query(`${REPORT_SELECT} WHERE pu.id_parada_unidad = $1`, [
-      idParadaUnidad,
-    ])) as ReportRow[];
-    const unit = await this.findPilotUnit(this.dataSource, employeeId, false);
-    return this.toReportDto(rows[0]!, unit.capacidadPasajeros);
+    return this.toReportDto(stored.row, stored.capacity);
   }
 
   // bus-passenger-report S7: the pilot's unit, people on board and the last
@@ -365,9 +364,13 @@ export class RidershipService {
 
   private async lastReport(runner: Queryable, idUnidad: string): Promise<ReportRow | null> {
     const rows = (await runner.query(
+      // By id, not fecha_reporte: CURRENT_TIMESTAMP is the transaction start,
+      // so a report that waited on the unit lock can carry an earlier time
+      // than the one it followed. Reports of one unit are inserted one at a
+      // time under that lock, so ids follow their order.
       `${REPORT_SELECT}
         WHERE pu.id_unidad = $1
-        ORDER BY pu.fecha_reporte DESC, pu.id_parada_unidad DESC
+        ORDER BY pu.id_parada_unidad DESC
         LIMIT 1`,
       [idUnidad],
     )) as ReportRow[];

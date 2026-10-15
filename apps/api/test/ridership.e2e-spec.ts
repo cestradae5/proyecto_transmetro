@@ -7,8 +7,9 @@
 //   - S6: the turnstile needs the simulator flag and the X-Turnstile-Key.
 //   - S1/S7/S10: at 150% of the station capacity one system alert (no author)
 //     is created, not repeated while it is not RESUELTA.
-//   - S2/S8: bus arrival boards the waiting passengers and applies the 25%
-//     rule; departure counts exits and boards the newly waiting.
+//   - bus-passenger-report: the turnstile is the only in/out of a parada;
+//     the pilot reports who got off and on at the unit's current stop, with
+//     the 25% rule applied after the report.
 //   - S9: readings and permissions.
 //
 // `npm run test:e2e` hardcodes DATABASE_NAME=transmetro_test. Requires
@@ -683,6 +684,43 @@ describe("Ridership (e2e)", () => {
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ bajaron: 0, subieron: 0, aBordo: 10 });
+    });
+
+    // Verifier probe (S5/S7): the last report is the last one inserted, even
+    // when an earlier transaction stamped a later fecha_reporte.
+    it("reads on-board from the newest report regardless of fecha_reporte skew", async () => {
+      const first = await report(pilot1.token, { bajaron: 0, subieron: 0 });
+      const second = await report(pilot1.token, { bajaron: 1, subieron: 1 });
+      expect(second.status).toBe(201);
+      await dataSource.query(
+        `UPDATE tbl_parada_unidad
+            SET fecha_reporte = (SELECT fecha_reporte FROM tbl_parada_unidad WHERE id_parada_unidad = $1) - interval '1 second'
+          WHERE id_parada_unidad = $2`,
+        [first.body.idParadaUnidad, second.body.idParadaUnidad],
+      );
+
+      const unit = await myUnit(pilot1.token);
+
+      expect(unit.body.aBordo).toBe(second.body.aBordo);
+      expect(unit.body.ultimoReporte.idParadaUnidad).toBe(second.body.idParadaUnidad);
+    });
+
+    // Verifier probe (S3): unit and parada never come from the body, and
+    // concurrent reports of one unit stay consistent.
+    it("ignores body ids and serializes concurrent reports", async () => {
+      const before = (await myUnit(pilot1.token)).body.aBordo as number;
+
+      const [a, b] = await Promise.all([
+        report(pilot1.token, { bajaron: 0, subieron: 1, idUnidad: unitSmall, idParada: stopE }),
+        report(pilot1.token, { bajaron: 0, subieron: 1 }),
+      ]);
+
+      expect([a.status, b.status]).toEqual([201, 201]);
+      expect(new Set([a.body.aBordo, b.body.aBordo])).toEqual(new Set([before + 1, before + 2]));
+      expect([a.body.idParada, b.body.idParada]).toEqual([stopF, stopF]);
+      expect((await myUnit(pilot1.token)).body.aBordo).toBe(before + 2);
+      // Back to 10 on board for the next tests.
+      expect((await report(pilot1.token, { bajaron: 2, subieron: 0 })).body.aBordo).toBe(before);
     });
 
     it("rejects more people getting off than are on board (409), changing nothing", async () => {
