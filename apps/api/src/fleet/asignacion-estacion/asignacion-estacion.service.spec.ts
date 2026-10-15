@@ -96,6 +96,10 @@ describe("AsignacionEstacionService", () => {
     dataSource = {
       transaction: jest.fn(async (cb: (m: unknown) => unknown) => cb(manager)),
       getRepository: jest.fn(() => ({ createQueryBuilder: jest.fn(() => qb) })),
+      query: jest.fn(async () => [
+        { idEstacion: "10", idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+        { idEstacion: "10", idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
+      ]),
     };
 
     service = new AsignacionEstacionService(
@@ -120,6 +124,36 @@ describe("AsignacionEstacionService", () => {
       await service.list("10");
 
       expect(qb.andWhere).toHaveBeenCalledWith(expect.any(String), { idEstacion: "10" });
+    });
+
+    it("adds each station's ACTIVA lines, read in one query, in the query's order (S9)", async () => {
+      const result = await service.list();
+
+      expect(result[0]!.lineas).toEqual([
+        { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+        { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
+      ]);
+      expect(dataSource.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = dataSource.query.mock.calls[0]!;
+      expect(sql).toContain("FROM tbl_estacion_linea el");
+      expect(sql).toContain("el.id_estacion = ANY($1::bigint[])");
+      expect(sql).toContain("el.estado_asignacion = $2");
+      expect(params).toEqual([["10"], "ACTIVA"]);
+    });
+
+    it("gives a station without ACTIVA lines an empty list", async () => {
+      dataSource.query.mockResolvedValue([]);
+
+      const result = await service.list();
+
+      expect(result[0]!.lineas).toEqual([]);
+    });
+
+    it("does not query lines when there are no assignments", async () => {
+      qb.getRawMany.mockResolvedValue([]);
+
+      await expect(service.list()).resolves.toEqual([]);
+      expect(dataSource.query).not.toHaveBeenCalled();
     });
   });
 

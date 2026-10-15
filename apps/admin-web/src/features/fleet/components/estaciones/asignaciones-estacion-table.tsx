@@ -1,15 +1,13 @@
 import { useState } from 'react';
-import type { Estacion, Linea } from '../../../infrastructure/types/infrastructure.types';
+import type { Estacion } from '../../../infrastructure/types/infrastructure.types';
 import type { StationAssignment, StationOperator } from '../../types/fleet.types';
 import { formatReportDate } from '../../utils/format';
 import { AsignacionEstacionDialog } from './asignacion-estacion-dialog';
-import { EstacionLineasDialog } from './estacion-lineas-dialog';
 
 interface AsignacionesEstacionTableProps {
   assignments: StationAssignment[];
   operadores: StationOperator[];
   estaciones: Estacion[];
-  lineas: Linea[];
   canManage: boolean;
   onAssign: (idEmpleado: string, idEstacion: string) => Promise<unknown>;
   onReassign: (assignmentId: string, idEstacion: string) => Promise<unknown>;
@@ -19,14 +17,12 @@ interface AsignacionesEstacionTableProps {
 type DialogState =
   | { kind: 'assign' }
   | { kind: 'reassign'; assignment: StationAssignment }
-  | { kind: 'lines'; assignment: StationAssignment }
   | null;
 
 export function AsignacionesEstacionTable({
   assignments,
   operadores,
   estaciones,
-  lineas,
   canManage,
   onAssign,
   onReassign,
@@ -60,6 +56,11 @@ export function AsignacionesEstacionTable({
         </div>
       )}
 
+      <p className="mb-4 text-sm text-slate-500">
+        Las líneas se heredan de la estación: el operador atiende las alertas de todas las líneas activas de su
+        estación. Se gestionan en Infraestructura, en «Líneas de la estación».
+      </p>
+
       {actionError && (
         <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
           {actionError}
@@ -75,6 +76,7 @@ export function AsignacionesEstacionTable({
               <tr className="border-b border-slate-200 text-slate-600">
                 <th className="py-2 pr-4 font-medium">Operador</th>
                 <th className="py-2 pr-4 font-medium">Estación</th>
+                <th className="py-2 pr-4 font-medium">Líneas</th>
                 <th className="py-2 pr-4 font-medium">Fecha</th>
                 <th className="py-2 font-medium">Acciones</th>
               </tr>
@@ -84,18 +86,24 @@ export function AsignacionesEstacionTable({
                 <tr key={a.idAsignacionEstacion} className="border-b border-slate-100">
                   <td className="py-2 pr-4 text-slate-900">{a.nombreEmpleado}</td>
                   <td className="py-2 pr-4 text-slate-700">{a.nombreEstacion}</td>
+                  <td className="py-2 pr-4">
+                    {a.lineas && a.lineas.length > 0 ? (
+                      <ul aria-label={`Líneas de ${a.nombreEstacion}`} className="flex flex-wrap gap-1">
+                        {a.lineas.map((l) => (
+                          <li key={l.idLinea} title={l.nombreLinea} className="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-700">
+                            Línea {l.numeroLinea}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-xs text-amber-700">Sin líneas activas</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4 text-slate-700">{formatReportDate(a.fechaAsignacion) ?? '-'}</td>
                   <td className="py-2">
                     <div className="flex flex-wrap gap-2">
                       {canManage && (
                         <>
-                          <button
-                            type="button"
-                            onClick={() => setDialog({ kind: 'lines', assignment: a })}
-                            className="px-3 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
-                          >
-                            Líneas
-                          </button>
                           <button
                             type="button"
                             onClick={() => setDialog({ kind: 'reassign', assignment: a })}
@@ -137,14 +145,6 @@ export function AsignacionesEstacionTable({
           estaciones={estaciones}
           onAssign={onAssign}
           onReassign={onReassign}
-          onClose={close}
-        />
-      )}
-      {canManage && dialog?.kind === 'lines' && (
-        <EstacionLineasDialog
-          stationId={dialog.assignment.idEstacion}
-          stationName={dialog.assignment.nombreEstacion}
-          lineas={lineas}
           onClose={close}
         />
       )}

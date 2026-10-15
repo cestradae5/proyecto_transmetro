@@ -14,7 +14,7 @@ import { LineaMunicipalidadesDialog } from './components/lineas/linea-municipali
 import { ParadaDialog } from './components/paradas/parada-dialog';
 import { AccesosDialog } from './components/paradas/accesos-dialog';
 import { AfectacionDialog } from './components/afectaciones/afectacion-dialog';
-import { EstacionLineasDialog } from '../fleet/components/estaciones/estacion-lineas-dialog';
+import { EstacionLineasDialog } from './components/estacion-lineas/estacion-lineas-dialog';
 import { InfrastructureWizard } from './components/wizard/infrastructure-wizard';
 import { GroupCard, DANGER_LINK_BUTTON_CLASS, LINK_BUTTON_CLASS, RetryAlert, StatusBadge } from './components/grouped/group-card';
 import { LineaCard, type LineaActions } from './components/grouped/linea-card';

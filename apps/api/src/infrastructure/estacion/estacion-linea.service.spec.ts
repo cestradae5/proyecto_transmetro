@@ -2,6 +2,7 @@
 
 import { jest } from "@jest/globals";
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   NotFoundException,
@@ -21,6 +22,7 @@ import {
 } from "./estacion-linea.entity.js";
 import { EstacionLineaService } from "./estacion-linea.service.js";
 import type { LineaEntity } from "../linea/linea.entity.js";
+import type { LineaParadaEntity } from "../linea/linea-parada.entity.js";
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -74,6 +76,7 @@ describe("EstacionLineaService", () => {
   let linkRepo: MockRepository;
   let estacionRepo: MockRepository;
   let lineaRepo: MockRepository;
+  let lineaParadaRepo: MockRepository;
   let audit: { record: AnyMock };
   let service: EstacionLineaService;
 
@@ -81,13 +84,48 @@ describe("EstacionLineaService", () => {
     linkRepo = makeMockRepository();
     estacionRepo = makeMockRepository();
     lineaRepo = makeMockRepository();
+    lineaParadaRepo = makeMockRepository();
     audit = { record: jest.fn() };
     service = new EstacionLineaService(
       linkRepo as unknown as Repository<EstacionLineaEntity>,
       estacionRepo as unknown as Repository<EstacionEntity>,
       lineaRepo as unknown as Repository<LineaEntity>,
-      audit as unknown as InfrastructureAuditService
+      audit as unknown as InfrastructureAuditService,
+      lineaParadaRepo as unknown as Repository<LineaParadaEntity>
     );
+    // Station 7 sits on parada 40; by default the line's route includes it.
+    estacionRepo.findOne.mockResolvedValue({ idEstacion: 7, idParada: 40 });
+    lineaParadaRepo.count.mockResolvedValue(1);
+  });
+
+  describe("available (S11)", () => {
+    it("lists the lines whose route includes the station's parada and are not linked yet, by number", async () => {
+      estacionRepo.count.mockResolvedValue(1);
+      lineaParadaRepo.find.mockResolvedValue([
+        { idLinea: "6", linea: { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" } },
+        { idLinea: "3", linea: { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" } },
+        { idLinea: "2", linea: { idLinea: "2", numeroLinea: "2", nombreLinea: "Línea 2" } },
+      ]);
+      linkRepo.find.mockResolvedValue([makeLink({ idLinea: "3" })]);
+
+      await expect(service.available("7")).resolves.toEqual([
+        { idLinea: "2", numeroLinea: "2", nombreLinea: "Línea 2" },
+        { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+      ]);
+      expect(estacionRepo.findOne).toHaveBeenCalledWith({ where: { idEstacion: "7" } });
+      expect(lineaParadaRepo.find).toHaveBeenCalledWith({
+        where: { idParada: "40" },
+        relations: { linea: true },
+      });
+      expect(linkRepo.find).toHaveBeenCalledWith({ where: { idEstacion: "7" } });
+    });
+
+    it("throws NotFoundException when the station does not exist", async () => {
+      estacionRepo.count.mockResolvedValue(0);
+
+      await expect(service.available("99")).rejects.toBeInstanceOf(NotFoundException);
+      expect(lineaParadaRepo.find).not.toHaveBeenCalled();
+    });
   });
 
   describe("list", () => {
@@ -127,6 +165,9 @@ describe("EstacionLineaService", () => {
 
       const result = await service.add("7", dto, ACTOR);
 
+      expect(lineaParadaRepo.count).toHaveBeenCalledWith({
+        where: { idLinea: "3", idParada: "40" },
+      });
       expect(linkRepo.create).toHaveBeenCalledWith({
         idEstacion: "7",
         idLinea: "3",
@@ -176,6 +217,23 @@ describe("EstacionLineaService", () => {
       lineaRepo.count.mockResolvedValue(0);
       await expect(service.add("7", dto, ACTOR)).rejects.toBeInstanceOf(
         NotFoundException
+      );
+      expect(linkRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("rejects a line whose route does not include the station's parada with ESTACION_LINEA_NOT_ON_ROUTE (S11)", async () => {
+      estacionRepo.count.mockResolvedValue(1);
+      lineaRepo.count.mockResolvedValue(1);
+      linkRepo.findOne.mockResolvedValue(null);
+      lineaParadaRepo.count.mockResolvedValue(0);
+
+      const error = await service.add("7", dto, ACTOR).catch((e) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(errorCode(error)).toBe("ESTACION_LINEA_NOT_ON_ROUTE");
+      expect((error as HttpException).message).toBe(
+        "La ruta de la línea 3 no pasa por la parada de la estación 7"
       );
       expect(linkRepo.save).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();

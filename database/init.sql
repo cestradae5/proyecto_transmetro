@@ -505,4 +505,29 @@ ALTER TABLE tbl_empleado ADD COLUMN IF NOT EXISTS idiomas_emple TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_empleado_dpi ON tbl_empleado (dpi_emple) WHERE dpi_emple IS NOT NULL;
 
+-- tbl_alerta.id_linea — nullable. Línea desde la que se envió la alerta,
+-- fijada al crearla (la línea asignada a la unidad en ese momento). Una
+-- estación solo ve las alertas de sus líneas ACTIVAS. La columna se agrega y
+-- las alertas existentes se completan una sola vez, con la línea actual de su
+-- unidad; las de unidades sin línea quedan en NULL (solo visibles en la vista
+-- central, en "Sin línea"). Re-aplicar este archivo no repite el backfill.
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'tbl_alerta'
+           AND column_name = 'id_linea'
+    ) THEN
+        ALTER TABLE tbl_alerta
+            ADD COLUMN id_linea BIGINT REFERENCES tbl_linea (id_linea);
+        UPDATE tbl_alerta a
+           SET id_linea = au.id_linea
+          FROM tbl_asignacion_unidad au
+         WHERE au.id_unidad = a.id_unidad;
+    END IF;
+END
+$$;
+
 COMMIT;

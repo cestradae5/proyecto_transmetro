@@ -19,7 +19,7 @@ are ISO 8601.
 | GET | `my-unit/destinations` | `ALERTAS_UNIDAD_GESTIONAR` | Unit, line and the line's stations, one `suggested` |
 | GET | `sent` | `ALERTAS_UNIDAD_GESTIONAR` | Alerts sent by the caller, newest first, max 50 |
 | POST | `/` | `ALERTAS_UNIDAD_GESTIONAR` | `{ tipoAlerta, idEstacionDestino }` -> 201 alert |
-| GET | `my-station` | `ALERTAS_ESTACION_GESTIONAR` | `{ station, alerts }` for the caller's station, newest first, max 100 |
+| GET | `my-station?idLinea=` | `ALERTAS_ESTACION_GESTIONAR` | `{ station, lineas, alerts }` for the caller's station and its `ACTIVA` lines, newest first, max 100; optional `idLinea` narrows to one line |
 | PATCH | `:id/status` | `ALERTAS_ESTACION_GESTIONAR` | `{ estado, observacion? }` -> 200 alert |
 | GET | `central` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ lineas: [{ idLinea, numeroLinea, nombreLinea, estaciones: [{ idEstacion, nombreEstacion, unidades: [{ idUnidad, numeroPlaca, alerts }] }] }] }` from the newest 300 alerts |
 | PATCH | `central/:id/status` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ estado, observacion? }` -> 200 alert, any station |
@@ -36,6 +36,9 @@ have `ALERTAS_OPERATIVAS_GESTIONAR`.
 - **Origin and author**: the unit comes from the caller's
   `tbl_asignacion_piloto` row and the author from the token; the body cannot
   set them. Pilot without unit -> 404, unit without line -> 404.
+- **Line**: every alert stores the line assigned to the unit when it was sent
+  (`tbl_alerta.id_linea`) and returns it as `linea` (`null` only for legacy
+  alerts of units that had no line when the column was added).
 - **Destinations**: stations with an `ACTIVA` `tbl_estacion_linea` link to the
   unit's line, in route order of the station's stop on that line (stations
   whose stop is not on the line go last). The suggested one is the closest to
@@ -47,22 +50,28 @@ have `ALERTAS_OPERATIVAS_GESTIONAR`.
   `fecha_actualizacion`, and writes one `tbl_historial_estado` row with the
   operator and the optional `observacion` (max 500), all in one transaction.
 - **Scoping**: an operator only sees and updates alerts addressed to their
-  `ACTIVA` `tbl_asignacion_estacion` station. Another station's alert -> 404
-  (not 403), so ids of other stations cannot be probed. Operator without
-  station -> 404.
+  `ACTIVA` `tbl_asignacion_estacion` station AND sent from a line that is
+  `ACTIVA` on that station (`tbl_estacion_linea`). The operator's lines are
+  the station's lines; there is no operator-line data. Removing or
+  deactivating a line of the station hides its alerts. Another station's
+  alert, or one from a line the station no longer has -> 404 (not 403), so
+  ids cannot be probed. Operator without station -> 404.
+- **Line filter**: `my-station` returns the station's `ACTIVA` `lineas` and
+  accepts `?idLinea=`; filtering is server side so a busy line cannot push
+  another one out of the 100-alert limit. A line that is not `ACTIVA` on the
+  station returns `alerts: []`; an empty value means all lines.
 - **Observations**: every alert carries `observaciones`, the
   `tbl_historial_estado` rows with a non-blank observation, oldest first,
   each `{ estadoNuevo, observacion, fechaCambio, autor }`. They come with the
   alert, so the pilot (`sent`), the station operator and central users see
   them; who sees which alert is unchanged.
-- **Central view**: alerts are grouped line -> station -> unit. `tbl_alerta`
-  stores no line, so an alert goes under the line currently assigned to its
-  unit (`tbl_asignacion_unidad`); units without line go to a last group with
+- **Central view**: alerts are grouped line -> station -> unit, under the
+  line stored on the alert; alerts without line go to a last group with
   `idLinea: null` and `nombreLinea: "Sin línea"`. Lines sort by number,
   stations by name, units by plate, alerts newest first.
 - **Central transitions**: `central/:id/status` applies the same forward-only
   rules, row lock and history row (author = caller) as the station route,
-  without station scoping. Unknown alert -> 404.
+  without station or line scoping. Unknown alert -> 404.
 
 ## Not in v1
 

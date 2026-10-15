@@ -36,6 +36,12 @@ export class UpdateEstacionLineaDto {
   estadoAsignacion?: EstadoAsignacionLinea;
 }
 
+export class EstacionLineaAvailableDto {
+  @ApiProperty() idLinea!: string;
+  @ApiProperty() numeroLinea!: string;
+  @ApiProperty() nombreLinea!: string;
+}
+
 export class EstacionLineaResponseDto {
   @ApiProperty() idEstacion!: string;
   @ApiProperty() idLinea!: string;

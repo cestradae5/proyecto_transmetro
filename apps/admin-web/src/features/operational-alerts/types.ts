@@ -27,6 +27,14 @@ export interface Alerta {
   autor: { idEmpleado: string; nombre: string };
   /** State-change observations (non-blank), oldest first. */
   observaciones: AlertaObservacion[];
+  /** Line the alert was sent from; null only for legacy alerts of units without line. */
+  linea: AlertaLinea | null;
+}
+
+export interface AlertaLinea {
+  idLinea: string;
+  numeroLinea: string;
+  nombreLinea: string;
 }
 
 export interface AlertaObservacion {
@@ -46,12 +54,14 @@ export interface AlertaDestination {
 
 export interface AlertaDestinations {
   unidad: { idUnidad: string; numeroPlaca: string };
-  linea: { idLinea: string; numeroLinea: string; nombreLinea: string };
+  linea: AlertaLinea;
   destinations: AlertaDestination[];
 }
 
 export interface StationAlerts {
   station: { idEstacion: string; nombreEstacion: string };
+  /** ACTIVA lines of the station: the operator only receives alerts sent from them. */
+  lineas: AlertaLinea[];
   alerts: Alerta[];
 }
 

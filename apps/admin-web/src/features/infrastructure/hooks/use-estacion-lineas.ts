@@ -4,8 +4,8 @@ import type {
   CreateEstacionLineaDto,
   EstacionLinea,
   UpdateEstacionLineaDto,
-} from '../types/fleet.types';
-import { getFleetErrorMessage, mapFleetError } from './fleet-errors';
+} from '../../fleet/types/fleet.types';
+import { getFleetErrorMessage, mapFleetError } from '../../fleet/hooks/fleet-errors';
 
 export interface UseEstacionLineasResult {
   items: EstacionLinea[];

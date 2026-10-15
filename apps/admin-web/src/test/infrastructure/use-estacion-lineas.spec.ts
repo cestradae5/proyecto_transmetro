@@ -1,6 +1,6 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useEstacionLineas } from "../../features/fleet/hooks/use-estacion-lineas";
+import { useEstacionLineas } from "../../features/infrastructure/hooks/use-estacion-lineas";
 import { ApiError } from "../../lib/api-client";
 
 vi.mock("../../lib/api-client", () => ({
@@ -117,6 +117,15 @@ describe("useEstacionLineas", () => {
     });
     expect(mockDelete).toHaveBeenCalledWith(`${LIST_PATH}/2`);
     expect(result.current.items).toEqual([]);
+  });
+
+  it("explains a line whose route does not stop at the station (S11)", async () => {
+    const { result } = await renderLoaded();
+    mockPost.mockRejectedValue(new ApiError(400, "raw", { error: "ESTACION_LINEA_NOT_ON_ROUTE" }));
+
+    await expect(result.current.addLine({ idLinea: "9", tipoPunto: "PRINCIPAL" })).rejects.toThrow(
+      "La ruta de esa línea no pasa por la parada de esta estación"
+    );
   });
 
   it("maps mutation errors and does not refetch on failure", async () => {

@@ -1,9 +1,16 @@
 import { useStationAlerts } from '../hooks/use-station-alerts';
 import { AlertCard } from './alert-card';
 
-/** Station operator inbox: alerts sent by units to the operator's station. */
+const CHIP_CLASS = 'px-3 py-1 text-xs font-medium rounded-full border';
+const CHIP_ON = 'bg-primary text-white border-primary';
+const CHIP_OFF = 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50';
+
+/**
+ * Station operator inbox: alerts sent by units to the operator's station from
+ * one of its ACTIVA lines. With several lines the operator can filter by one.
+ */
 export function StationAlertsView() {
-  const { data, noStation, loading, error, refresh, updateStatus } = useStationAlerts();
+  const { data, lineFilter, setLineFilter, noStation, loading, error, refresh, updateStatus } = useStationAlerts();
 
   if (loading && !data) {
     return (
@@ -43,11 +50,44 @@ export function StationAlertsView() {
           No se pudieron actualizar las alertas: {error}
         </div>
       )}
-      <div className="flex items-center justify-between mb-6 gap-4">
+      <div className="flex items-center justify-between mb-3 gap-4">
         <h2 className="text-xl font-bold text-slate-900">{data.station.nombreEstacion}</h2>
         <span className={`px-2 py-1 text-xs font-medium rounded ${pendingCount > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
           {pendingCount} {pendingCount === 1 ? 'pendiente' : 'pendientes'}
         </span>
+      </div>
+
+      <div className="mb-6">
+        {data.lineas.length === 0 ? (
+          <p className="text-sm text-amber-700">
+            La estación no tiene líneas activas: no recibirá alertas hasta que se le vincule una línea en Infraestructura.
+          </p>
+        ) : data.lineas.length === 1 ? (
+          <p className="text-sm text-slate-600">Atiende: Línea {data.lineas[0]!.numeroLinea}</p>
+        ) : (
+          <div role="group" aria-label="Filtrar por línea" className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              aria-pressed={lineFilter === null}
+              onClick={() => setLineFilter(null)}
+              className={`${CHIP_CLASS} ${lineFilter === null ? CHIP_ON : CHIP_OFF}`}
+            >
+              Todas
+            </button>
+            {data.lineas.map((linea) => (
+              <button
+                key={linea.idLinea}
+                type="button"
+                title={linea.nombreLinea}
+                aria-pressed={lineFilter === linea.idLinea}
+                onClick={() => setLineFilter(linea.idLinea)}
+                className={`${CHIP_CLASS} ${lineFilter === linea.idLinea ? CHIP_ON : CHIP_OFF}`}
+              >
+                Línea {linea.numeroLinea}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <section aria-label="Alertas activas" className="mb-8">

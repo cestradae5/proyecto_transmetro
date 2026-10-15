@@ -27,13 +27,21 @@ function alert(id: string, estadoAlerta: EstadoAlerta, overrides: Partial<Alerta
     estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
     autor: { idEmpleado: "5", nombre: "Piloto Uno" },
     observaciones: [],
+    linea: { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
     ...overrides,
   };
 }
 
+const LINEAS = [
+  { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
+  { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+];
+
 function hookState(alerts: Alerta[], overrides: Record<string, unknown> = {}) {
   return {
-    data: { station: { idEstacion: "22", nombreEstacion: "Estación Centro" }, alerts },
+    data: { station: { idEstacion: "22", nombreEstacion: "Estación Centro" }, lineas: LINEAS, alerts },
+    lineFilter: null,
+    setLineFilter: vi.fn(),
     noStation: false,
     loading: false,
     error: null,
@@ -94,6 +102,62 @@ describe("StationAlertsView", () => {
 
     const actions = within(card("P-1")).getAllByRole("button").map((b) => b.textContent);
     expect(actions).toEqual(labels);
+  });
+
+  it("shows the line each alert was sent from (S7)", () => {
+    mockedHook.mockReturnValue(
+      hookState([alert("1", "PENDIENTE"), alert("2", "PENDIENTE", { linea: { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" } })]),
+    );
+
+    render(<StationAlertsView />);
+
+    expect(within(card("P-1")).getByText("Línea 12")).toBeInTheDocument();
+    expect(within(card("P-2")).getByText("Línea 6")).toBeInTheDocument();
+  });
+
+  it("offers one filter per station line plus Todas, with the current one pressed (S6)", () => {
+    const state = hookState([alert("1", "PENDIENTE")], { lineFilter: "6" });
+    mockedHook.mockReturnValue(state);
+
+    render(<StationAlertsView />);
+
+    const group = screen.getByRole("group", { name: "Filtrar por línea" });
+    const chips = within(group).getAllByRole("button");
+    expect(chips.map((b) => [b.textContent, b.getAttribute("aria-pressed")])).toEqual([
+      ["Todas", "false"],
+      ["Línea 12", "false"],
+      ["Línea 6", "true"],
+    ]);
+
+    fireEvent.click(within(group).getByRole("button", { name: "Línea 12" }));
+    expect(state.setLineFilter).toHaveBeenCalledWith("3");
+    fireEvent.click(within(group).getByRole("button", { name: "Todas" }));
+    expect(state.setLineFilter).toHaveBeenLastCalledWith(null);
+  });
+
+  it("hides the line filter when the station has a single line", () => {
+    mockedHook.mockReturnValue({
+      ...hookState([alert("1", "PENDIENTE")]),
+      data: { station: { idEstacion: "22", nombreEstacion: "Estación Centro" }, lineas: [LINEAS[0]], alerts: [alert("1", "PENDIENTE")] },
+    });
+
+    render(<StationAlertsView />);
+
+    expect(screen.queryByRole("group", { name: "Filtrar por línea" })).not.toBeInTheDocument();
+    expect(screen.getByText("Atiende: Línea 12")).toBeInTheDocument();
+  });
+
+  it("explains that a station without active lines receives no alerts", () => {
+    mockedHook.mockReturnValue({
+      ...hookState([]),
+      data: { station: { idEstacion: "22", nombreEstacion: "Estación Centro" }, lineas: [], alerts: [] },
+    });
+
+    render(<StationAlertsView />);
+
+    expect(
+      screen.getByText("La estación no tiene líneas activas: no recibirá alertas hasta que se le vincule una línea en Infraestructura."),
+    ).toBeInTheDocument();
   });
 
   it("offers no actions for resolved alerts", () => {

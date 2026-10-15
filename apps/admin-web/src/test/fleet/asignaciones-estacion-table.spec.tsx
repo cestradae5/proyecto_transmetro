@@ -1,20 +1,8 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { AsignacionesEstacionTable } from "../../features/fleet/components/estaciones/asignaciones-estacion-table";
 import type { StationAssignment } from "../../features/fleet/types/fleet.types";
-import type { Estacion, Linea } from "../../features/infrastructure/types/infrastructure.types";
-
-vi.mock("../../features/fleet/hooks/use-estacion-lineas", () => ({
-  useEstacionLineas: () => ({
-    items: [],
-    loading: false,
-    error: null,
-    refresh: vi.fn(),
-    addLine: vi.fn(),
-    updateLine: vi.fn(),
-    removeLine: vi.fn(),
-  }),
-}));
+import type { Estacion } from "../../features/infrastructure/types/infrastructure.types";
 
 const ASSIGNMENTS: StationAssignment[] = [
   {
@@ -25,6 +13,10 @@ const ASSIGNMENTS: StationAssignment[] = [
     nombreEstacion: "Central",
     estadoAsignacion: "ACTIVA",
     fechaAsignacion: "2024-01-01T12:00:00Z",
+    lineas: [
+      { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+      { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
+    ],
   },
 ];
 
@@ -44,7 +36,6 @@ function renderTable(canManage: boolean, assignments = ASSIGNMENTS) {
       assignments={assignments}
       operadores={[{ idEmpleado: "e2", nombre: "Beto" }]}
       estaciones={ESTACIONES}
-      lineas={[] as Linea[]}
       canManage={canManage}
       {...props}
     />
@@ -93,9 +84,20 @@ describe("AsignacionesEstacionTable", () => {
     expect(screen.getByRole("dialog", { name: "Reasignar operador de estación" })).toBeInTheDocument();
   });
 
-  it("opens the station lines dialog", () => {
+  it("shows the station's lines read-only, without a button to edit them (S9)", () => {
     renderTable(true);
-    fireEvent.click(screen.getByRole("button", { name: "Líneas" }));
-    expect(screen.getByRole("dialog", { name: "Líneas de la estación" })).toBeInTheDocument();
+
+    const row = screen.getByText("Ana").closest("tr") as HTMLElement;
+    const cell = within(row).getByRole("list", { name: "Líneas de Central" });
+    expect(within(cell).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Línea 6", "Línea 12"]);
+    expect(screen.getByRole("columnheader", { name: "Líneas" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Líneas" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Las líneas se heredan de la estación/)).toBeInTheDocument();
+  });
+
+  it("marks a station without active lines", () => {
+    renderTable(false, [{ ...ASSIGNMENTS[0]!, lineas: [] }]);
+
+    expect(screen.getByText("Sin líneas activas")).toBeInTheDocument();
   });
 });

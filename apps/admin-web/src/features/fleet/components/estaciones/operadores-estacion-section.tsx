@@ -1,5 +1,4 @@
 import { useEstaciones } from '../../../infrastructure/hooks/use-estaciones';
-import { useLineas } from '../../../infrastructure/hooks/use-lineas';
 import { useAsignacionEstacion } from '../../hooks/use-asignacion-estacion';
 import { useOperadoresEstacion } from '../../hooks/use-operadores-estacion';
 import { AsignacionesEstacionTable } from './asignaciones-estacion-table';
@@ -13,7 +12,6 @@ export function OperadoresEstacionSection({ canManage }: OperadoresEstacionSecti
   const { items, loading, error, refresh, assign, reassign, unassign } = useAsignacionEstacion();
   const { items: operadores, error: operadoresError, refresh: refreshOperadores } = useOperadoresEstacion();
   const { estaciones, error: estacionesError } = useEstaciones();
-  const { lineas, error: lineasError } = useLineas();
 
   // Assignment hook refreshes its own list; operators' current station must be refreshed too.
   const handleAssign = async (idEmpleado: string, idEstacion: string) => {
@@ -34,7 +32,6 @@ export function OperadoresEstacionSection({ canManage }: OperadoresEstacionSecti
   const warnings: string[] = [];
   if (operadoresError) warnings.push(`No se pudieron cargar los operadores: ${operadoresError}.`);
   if (estacionesError) warnings.push(`No se pudieron cargar las estaciones: ${estacionesError}.`);
-  if (lineasError) warnings.push(`No se pudieron cargar las líneas: ${lineasError}.`);
 
   return (
     <div>
@@ -66,7 +63,6 @@ export function OperadoresEstacionSection({ canManage }: OperadoresEstacionSecti
           assignments={items}
           operadores={operadores}
           estaciones={estaciones}
-          lineas={lineas}
           canManage={canManage}
           onAssign={handleAssign}
           onReassign={handleReassign}

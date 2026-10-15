@@ -39,7 +39,7 @@ following the hierarchy **Municipalidad > Línea > Parada**:
   lazily (`GET /lineas/:id/paradas`): count, order, "Estación" badge, minutes to
   the next one; per parada "Editar" (`ParadaDialog`, "Es estación" toggle),
   "Accesos" (`AccesosDialog`) and, for estaciones, "Líneas de la estación"
-  (fleet `EstacionLineasDialog`). "Gestionar paradas y parqueo" opens the wizard
+  (`EstacionLineasDialog`). "Gestionar paradas y parqueo" opens the wizard
   in manage mode (`initialLinea` / `initialMunicipalidad`): directly at step 3
   for that línea, without the stepper; "Finalizar" or closing reloads the page.
 - **"Otros registros"** (`components/grouped/secondary-sections.tsx`): a
@@ -106,6 +106,8 @@ infrastructure/
 │   ├── municipalidades/
 │   │   ├── municipalidad-dialog.tsx # Create/Edit modal for municipalities
 │   │   └── municipalidad-form.tsx   # Form (nombre ≤120, departamento ≤60, estado)
+│   ├── estacion-lineas/
+│   │   └── estacion-lineas-dialog.tsx # "Líneas de la estación": linked lines (tipo, estado, quitar) + add among route lines only
 │   ├── paradas/
 │   │   ├── parada-dialog.tsx        # Create/Edit modal for stops
 │   │   ├── parada-form.tsx          # Form with validation + "Es estación" toggle
@@ -130,6 +132,8 @@ infrastructure/
 │   ├── use-accesos.ts               # API hook for a parada's accesos (mapped Spanish errors)
 │   ├── use-afectaciones.ts          # API hook for disruptions
 │   ├── use-estaciones.ts            # API hook for stations
+│   ├── use-estacion-lineas.ts       # API hook for a station's línea links (mapped errors)
+│   ├── use-estacion-lineas-disponibles.ts # Líneas that can be linked (route stops at the station, not linked yet)
 │   ├── use-lineas.ts                # API hook for lines
 │   ├── use-linea-municipalidades.ts # API hook for línea ↔ municipalidad links (mapped errors)
 │   ├── use-linea-paradas.ts         # API hook for a línea's parada sequence (mapped errors, reorderParadas)
@@ -191,8 +195,14 @@ updates the estación (blank coordinates default to the parada's). Turning the
 toggle off on a parada that has an estación asks for confirmation and, on save,
 hard-deletes it (`DELETE /infrastructure/estaciones/:id?force=true`); a 409
 `ESTACION_IN_USE` keeps the toggle on with "No se puede quitar la estación
-porque tiene asignaciones o vínculos". The station's líneas are managed from
-"Líneas de la estación" on the parada (reusing the fleet dialog).
+porque tiene asignaciones o vínculos". The station's líneas are managed only
+from "Líneas de la estación" on the parada (`EstacionLineasDialog`). The line
+selector lists only líneas whose route stops at the station's parada and are not
+linked yet (`GET /infrastructure/stations/:id/lines/available`); the API rejects
+any other with "La ruta de esa línea no pasa por la parada de esta estación".
+A station operator serves exactly the station's ACTIVA líneas: Fleet shows them
+read-only in "Operadores de estación" and only alerts sent from them reach the
+operator, so changing them here changes which alerts the operator receives.
 
 **Fields:**
 - `nombre` (required): Station name

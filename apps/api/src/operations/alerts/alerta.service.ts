@@ -28,6 +28,7 @@ import type {
   AlertaDestinationDto,
   AlertaDestinationsResponseDto,
   AlertaEstacionDto,
+  AlertaLineaDto,
   AlertaResponseDto,
   CentralAlertsResponseDto,
   StationAlertsResponseDto,
@@ -68,6 +69,9 @@ interface AlertRow {
   nombreEstacion: string | null;
   idEmpleado: string;
   nombreEmpleado: string;
+  idLinea: string | null;
+  numeroLinea: string | null;
+  nombreLinea: string | null;
   observaciones?: ObservacionRow[] | null;
 }
 
@@ -80,15 +84,11 @@ interface ObservacionRow {
   nombre: string;
 }
 
-interface CentralAlertRow extends AlertRow {
-  idLinea: string | null;
-  numeroLinea: string | null;
-  nombreLinea: string | null;
-}
-
 interface LockedAlertRow {
   estadoAlerta: EstadoAlerta;
   idEstacionDestino: string | null;
+  // The alert's stored line is an ACTIVA line of its destination station.
+  lineaActiva: boolean;
 }
 
 const ALERT_COLUMNS = `
@@ -105,6 +105,9 @@ const ALERT_COLUMNS = `
          e.nombre_estacion AS "nombreEstacion",
          emp.id_emple AS "idEmpleado",
          emp.nombre_emple AS "nombreEmpleado",
+         l.id_linea AS "idLinea",
+         l.numero_linea AS "numeroLinea",
+         l.nombre_linea AS "nombreLinea",
          COALESCE((
            SELECT json_agg(json_build_object(
                     'estadoNuevo', h.estado_nuevo,
@@ -123,7 +126,16 @@ const ALERT_FROM = `
     FROM tbl_alerta a
     LEFT JOIN tbl_unidad u ON u.id_unidad = a.id_unidad
     LEFT JOIN tbl_estacion e ON e.id_estacion = a.id_estacion_destino
+    LEFT JOIN tbl_linea l ON l.id_linea = a.id_linea
    INNER JOIN tbl_empleado emp ON emp.id_emple = a.id_empleado`;
+
+// The alert was sent from a line that is ACTIVA on its destination station.
+// Uses $2 for the ACTIVA state.
+const ALERT_LINE_ACTIVE_ON_STATION = `EXISTS (
+           SELECT 1 FROM tbl_estacion_linea el
+            WHERE el.id_estacion = a.id_estacion_destino
+              AND el.id_linea = a.id_linea
+              AND el.estado_asignacion = $2)`;
 
 const ALERT_SELECT = `SELECT ${ALERT_COLUMNS} ${ALERT_FROM}`;
 
@@ -134,8 +146,11 @@ const NUMERIC_ID = /^\d+$/;
 // Operational alerts v1: a pilot sends a predefined alert from their unit to
 // a station of their line; the operator of that station moves it forward
 // (PENDIENTE -> RECIBIDA -> EN_ATENCION -> RESUELTA). Same stateless raw-SQL
-// dataSource pattern as fleet's EstacionOperadorService. The unit and author
-// always come from the caller's assignment, never from the request body.
+// dataSource pattern as fleet's EstacionOperadorService. The unit, its line
+// and the author always come from the caller's assignment, never from the
+// request body. The line is stored on the alert, so an operator only sees
+// and answers alerts sent from an ACTIVA line of their station, even after
+// the station or the unit change lines.
 @Injectable()
 export class AlertaService {
   constructor(
@@ -166,8 +181,8 @@ export class AlertaService {
 
     const inserted = (await this.dataSource.query(
       `INSERT INTO tbl_alerta
-         (tipo_alerta, tipo_origen, tipo_destino, estado_alerta, id_unidad, id_estacion_destino, id_empleado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (tipo_alerta, tipo_origen, tipo_destino, estado_alerta, id_unidad, id_estacion_destino, id_empleado, id_linea)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id_alerta AS "idAlerta"`,
       [
         dto.tipoAlerta,
@@ -177,6 +192,7 @@ export class AlertaService {
         String(unit.idUnidad),
         dto.idEstacionDestino,
         employeeId,
+        unit.idLinea,
       ],
     )) as { idAlerta: string }[];
 
@@ -194,36 +210,43 @@ export class AlertaService {
     return rows.map((row) => this.toDto(row));
   }
 
-  async getMyStation(employeeId: string): Promise<StationAlertsResponseDto> {
+  // Alerts of the operator's station sent from one of its ACTIVA lines. An
+  // optional idLinea narrows them to one line; a line that is not ACTIVA on
+  // the station yields no alerts instead of an error, so it leaks nothing.
+  async getMyStation(employeeId: string, idLinea?: string): Promise<StationAlertsResponseDto> {
     const station = await this.findOperatorStation(this.dataSource, employeeId);
+    const lineas = await this.findStationLines(station.idEstacion);
+    const filter = idLinea ? idLinea : null;
+    if (filter !== null && !lineas.some((linea) => linea.idLinea === filter)) {
+      return { station, lineas, alerts: [] };
+    }
+
+    const params: string[] = [station.idEstacion, EstadoAsignacionLinea.ACTIVA];
+    if (filter !== null) params.push(filter);
     const rows = (await this.dataSource.query(
       `${ALERT_SELECT}
         WHERE a.id_estacion_destino = $1
+          AND ${ALERT_LINE_ACTIVE_ON_STATION}
+          ${filter !== null ? "AND a.id_linea = $3" : ""}
         ORDER BY a.fecha_creacion DESC, a.id_alerta DESC
         LIMIT ${STATION_ALERTS_LIMIT}`,
-      [station.idEstacion],
+      params,
     )) as AlertRow[];
-    return { station, alerts: rows.map((row) => this.toDto(row)) };
+    return { station, lineas, alerts: rows.map((row) => this.toDto(row)) };
   }
 
   // Central view (ALERTAS_OPERATIVAS_GESTIONAR): the newest unit -> station
-  // alerts of every station, grouped line -> station -> unit. tbl_alerta has
-  // no line, so an alert is grouped under the line currently assigned to its
-  // unit; units without line go to a last "Sin línea" group.
+  // alerts of every station, grouped line -> station -> unit. An alert is
+  // grouped under the line it was sent from (tbl_alerta.id_linea); alerts
+  // without stored line go to a last "Sin línea" group.
   async getCentral(): Promise<CentralAlertsResponseDto> {
     const rows = (await this.dataSource.query(
-      `SELECT ${ALERT_COLUMNS},
-              l.id_linea AS "idLinea",
-              l.numero_linea AS "numeroLinea",
-              l.nombre_linea AS "nombreLinea"
-       ${ALERT_FROM}
-         LEFT JOIN tbl_asignacion_unidad au ON au.id_unidad = a.id_unidad
-         LEFT JOIN tbl_linea l ON l.id_linea = au.id_linea
+      `${ALERT_SELECT}
         WHERE a.tipo_origen = $1 AND a.tipo_destino = $2
         ORDER BY a.fecha_creacion DESC, a.id_alerta DESC
         LIMIT ${CENTRAL_ALERTS_LIMIT}`,
       [TIPO_ORIGEN_UNIDAD, TIPO_DESTINO_ESTACION],
-    )) as CentralAlertRow[];
+    )) as AlertRow[];
     return { lineas: this.groupCentral(rows) };
   }
 
@@ -263,17 +286,23 @@ export class AlertaService {
       // Row lock: two operators of the same station cannot both apply a
       // transition computed from the same previous state.
       const locked = (await manager.query(
-        `SELECT estado_alerta AS "estadoAlerta",
-                id_estacion_destino AS "idEstacionDestino"
-           FROM tbl_alerta
-          WHERE id_alerta = $1
+        `SELECT a.estado_alerta AS "estadoAlerta",
+                a.id_estacion_destino AS "idEstacionDestino",
+                ${ALERT_LINE_ACTIVE_ON_STATION} AS "lineaActiva"
+           FROM tbl_alerta a
+          WHERE a.id_alerta = $1
           FOR UPDATE`,
-        [idAlerta],
+        [idAlerta, EstadoAsignacionLinea.ACTIVA],
       )) as LockedAlertRow[];
       const alert = locked[0];
-      // An alert of another station is reported as missing, not forbidden,
-      // so operators cannot probe other stations' alert ids.
-      if (!alert || (station && String(alert.idEstacionDestino) !== station.idEstacion)) {
+      // An alert of another station, or sent from a line the station no
+      // longer has ACTIVA, is reported as missing, not forbidden, so
+      // operators cannot probe other stations' or lines' alert ids.
+      if (
+        !alert ||
+        (station &&
+          (String(alert.idEstacionDestino) !== station.idEstacion || !alert.lineaActiva))
+      ) {
         throw new AlertNotFound(idAlerta);
       }
 
@@ -355,6 +384,25 @@ export class AlertaService {
     )) as LineStationRow[];
   }
 
+  // ACTIVA lines of a station, by line number.
+  private async findStationLines(idEstacion: string): Promise<AlertaLineaDto[]> {
+    const rows = (await this.dataSource.query(
+      `SELECT l.id_linea AS "idLinea",
+              l.numero_linea AS "numeroLinea",
+              l.nombre_linea AS "nombreLinea"
+         FROM tbl_estacion_linea el
+        INNER JOIN tbl_linea l ON l.id_linea = el.id_linea
+        WHERE el.id_estacion = $1 AND el.estado_asignacion = $2
+        ORDER BY l.numero_linea ASC, l.id_linea ASC`,
+      [idEstacion, EstadoAsignacionLinea.ACTIVA],
+    )) as AlertaLineaDto[];
+    return rows.map((row) => ({
+      idLinea: String(row.idLinea),
+      numeroLinea: String(row.numeroLinea),
+      nombreLinea: String(row.nombreLinea),
+    }));
+  }
+
   private async findOperatorStation(
     runner: Queryable,
     employeeId: string,
@@ -407,7 +455,7 @@ export class AlertaService {
     }));
   }
 
-  private groupCentral(rows: CentralAlertRow[]): AlertaCentralLineaDto[] {
+  private groupCentral(rows: AlertRow[]): AlertaCentralLineaDto[] {
     const lineas = new Map<string, AlertaCentralLineaDto>();
     for (const row of rows) {
       const lineKey = row.idLinea === null || row.idLinea === undefined ? "" : String(row.idLinea);
@@ -472,6 +520,14 @@ export class AlertaService {
         nombreEstacion: row.nombreEstacion ?? "",
       },
       autor: { idEmpleado: String(row.idEmpleado), nombre: row.nombreEmpleado },
+      linea:
+        row.idLinea === null || row.idLinea === undefined
+          ? null
+          : {
+              idLinea: String(row.idLinea),
+              numeroLinea: String(row.numeroLinea),
+              nombreLinea: String(row.nombreLinea),
+            },
       observaciones: (row.observaciones ?? []).map((obs) => ({
         estadoNuevo: obs.estadoNuevo,
         observacion: obs.observacion,

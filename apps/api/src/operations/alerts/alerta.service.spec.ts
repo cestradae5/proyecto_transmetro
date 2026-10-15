@@ -45,6 +45,9 @@ const ALERT_ROW = {
   nombreEstacion: "Estación Centro",
   idEmpleado: "5",
   nombreEmpleado: "Piloto Uno",
+  idLinea: "3",
+  numeroLinea: "12",
+  nombreLinea: "Línea 12",
 };
 
 const ALERT_DTO = {
@@ -59,6 +62,7 @@ const ALERT_DTO = {
   estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
   autor: { idEmpleado: "5", nombre: "Piloto Uno" },
   observaciones: [],
+  linea: { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
 };
 
 const STATION_ROW = { idEstacion: "22", nombreEstacion: "Estación Centro" };
@@ -166,7 +170,9 @@ describe("AlertaService", () => {
       expect(query).toHaveBeenCalledTimes(4);
       const [insertSql, insertParams] = query.mock.calls[2]!;
       expect(insertSql).toContain("INSERT INTO tbl_alerta");
-      expect(insertParams).toEqual(["ACCIDENTE", "UNIDAD", "ESTACION", "PENDIENTE", "7", "22", "5"]);
+      expect(insertSql).toContain("id_linea");
+      // The unit's line at creation time is stored with the alert (S3).
+      expect(insertParams).toEqual(["ACCIDENTE", "UNIDAD", "ESTACION", "PENDIENTE", "7", "22", "5", "3"]);
       expect(query.mock.calls[3]![1]).toEqual(["100"]);
     });
 
@@ -276,9 +282,23 @@ describe("AlertaService", () => {
       expect(sql).toContain("LIMIT 50");
       expect(params).toEqual(["5"]);
     });
+
+    it("maps an alert without stored line to linea null (S7)", async () => {
+      setup([[{ ...ALERT_ROW, idLinea: null, numeroLinea: null, nombreLinea: null }]]);
+
+      const result = await service.listSent("5");
+
+      expect(result).toEqual([{ ...ALERT_DTO, linea: null }]);
+      expect(query.mock.calls[0]![0]).toContain("LEFT JOIN tbl_linea l ON l.id_linea = a.id_linea");
+    });
   });
 
-  describe("getMyStation (S7)", () => {
+  describe("getMyStation (S7, S4, S6)", () => {
+    const LINE_ROWS = [
+      { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" },
+      { idLinea: "6", numeroLinea: "6", nombreLinea: "Línea 6" },
+    ];
+
     it("throws OperatorHasNoStation when the operator has no ACTIVA station", async () => {
       setup([[]]);
 
@@ -287,26 +307,66 @@ describe("AlertaService", () => {
       expect(query.mock.calls[0]![1]).toEqual(["8", "ACTIVA"]);
     });
 
-    it("returns only the alerts addressed to the operator's station, newest first, max 100", async () => {
-      setup([[STATION_ROW], [ALERT_ROW]]);
+    it("returns the station's ACTIVA lines and only alerts of the station sent from one of them, newest first, max 100", async () => {
+      setup([[STATION_ROW], LINE_ROWS, [ALERT_ROW]]);
 
       const result = await service.getMyStation("8");
 
       expect(result).toEqual({
         station: { idEstacion: "22", nombreEstacion: "Estación Centro" },
+        lineas: LINE_ROWS,
         alerts: [ALERT_DTO],
       });
-      const [sql, params] = query.mock.calls[1]!;
+      const [linesSql, linesParams] = query.mock.calls[1]!;
+      expect(linesSql).toContain("FROM tbl_estacion_linea el");
+      expect(linesSql).toContain("el.id_estacion = $1 AND el.estado_asignacion = $2");
+      expect(linesParams).toEqual(["22", "ACTIVA"]);
+      const [sql, params] = query.mock.calls[2]!;
       expect(sql).toContain("a.id_estacion_destino = $1");
+      expect(sql).toContain("el.id_linea = a.id_linea");
+      expect(sql).toContain("el.estado_asignacion = $2");
+      expect(sql).not.toContain("$3");
       expect(sql).toContain("ORDER BY a.fecha_creacion DESC");
       expect(sql).toContain("LIMIT 100");
-      expect(params).toEqual(["22"]);
+      expect(params).toEqual(["22", "ACTIVA"]);
+    });
+
+    it("filters by one of the station's lines server side", async () => {
+      setup([[STATION_ROW], LINE_ROWS, [ALERT_ROW]]);
+
+      const result = await service.getMyStation("8", "6");
+
+      expect(result.lineas).toEqual(LINE_ROWS);
+      expect(result.alerts).toEqual([ALERT_DTO]);
+      const [sql, params] = query.mock.calls[2]!;
+      expect(sql).toContain("a.id_linea = $3");
+      expect(params).toEqual(["22", "ACTIVA", "6"]);
+    });
+
+    it.each([["9"], ["abc"]])(
+      "returns no alerts without querying them for line %s, which is not an ACTIVA line of the station",
+      async (idLinea) => {
+        setup([[STATION_ROW], LINE_ROWS]);
+
+        const result = await service.getMyStation("8", idLinea);
+
+        expect(result).toEqual({ station: STATION_ROW, lineas: LINE_ROWS, alerts: [] });
+        expect(query).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it("treats an empty line filter as all lines", async () => {
+      setup([[STATION_ROW], LINE_ROWS, []]);
+
+      await service.getMyStation("8", "");
+
+      expect(query.mock.calls[2]![1]).toEqual(["22", "ACTIVA"]);
     });
   });
 
   describe("updateStatus (S8)", () => {
-    const lockedRow = (estadoAlerta: string, idEstacionDestino = "22") => [
-      { estadoAlerta, idEstacionDestino },
+    const lockedRow = (estadoAlerta: string, idEstacionDestino = "22", lineaActiva = true) => [
+      { estadoAlerta, idEstacionDestino, lineaActiva },
     ];
 
     it("advances the state, writes one history row and returns the updated alert", async () => {
@@ -326,7 +386,8 @@ describe("AlertaService", () => {
       expect(managerQuery.mock.calls[0]![1]).toEqual(["8", "ACTIVA"]);
       const [lockSql, lockParams] = managerQuery.mock.calls[1]!;
       expect(lockSql).toContain("FOR UPDATE");
-      expect(lockParams).toEqual(["100"]);
+      expect(lockSql).toContain("el.id_linea = a.id_linea");
+      expect(lockParams).toEqual(["100", "ACTIVA"]);
       const [updateSql, updateParams] = managerQuery.mock.calls[2]!;
       expect(updateSql).toContain("UPDATE tbl_alerta");
       expect(updateSql).toContain("fecha_actualizacion = CURRENT_TIMESTAMP");
@@ -369,6 +430,16 @@ describe("AlertaService", () => {
         service.updateStatus("8", "100", { estado: "RECIBIDA" }),
       ).rejects.toBeInstanceOf(AlertNotFound);
       expect(managerQuery).toHaveBeenCalledTimes(2);
+    });
+
+    it("hides an alert of the station sent from a line the station no longer has ACTIVA as AlertNotFound (S5)", async () => {
+      setup([], [[STATION_ROW], lockedRow("PENDIENTE", "22", false)]);
+
+      await expect(
+        service.updateStatus("8", "100", { estado: "RECIBIDA" }),
+      ).rejects.toBeInstanceOf(AlertNotFound);
+      expect(managerQuery).toHaveBeenCalledTimes(2);
+      expect(query).not.toHaveBeenCalled();
     });
 
     it("throws AlertNotFound when the alert does not exist", async () => {
@@ -421,21 +492,23 @@ describe("AlertaService", () => {
     const L1 = { idLinea: "1", numeroLinea: "1", nombreLinea: "Línea 1" };
     const L12 = { idLinea: "3", numeroLinea: "12", nombreLinea: "Línea 12" };
     const L2 = { idLinea: "2", numeroLinea: "2", nombreLinea: "Línea 2" };
+    const LINE_BY_ALERT: Record<string, typeof L1> = { "3": L1, "4": L2, "5": L2, "6": L2, "7": L2, "8": L12 };
     const dto = (idAlerta: string, idEstacion: string, nombreEstacion: string, idUnidad: string, numeroPlaca: string) => ({
       ...ALERT_DTO,
+      linea: LINE_BY_ALERT[idAlerta] ?? null,
       idAlerta,
       unidad: { idUnidad, numeroPlaca },
       estacionDestino: { idEstacion, nombreEstacion },
     });
 
-    it("queries the newest 300 unit->station alerts with the unit's current line", async () => {
+    it("queries the newest 300 unit->station alerts with the line stored on the alert (S8)", async () => {
       setup([[]]);
 
       await expect(service.getCentral()).resolves.toEqual({ lineas: [] });
 
       const [sql, params] = query.mock.calls[0]!;
-      expect(sql).toContain("tbl_asignacion_unidad");
-      expect(sql).toContain("tbl_linea");
+      expect(sql).not.toContain("tbl_asignacion_unidad");
+      expect(sql).toContain("LEFT JOIN tbl_linea l ON l.id_linea = a.id_linea");
       expect(sql).toContain("a.tipo_origen = $1 AND a.tipo_destino = $2");
       expect(sql).toContain("ORDER BY a.fecha_creacion DESC");
       expect(sql).toContain("LIMIT 300");
@@ -530,8 +603,9 @@ describe("AlertaService", () => {
   });
 
   describe("updateCentralStatus (S13)", () => {
+    // Central ignores station and line scoping, even for a line no longer ACTIVA.
     const lockedRow = (estadoAlerta: string, idEstacionDestino = "23") => [
-      { estadoAlerta, idEstacionDestino },
+      { estadoAlerta, idEstacionDestino, lineaActiva: false },
     ];
 
     it("advances an alert of any station without a station lookup and writes one history row", async () => {
@@ -547,7 +621,7 @@ describe("AlertaService", () => {
       expect(managerQuery).toHaveBeenCalledTimes(3);
       const [lockSql, lockParams] = managerQuery.mock.calls[0]!;
       expect(lockSql).toContain("FOR UPDATE");
-      expect(lockParams).toEqual(["100"]);
+      expect(lockParams).toEqual(["100", "ACTIVA"]);
       expect(managerQuery.mock.calls[1]![1]).toEqual(["EN_ATENCION", "100"]);
       const [historySql, historyParams] = managerQuery.mock.calls[2]!;
       expect(historySql).toContain("INSERT INTO tbl_historial_estado");

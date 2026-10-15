@@ -34,6 +34,7 @@ const FLEET_ERROR_MESSAGES: Record<string, string> = {
   OperatorAlreadyAssigned: 'El operador ya tiene una estación asignada',
   OperatorHasNoStation: 'No tiene una estación asignada',
   ESTACION_LINEA_DUPLICATE: 'La línea ya está vinculada a esta estación',
+  ESTACION_LINEA_NOT_ON_ROUTE: 'La ruta de esa línea no pasa por la parada de esta estación',
 };
 
 /** Backend error class names, for callers that branch on a specific error. */

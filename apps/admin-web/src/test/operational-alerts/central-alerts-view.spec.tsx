@@ -27,6 +27,7 @@ function alert(id: string, estadoAlerta: EstadoAlerta, overrides: Partial<Alerta
     estacionDestino: { idEstacion: "22", nombreEstacion: "Estación Centro" },
     autor: { idEmpleado: "5", nombre: "Piloto Uno" },
     observaciones: [],
+    linea: null,
     ...overrides,
   };
 }

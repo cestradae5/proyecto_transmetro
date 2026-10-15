@@ -9,6 +9,7 @@ import {
 } from "../../authentication/entities/employee.entity.js";
 import { AuditRepository } from "../../authentication/infrastructure/audit.repository.js";
 import { EstacionEntity } from "../../infrastructure/estacion/estacion.entity.js";
+import { EstadoAsignacionLinea } from "../../infrastructure/estacion/estacion-linea.entity.js";
 import { FLEET_AUDIT_ACTIONS, FLEET_MODULE, ROLE_CODES } from "../shared/fleet.constants.js";
 import {
   AssignmentNotFound,
@@ -19,7 +20,10 @@ import {
 } from "../shared/fleet.errors.js";
 import { PilotEligibilityLookup } from "../shared/pilot-eligibility.lookup.js";
 import { AsignacionEstacionEntity, ESTADO_ASIGNACION } from "./asignacion-estacion.entity.js";
-import type { AsignacionEstacionResponseDto } from "./dto/asignacion-estacion-response.dto.js";
+import type {
+  AsignacionEstacionLineaDto,
+  AsignacionEstacionResponseDto,
+} from "./dto/asignacion-estacion-response.dto.js";
 import type { CreateAsignacionEstacionDto } from "./dto/create-asignacion-estacion.dto.js";
 import type { UpdateAsignacionEstacionDto } from "./dto/update-asignacion-estacion.dto.js";
 
@@ -72,6 +76,7 @@ export class AsignacionEstacionService {
     }
 
     const rows = await qb.orderBy("employee.name", "ASC").getRawMany<AssignmentRow>();
+    const lineas = await this.findStationLines(rows.map((row) => String(row.idEstacion)));
     return rows.map((row) => ({
       idAsignacionEstacion: String(row.idAsignacionEstacion),
       idEmpleado: String(row.idEmpleado),
@@ -80,7 +85,39 @@ export class AsignacionEstacionService {
       nombreEstacion: row.nombreEstacion,
       estadoAsignacion: row.estadoAsignacion,
       fechaAsignacion: row.fechaAsignacion,
+      lineas: lineas.get(String(row.idEstacion)) ?? [],
     }));
+  }
+
+  // ACTIVA lines of each station, in one query. The operator's lines are
+  // always the station's lines (read-only here; managed in Infrastructure).
+  private async findStationLines(
+    stationIds: string[],
+  ): Promise<Map<string, AsignacionEstacionLineaDto[]>> {
+    const byStation = new Map<string, AsignacionEstacionLineaDto[]>();
+    if (stationIds.length === 0) return byStation;
+    const rows = (await this.dataSource.query(
+      `SELECT el.id_estacion AS "idEstacion",
+              l.id_linea AS "idLinea",
+              l.numero_linea AS "numeroLinea",
+              l.nombre_linea AS "nombreLinea"
+         FROM tbl_estacion_linea el
+        INNER JOIN tbl_linea l ON l.id_linea = el.id_linea
+        WHERE el.id_estacion = ANY($1::bigint[]) AND el.estado_asignacion = $2
+        ORDER BY l.numero_linea ASC, l.id_linea ASC`,
+      [[...new Set(stationIds)], EstadoAsignacionLinea.ACTIVA],
+    )) as (AsignacionEstacionLineaDto & { idEstacion: string })[];
+    for (const row of rows) {
+      const key = String(row.idEstacion);
+      const list = byStation.get(key) ?? [];
+      list.push({
+        idLinea: String(row.idLinea),
+        numeroLinea: String(row.numeroLinea),
+        nombreLinea: String(row.nombreLinea),
+      });
+      byStation.set(key, list);
+    }
+    return byStation;
   }
 
   async assign(

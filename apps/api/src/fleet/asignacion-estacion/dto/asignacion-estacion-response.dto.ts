@@ -1,4 +1,10 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+
+export class AsignacionEstacionLineaDto {
+  @ApiProperty() idLinea!: string;
+  @ApiProperty() numeroLinea!: string;
+  @ApiProperty() nombreLinea!: string;
+}
 
 export class AsignacionEstacionResponseDto {
   @ApiProperty({ description: "ID de la asignación" })
@@ -21,4 +27,11 @@ export class AsignacionEstacionResponseDto {
 
   @ApiProperty({ description: "Fecha de asignación" })
   fechaAsignacion!: Date;
+
+  @ApiPropertyOptional({
+    type: [AsignacionEstacionLineaDto],
+    description:
+      "Líneas ACTIVAS de la estación (las que atiende el operador). Solo en el listado; se gestionan en Infraestructura",
+  })
+  lineas?: AsignacionEstacionLineaDto[];
 }

@@ -50,6 +50,12 @@ export function AlertCard({ alert, onUpdate }: AlertCardProps) {
           <p className="font-medium text-slate-900">{TIPO_ALERTA_LABEL[alert.tipoAlerta] ?? alert.tipoAlerta}</p>
           <p className="text-sm text-slate-600">
             Unidad <span>{alert.unidad.numeroPlaca}</span>
+            {alert.linea && (
+              <>
+                {' · '}
+                <span title={alert.linea.nombreLinea}>Línea {alert.linea.numeroLinea}</span>
+              </>
+            )}
           </p>
           <p className="text-xs text-slate-500">
             {alert.autor.nombre} · {formatReportDate(alert.fechaCreacion)}

@@ -5,7 +5,7 @@ import type { Estacion, Linea, Parada } from "../../features/infrastructure/type
 
 // The station-lines dialog belongs to fleet and has its own spec; stub it so
 // this test only checks that the paradas table opens it for the right estación.
-vi.mock("../../features/fleet/components/estaciones/estacion-lineas-dialog", () => ({
+vi.mock("../../features/infrastructure/components/estacion-lineas/estacion-lineas-dialog", () => ({
   EstacionLineasDialog: ({ stationId, stationName }: { stationId: string; stationName: string }) => (
     <div role="dialog" aria-label="Líneas de la estación">{`${stationId}:${stationName}`}</div>
   ),
