@@ -26,7 +26,7 @@ describe("Citizen (e2e)", () => {
   let dataSource: DataSource;
 
   const runTag = `E2E-CIT-${Date.now()}`;
-  const ids = { paradas: [] as string[], estaciones: [] as string[], tarjetas: [] as string[] };
+  const ids = { paradas: [] as string[], estaciones: [] as string[], tarjetas: [] as string[], lineas: [] as string[] };
 
   async function one<T>(sql: string, params: unknown[] = []): Promise<T> {
     const [row] = (await dataSource.query(sql, params)) as T[];
@@ -34,20 +34,39 @@ describe("Citizen (e2e)", () => {
     return row;
   }
 
-  async function createStation(name: string, estado: string): Promise<string> {
+  async function createParada(name: string, estado: string, withStation = false): Promise<string> {
     const parada = await one<{ id: string }>(
       `INSERT INTO tbl_parada (nombre_parada, latitud, longitud, estado_parada)
-       VALUES ($1, 14.6, -90.5, 'ACTIVA') RETURNING id_parada AS "id"`,
-      [`${runTag} ${name}`],
+       VALUES ($1, 14.6, -90.5, $2) RETURNING id_parada AS "id"`,
+      [`${runTag} ${name}`, estado],
     );
     ids.paradas.push(String(parada.id));
-    const estacion = await one<{ id: string }>(
-      `INSERT INTO tbl_estacion (nombre_estacion, latitud, longitud, estado_estacion, id_parada)
-       VALUES ($1, 14.6, -90.5, $2, $3) RETURNING id_estacion AS "id"`,
-      [`${runTag} ${name}`, estado, parada.id],
+    if (withStation) {
+      const estacion = await one<{ id: string }>(
+        `INSERT INTO tbl_estacion (nombre_estacion, latitud, longitud, estado_estacion, id_parada)
+         VALUES ($1, 14.6, -90.5, 'ACTIVA', $2) RETURNING id_estacion AS "id"`,
+        [`${runTag} Estación ${name}`, parada.id],
+      );
+      ids.estaciones.push(String(estacion.id));
+    }
+    return String(parada.id);
+  }
+
+  // A line whose route is the given paradas, in order.
+  async function createLine(suffix: string, estado: string, route: string[]): Promise<string> {
+    const linea = await one<{ id: string }>(
+      `INSERT INTO tbl_linea (numero_linea, nombre_linea, color_hex, estado_linea, tipo_recorrido)
+       VALUES ($1, $2, '#FF6600', $3, 'LINEAL') RETURNING id_linea AS "id"`,
+      [`${runTag.slice(-10)}${suffix}`, `${runTag} Línea ${suffix}`, estado],
     );
-    ids.estaciones.push(String(estacion.id));
-    return String(estacion.id);
+    ids.lineas.push(String(linea.id));
+    for (const [index, idParada] of route.entries()) {
+      await dataSource.query(
+        `INSERT INTO tbl_linea_parada (orden, minutos_hasta_siguiente, id_parada, id_linea) VALUES ($1, 3, $2, $3)`,
+        [index + 1, idParada, linea.id],
+      );
+    }
+    return String(linea.id);
   }
 
   async function createCard(suffix: string, saldo: string, estado = "ACTIVA"): Promise<string> {
@@ -96,8 +115,14 @@ describe("Citizen (e2e)", () => {
       await q(`DELETE FROM tbl_transaccion_pago WHERE id_tarjeta_ciudadana = ANY($1::bigint[])`);
       await q(`DELETE FROM tbl_tarjeta_ciudadana WHERE id_tarjeta_ciudadana = ANY($1::bigint[])`);
     }
+    if (dataSource && ids.lineas.length) {
+      await dataSource.query(`DELETE FROM tbl_linea_parada WHERE id_linea = ANY($1::bigint[])`, [ids.lineas]);
+      await dataSource.query(`DELETE FROM tbl_linea WHERE id_linea = ANY($1::bigint[])`, [ids.lineas]);
+    }
     if (dataSource && ids.estaciones.length) {
       await dataSource.query(`DELETE FROM tbl_estacion WHERE id_estacion = ANY($1::bigint[])`, [ids.estaciones]);
+    }
+    if (dataSource && ids.paradas.length) {
       await dataSource.query(`DELETE FROM tbl_parada WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
     }
     if (app) await app.close();
@@ -121,23 +146,62 @@ describe("Citizen (e2e)", () => {
     });
   });
 
-  describe("stations (S4)", () => {
-    it("lists only ACTIVA stations by name, without login", async () => {
-      const b = await createStation("B Activa", "ACTIVA");
-      const a = await createStation("A Activa", "ACTIVA");
-      const closed = await createStation("C Cerrada", "CERRADA");
+  // odd/tasks/parada-ridership.md S1, S9: every active parada, grouped by its
+  // active lines in route order; stations are paradas marked esEstacion.
+  describe("lines with paradas (parada-ridership S9)", () => {
+    type Linea = {
+      idLinea: string | null;
+      numeroLinea: string | null;
+      nombreLinea: string;
+      paradas: { idParada: string; nombreParada: string; orden: number | null; esEstacion: boolean }[];
+    };
 
-      const res = await api().get("/citizen/stations");
+    it("lists active lines with their active paradas in route order and the rest under 'Sin línea'", async () => {
+      const centro = await createParada("Centro", "ACTIVA", true);
+      const norte = await createParada("Norte", "ACTIVA");
+      const cerrada = await createParada("Cerrada", "CERRADA");
+      const sur = await createParada("Sur", "ACTIVA");
+      const aislada = await createParada("Aislada", "ACTIVA");
+      // Route order Norte -> Cerrada -> Centro; Centro is shared with line B.
+      const lineA = await createLine("A", "ACTIVA", [norte, cerrada, centro]);
+      const lineB = await createLine("B", "ACTIVA", [centro]);
+      // Sur is only on an inactive line, so it has no active line.
+      await createLine("C", "INACTIVA", [sur]);
+
+      const res = await api().get("/citizen/lines");
 
       expect(res.status).toBe(200);
-      const mine = (res.body as { idEstacion: string; nombreEstacion: string }[]).filter((s) =>
-        s.nombreEstacion.startsWith(runTag),
-      );
+      const body = res.body as Linea[];
+      const mine = body.filter((l) => l.idLinea !== null && ids.lineas.includes(l.idLinea));
       expect(mine).toEqual([
-        { idEstacion: a, nombreEstacion: `${runTag} A Activa` },
-        { idEstacion: b, nombreEstacion: `${runTag} B Activa` },
+        {
+          idLinea: lineA,
+          numeroLinea: `${runTag.slice(-10)}A`,
+          nombreLinea: `${runTag} Línea A`,
+          paradas: [
+            { idParada: norte, nombreParada: `${runTag} Norte`, orden: 1, esEstacion: false },
+            { idParada: centro, nombreParada: `${runTag} Centro`, orden: 3, esEstacion: true },
+          ],
+        },
+        {
+          idLinea: lineB,
+          numeroLinea: `${runTag.slice(-10)}B`,
+          nombreLinea: `${runTag} Línea B`,
+          paradas: [{ idParada: centro, nombreParada: `${runTag} Centro`, orden: 1, esEstacion: true }],
+        },
       ]);
-      expect(mine.map((s) => s.idEstacion)).not.toContain(closed);
+      const last = body[body.length - 1]!;
+      expect(last).toMatchObject({ idLinea: null, numeroLinea: null, nombreLinea: "Sin línea" });
+      expect(last.paradas.filter((p) => p.nombreParada.startsWith(runTag))).toEqual([
+        { idParada: aislada, nombreParada: `${runTag} Aislada`, orden: null, esEstacion: false },
+        { idParada: sur, nombreParada: `${runTag} Sur`, orden: null, esEstacion: false },
+      ]);
+      const everyParada = body.flatMap((l) => l.paradas.map((p) => p.idParada));
+      expect(everyParada).not.toContain(cerrada);
+    });
+
+    it("no longer serves /citizen/stations", async () => {
+      expect((await api().get("/citizen/stations")).status).toBe(404);
     });
   });
 

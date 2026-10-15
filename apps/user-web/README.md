@@ -69,7 +69,10 @@ deploy. The API already allows any origin (CORS `*`) and the
   sending. Each attempt has one `referencia`; retrying the same amount after
   a network error reuses it, so the API never charges twice. A 404 from the
   recharge route shows "Las recargas no están disponibles.".
-- **Simulator**: each pass has its own `idempotencyKey`; repeating the same
-  station and type right after a network error reuses it, so the API never
-  charges twice. The balance is never sent (the API reads it). The shown balance follows
-  the API answer.
+- **Simulator**: pick any active parada from `GET /citizen/lines`, grouped by
+  line (`Línea 6 - nombre`) with the paradas without line last; stations show
+  "(estación)" and a parada on two lines appears in both. The pass sends
+  `idParada`, and the result shows the people in that parada. Each pass has
+  its own `idempotencyKey`; repeating the same parada and type right after a
+  network error reuses it, so the API never charges twice. The balance is
+  never sent (the API reads it); the shown balance follows the API answer.

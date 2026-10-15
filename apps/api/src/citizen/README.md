@@ -7,7 +7,7 @@ GTQ and returned as numbers; ids are strings and dates ISO 8601.
 | Method | Path | Result |
 |---|---|---|
 | GET | `/citizen/cards/:numeroTarjeta` | `{ numeroTarjeta, saldo, estadoTarjeta }`; unknown card -> 404 "La tarjeta no existe." |
-| GET | `/citizen/stations` | `[{ idEstacion, nombreEstacion }]`, only `ACTIVA` stations, by name |
+| GET | `/citizen/lines` | `[{ idLinea, numeroLinea, nombreLinea, paradas: [{ idParada, nombreParada, orden, esEstacion }] }]`: `ACTIVA` lines by number with their `ACTIVA` paradas in route order (a parada on two lines appears in both); last, if any, `{ idLinea: null, numeroLinea: null, nombreLinea: "Sin línea" }` with the `ACTIVA` paradas on no `ACTIVA` line, by name, `orden: null`. Every active parada appears; a station is a parada with `esEstacion: true` |
 | POST | `/citizen/cards/:numeroTarjeta/recharges` | `{ monto, referencia }` -> 201 `{ idRecarga, numeroComprobante, monto, saldo, fechaRecarga, repetida }` |
 
 ## Simulated recharge
