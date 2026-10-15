@@ -82,6 +82,20 @@ describe("AlertaService", () => {
     service = new AlertaService({ query, transaction } as unknown as DataSource);
   };
 
+  // One parameterized tbl_bitacora insert (audit S2, S3).
+  const expectAuditRow = (
+    call: unknown[],
+    action: string,
+    idAlerta: string,
+    employeeId: string,
+    detalle: Record<string, unknown>,
+  ) => {
+    const [sql, params] = call as [string, unknown[]];
+    expect(sql).toContain("INSERT INTO tbl_bitacora");
+    expect(params.slice(0, 6)).toEqual(["operations", action, "alerta", idAlerta, "EXITOSO", employeeId]);
+    expect(JSON.parse(params[6] as string)).toEqual(detalle);
+  };
+
   describe("getDestinations (S2)", () => {
     it("throws PilotHasNoUnitAssigned when the pilot has no unit", async () => {
       setup([[]]);
@@ -162,18 +176,37 @@ describe("AlertaService", () => {
 
   describe("create (S6)", () => {
     it("inserts a PENDIENTE unit->station alert with the derived unit and the caller as author", async () => {
-      setup([[UNIT_LINE_ROW], STATION_ROWS, [{ idAlerta: "100" }], [ALERT_ROW]]);
+      setup([[UNIT_LINE_ROW], STATION_ROWS, [ALERT_ROW]], [[{ idAlerta: "100" }], []]);
 
       const result = await service.create("5", { tipoAlerta: "ACCIDENTE", idEstacionDestino: "22" });
 
       expect(result).toEqual(ALERT_DTO);
-      expect(query).toHaveBeenCalledTimes(4);
-      const [insertSql, insertParams] = query.mock.calls[2]!;
+      expect(query).toHaveBeenCalledTimes(3);
+      expect(transaction).toHaveBeenCalledTimes(1);
+      const [insertSql, insertParams] = managerQuery.mock.calls[0]!;
       expect(insertSql).toContain("INSERT INTO tbl_alerta");
       expect(insertSql).toContain("id_linea");
       // The unit's line at creation time is stored with the alert (S3).
       expect(insertParams).toEqual(["ACCIDENTE", "UNIDAD", "ESTACION", "PENDIENTE", "7", "22", "5", "3"]);
-      expect(query.mock.calls[3]![1]).toEqual(["100"]);
+      expect(query.mock.calls[2]![1]).toEqual(["100"]);
+    });
+
+    it("writes one send_alert audit row in the same transaction as the insert (audit S2)", async () => {
+      setup([[UNIT_LINE_ROW], STATION_ROWS, [ALERT_ROW]], [[{ idAlerta: "100" }], []]);
+
+      await service.create("5", { tipoAlerta: "ACCIDENTE", idEstacionDestino: "22" });
+
+      expect(managerQuery).toHaveBeenCalledTimes(2);
+      expectAuditRow(managerQuery.mock.calls[1]!, "send_alert", "100", "5", {
+        tipoAlerta: "ACCIDENTE",
+        estado: "PENDIENTE",
+        idUnidad: "7",
+        numeroPlaca: "P-123ABC",
+        idEstacionDestino: "22",
+        nombreEstacion: "Estación Centro",
+        idLinea: "3",
+        numeroLinea: "12",
+      });
     });
 
     it("rejects a destination outside the unit's line without inserting", async () => {
@@ -183,6 +216,7 @@ describe("AlertaService", () => {
         service.create("5", { tipoAlerta: "ACCIDENTE", idEstacionDestino: "99" }),
       ).rejects.toBeInstanceOf(DestinationNotOnLine);
       expect(query).toHaveBeenCalledTimes(2);
+      expect(transaction).not.toHaveBeenCalled();
     });
 
     it("rejects when the pilot has no unit without inserting", async () => {
@@ -192,6 +226,7 @@ describe("AlertaService", () => {
         service.create("5", { tipoAlerta: "ACCIDENTE", idEstacionDestino: "22" }),
       ).rejects.toBeInstanceOf(PilotHasNoUnitAssigned);
       expect(query).toHaveBeenCalledTimes(1);
+      expect(transaction).not.toHaveBeenCalled();
     });
 
     it("rejects when the unit has no line without inserting", async () => {
@@ -201,6 +236,7 @@ describe("AlertaService", () => {
         service.create("5", { tipoAlerta: "ACCIDENTE", idEstacionDestino: "22" }),
       ).rejects.toBeInstanceOf(UnitHasNoLine);
       expect(query).toHaveBeenCalledTimes(1);
+      expect(transaction).not.toHaveBeenCalled();
     });
   });
 
@@ -372,7 +408,7 @@ describe("AlertaService", () => {
     it("advances the state, writes one history row and returns the updated alert", async () => {
       setup(
         [[{ ...ALERT_ROW, estadoAlerta: "RECIBIDA" }]],
-        [[STATION_ROW], lockedRow("PENDIENTE"), [], []],
+        [[STATION_ROW], lockedRow("PENDIENTE"), [], [], []],
       );
 
       const result = await service.updateStatus("8", "100", {
@@ -382,7 +418,7 @@ describe("AlertaService", () => {
 
       expect(result).toEqual({ ...ALERT_DTO, estadoAlerta: "RECIBIDA" });
       expect(transaction).toHaveBeenCalledTimes(1);
-      expect(managerQuery).toHaveBeenCalledTimes(4);
+      expect(managerQuery).toHaveBeenCalledTimes(5);
       expect(managerQuery.mock.calls[0]![1]).toEqual(["8", "ACTIVA"]);
       const [lockSql, lockParams] = managerQuery.mock.calls[1]!;
       expect(lockSql).toContain("FOR UPDATE");
@@ -395,17 +431,25 @@ describe("AlertaService", () => {
       const [historySql, historyParams] = managerQuery.mock.calls[3]!;
       expect(historySql).toContain("INSERT INTO tbl_historial_estado");
       expect(historyParams).toEqual(["PENDIENTE", "RECIBIDA", "En camino", "100", "8"]);
+      // Audit S3: one row authored by the operator, same transaction.
+      expectAuditRow(managerQuery.mock.calls[4]!, "update_alert_status", "100", "8", {
+        estadoAnterior: "PENDIENTE",
+        estadoNuevo: "RECIBIDA",
+        observacion: "En camino",
+        vista: "estacion",
+      });
     });
 
     it("allows skipping forward states and stores a null observation when omitted", async () => {
       setup(
         [[{ ...ALERT_ROW, estadoAlerta: "RESUELTA" }]],
-        [[STATION_ROW], lockedRow("PENDIENTE"), [], []],
+        [[STATION_ROW], lockedRow("PENDIENTE"), [], [], []],
       );
 
       await service.updateStatus("8", "100", { estado: "RESUELTA" });
 
       expect(managerQuery.mock.calls[3]![1]).toEqual(["PENDIENTE", "RESUELTA", null, "100", "8"]);
+      expect(JSON.parse(managerQuery.mock.calls[4]![1][6] as string)).toMatchObject({ observacion: null });
     });
 
     it.each([
@@ -609,7 +653,7 @@ describe("AlertaService", () => {
     ];
 
     it("advances an alert of any station without a station lookup and writes one history row", async () => {
-      setup([[{ ...ALERT_ROW, estadoAlerta: "EN_ATENCION" }]], [lockedRow("PENDIENTE"), [], []]);
+      setup([[{ ...ALERT_ROW, estadoAlerta: "EN_ATENCION" }]], [lockedRow("PENDIENTE"), [], [], []]);
 
       const result = await service.updateCentralStatus("1", "100", {
         estado: "EN_ATENCION",
@@ -618,7 +662,7 @@ describe("AlertaService", () => {
 
       expect(result).toEqual({ ...ALERT_DTO, estadoAlerta: "EN_ATENCION" });
       expect(transaction).toHaveBeenCalledTimes(1);
-      expect(managerQuery).toHaveBeenCalledTimes(3);
+      expect(managerQuery).toHaveBeenCalledTimes(4);
       const [lockSql, lockParams] = managerQuery.mock.calls[0]!;
       expect(lockSql).toContain("FOR UPDATE");
       expect(lockParams).toEqual(["100", "ACTIVA"]);
@@ -626,6 +670,12 @@ describe("AlertaService", () => {
       const [historySql, historyParams] = managerQuery.mock.calls[2]!;
       expect(historySql).toContain("INSERT INTO tbl_historial_estado");
       expect(historyParams).toEqual(["PENDIENTE", "EN_ATENCION", "Central atiende", "100", "1"]);
+      expectAuditRow(managerQuery.mock.calls[3]!, "update_alert_status", "100", "1", {
+        estadoAnterior: "PENDIENTE",
+        estadoNuevo: "EN_ATENCION",
+        observacion: "Central atiende",
+        vista: "central",
+      });
     });
 
     it.each([

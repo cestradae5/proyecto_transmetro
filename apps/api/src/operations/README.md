@@ -73,7 +73,14 @@ have `ALERTAS_OPERATIVAS_GESTIONAR`.
   rules, row lock and history row (author = caller) as the station route,
   without station or line scoping. Unknown alert -> 404.
 
+- **Audit log**: every successful send and state change writes one
+  `tbl_bitacora` row in the same transaction (module `operations`, entity
+  `alerta` + id, result `EXITOSO`, author = caller). `send_alert` stores
+  `{ tipoAlerta, estado, idUnidad, numeroPlaca, idEstacionDestino,
+  nombreEstacion, idLinea, numeroLinea }`; `update_alert_status` stores
+  `{ estadoAnterior, estadoNuevo, observacion, vista }` with `vista`
+  `estacion` or `central`. Rejected requests (400/404/409) write no row.
+
 ## Not in v1
 
-- No `tbl_bitacora` audit rows; the alert trace is `tbl_historial_estado`.
 - No real-time push: the admin-web screens poll every ~10 s.
