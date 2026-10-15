@@ -47,10 +47,13 @@ describe("Ridership (e2e)", () => {
   };
   let adminToken = "";
   let pilotToken = "";
-  // A: capacity 4 (alert at 6). B, C: capacity 100.
-  let stationA = "";
-  let stationB = "";
-  let stationC = "";
+  // A: plain parada, capacity 4 (alert at 6). B, C: paradas with a station,
+  // capacity 100. D: parada with a station, capacity 2 (alert at 3).
+  let stopA = "";
+  let stopB = "";
+  let stopC = "";
+  let stopD = "";
+  const estacionOf = new Map<string, string>();
   let unit1 = "";
   let unit2 = "";
   let unitSmall = "";
@@ -90,20 +93,25 @@ describe("Ridership (e2e)", () => {
     );
   }
 
-  async function createStation(name: string, capacidad: number): Promise<string> {
+  // A parada with its capacity; withStation also gives it a tbl_estacion row.
+  // Returns the parada id: passengers are counted per parada.
+  async function createStop(name: string, capacidad: number, withStation: boolean): Promise<string> {
     const parada = await one<{ id: string }>(
-      `INSERT INTO tbl_parada (nombre_parada, latitud, longitud, estado_parada)
-       VALUES ($1, 14.6, -90.5, 'ACTIVA') RETURNING id_parada AS "id"`,
-      [`${runTag} ${name}`],
+      `INSERT INTO tbl_parada (nombre_parada, latitud, longitud, estado_parada, capacidad_pasajeros)
+       VALUES ($1, 14.6, -90.5, 'ACTIVA', $2) RETURNING id_parada AS "id"`,
+      [`${runTag} ${name}`, capacidad],
     );
     ids.paradas.push(String(parada.id));
-    const estacion = await one<{ id: string }>(
-      `INSERT INTO tbl_estacion (nombre_estacion, latitud, longitud, estado_estacion, id_parada, capacidad_pasajeros)
-       VALUES ($1, 14.6, -90.5, 'ACTIVA', $2, $3) RETURNING id_estacion AS "id"`,
-      [`${runTag} Estación ${name}`, parada.id, capacidad],
-    );
-    ids.estaciones.push(String(estacion.id));
-    return String(estacion.id);
+    if (withStation) {
+      const estacion = await one<{ id: string }>(
+        `INSERT INTO tbl_estacion (nombre_estacion, latitud, longitud, estado_estacion, id_parada)
+         VALUES ($1, 14.6, -90.5, 'ACTIVA', $2) RETURNING id_estacion AS "id"`,
+        [`${runTag} Estación ${name}`, parada.id],
+      );
+      ids.estaciones.push(String(estacion.id));
+      estacionOf.set(String(parada.id), String(estacion.id));
+    }
+    return String(parada.id);
   }
 
   async function createUnit(suffix: string, capacidad: number): Promise<string> {
@@ -129,10 +137,10 @@ describe("Ridership (e2e)", () => {
 
   const api = () => request(app.getHttpServer());
 
-  const pass = (numeroTarjeta: string, idEstacion: string, tipo: string, key: string | null = KEY) => {
+  const pass = (numeroTarjeta: string, idParada: string, tipo: string, key: string | null = KEY) => {
     const req = api().post("/operations/ridership/turnstile");
     if (key !== null) req.set("X-Turnstile-Key", key);
-    return req.send({ numeroTarjeta, idEstacion: Number(idEstacion), tipo });
+    return req.send({ numeroTarjeta, idParada: Number(idParada), tipo });
   };
 
   const saldoOf = async (numero: string) =>
@@ -148,28 +156,37 @@ describe("Ridership (e2e)", () => {
       ).n,
     );
 
-  const capacityAlerts = async (idEstacion: string) =>
-    rows<{ idAlerta: string; estado: string; idEmpleado: string | null; tipoOrigen: string; tipoDestino: string; idUnidad: string | null }>(
+  const capacityAlerts = async (idParada: string) =>
+    rows<{
+      idAlerta: string;
+      estado: string;
+      idEmpleado: string | null;
+      tipoOrigen: string;
+      tipoDestino: string;
+      idUnidad: string | null;
+      idEstacionOrigen: string | null;
+    }>(
       `SELECT id_alerta AS "idAlerta", estado_alerta AS "estado", id_empleado AS "idEmpleado",
-              tipo_origen AS "tipoOrigen", tipo_destino AS "tipoDestino", id_unidad AS "idUnidad"
-         FROM tbl_alerta WHERE tipo_alerta = 'CAPACIDAD_ESTACION' AND id_estacion_origen = $1
+              tipo_origen AS "tipoOrigen", tipo_destino AS "tipoDestino", id_unidad AS "idUnidad",
+              id_estacion_origen AS "idEstacionOrigen"
+         FROM tbl_alerta WHERE tipo_alerta = 'CAPACIDAD_ESTACION' AND id_parada_origen = $1
         ORDER BY id_alerta`,
-      [idEstacion],
+      [idParada],
     );
 
   // Each ENTRADA needs a card with balance; one card can enter many times.
   let walletCard = "";
-  const enter = async (idEstacion: string, times: number) => {
+  const enter = async (idParada: string, times: number) => {
     let last: request.Response | undefined;
     for (let i = 0; i < times; i++) {
-      last = await pass(walletCard, idEstacion, "ENTRADA");
+      last = await pass(walletCard, idParada, "ENTRADA");
       expect(last.status).toBe(201);
     }
     return last!;
   };
-  const exit = async (idEstacion: string, times: number) => {
+  const exit = async (idParada: string, times: number) => {
     for (let i = 0; i < times; i++) {
-      expect((await pass(walletCard, idEstacion, "SALIDA")).status).toBe(201);
+      expect((await pass(walletCard, idParada, "SALIDA")).status).toBe(201);
     }
   };
 
@@ -182,9 +199,10 @@ describe("Ridership (e2e)", () => {
 
     adminToken = await createEmployee("ADMINISTRADOR_SISTEMA", "admin");
     pilotToken = await createEmployee("PILOTO", "pilot");
-    stationA = await createStation("A", 4);
-    stationB = await createStation("B", 100);
-    stationC = await createStation("C", 100);
+    stopA = await createStop("A", 4, false);
+    stopB = await createStop("B", 100, true);
+    stopC = await createStop("C", 100, true);
+    stopD = await createStop("D", 2, true);
     unit1 = await createUnit("U1", 40);
     unit2 = await createUnit("U2", 40);
     unitSmall = await createUnit("U3", 2);
@@ -194,14 +212,14 @@ describe("Ridership (e2e)", () => {
   afterAll(async () => {
     if (dataSource) {
       const q = (sql: string, params: unknown[]) => dataSource.query(sql, params);
-      if (ids.estaciones.length) {
+      if (ids.paradas.length) {
         await q(
-          `DELETE FROM tbl_historial_estado WHERE id_alerta IN (SELECT id_alerta FROM tbl_alerta WHERE id_estacion_origen = ANY($1::bigint[]))`,
-          [ids.estaciones],
+          `DELETE FROM tbl_historial_estado WHERE id_alerta IN (SELECT id_alerta FROM tbl_alerta WHERE id_parada_origen = ANY($1::bigint[]))`,
+          [ids.paradas],
         );
-        await q(`DELETE FROM tbl_alerta WHERE id_estacion_origen = ANY($1::bigint[])`, [ids.estaciones]);
-        await q(`DELETE FROM tbl_evento_talanquera WHERE id_estacion = ANY($1::bigint[])`, [ids.estaciones]);
-        await q(`DELETE FROM tbl_parada_unidad WHERE id_estacion = ANY($1::bigint[])`, [ids.estaciones]);
+        await q(`DELETE FROM tbl_alerta WHERE id_parada_origen = ANY($1::bigint[])`, [ids.paradas]);
+        await q(`DELETE FROM tbl_evento_talanquera WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
+        await q(`DELETE FROM tbl_parada_unidad WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
       }
       if (ids.unidades.length) await q(`DELETE FROM tbl_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades]);
       if (ids.tarjetas.length) {
@@ -222,8 +240,8 @@ describe("Ridership (e2e)", () => {
       const card = await createCard("nokey", "10.00");
       const before = await eventCount();
 
-      expect((await pass(card, stationB, "ENTRADA", null)).status).toBe(401);
-      expect((await pass(card, stationB, "ENTRADA", "wrong")).status).toBe(401);
+      expect((await pass(card, stopB, "ENTRADA", null)).status).toBe(401);
+      expect((await pass(card, stopB, "ENTRADA", "wrong")).status).toBe(401);
 
       expect(await eventCount()).toBe(before);
       expect(await saldoOf(card)).toBe("10.00");
@@ -234,7 +252,7 @@ describe("Ridership (e2e)", () => {
       const before = await eventCount();
       process.env.TURNSTILE_SIMULATOR_ENABLED = "false";
       try {
-        expect((await pass(card, stationB, "ENTRADA")).status).toBe(404);
+        expect((await pass(card, stopB, "ENTRADA")).status).toBe(404);
       } finally {
         process.env.TURNSTILE_SIMULATOR_ENABLED = "true";
       }
@@ -248,7 +266,7 @@ describe("Ridership (e2e)", () => {
       const card = await createCard("entry", "10.00");
       const before = await eventCount();
 
-      const res = await pass(card, stationC, "ENTRADA");
+      const res = await pass(card, stopC, "ENTRADA");
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({
@@ -259,7 +277,12 @@ describe("Ridership (e2e)", () => {
         alertaGenerada: false,
         idAlerta: null,
       });
-      expect(res.body.estacion).toMatchObject({ idEstacion: stationC, capacidadPasajeros: 100, personasEnEstacion: 1 });
+      expect(res.body.parada).toMatchObject({
+        idParada: stopC,
+        idEstacion: estacionOf.get(stopC),
+        capacidadPasajeros: 100,
+        personasEnParada: 1,
+      });
       expect(await saldoOf(card)).toBe("9.00");
       expect(await eventCount()).toBe(before + 1);
       const event = await one<{ tipo: string; monto: string }>(
@@ -271,14 +294,14 @@ describe("Ridership (e2e)", () => {
 
     it("SALIDA charges nothing, ignores the card state and does not change the waiting count", async () => {
       const card = await createCard("exit-blocked", "3.00", "BLOQUEADA");
-      const waiting = (await api().get(`/operations/ridership/stations/${stationC}`).set("Authorization", `Bearer ${adminToken}`)).body
-        .personasEnEstacion;
+      const waiting = (await api().get(`/operations/ridership/stops/${stopC}`).set("Authorization", `Bearer ${adminToken}`)).body
+        .personasEnParada;
 
-      const res = await pass(card, stationC, "SALIDA");
+      const res = await pass(card, stopC, "SALIDA");
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ tipo: "SALIDA", montoCobrado: 0, saldo: 3, alertaGenerada: false });
-      expect(res.body.estacion.personasEnEstacion).toBe(waiting);
+      expect(res.body.parada.personasEnParada).toBe(waiting);
       expect(await saldoOf(card)).toBe("3.00");
     });
 
@@ -289,7 +312,7 @@ describe("Ridership (e2e)", () => {
       const card = await createCard(`rej-${estado}-${saldo}`, saldo, estado);
       const before = await eventCount();
 
-      const res = await pass(card, stationC, "ENTRADA");
+      const res = await pass(card, stopC, "ENTRADA");
 
       expect(res.status).toBe(status);
       expect(await saldoOf(card)).toBe(saldo);
@@ -300,11 +323,11 @@ describe("Ridership (e2e)", () => {
       const card = await createCard("valid", "10.00");
       const before = await eventCount();
 
-      expect((await pass(`${runTag}-missing`, stationC, "ENTRADA")).status).toBe(404);
+      expect((await pass(`${runTag}-missing`, stopC, "ENTRADA")).status).toBe(404);
       expect((await pass(card, "999999999", "ENTRADA")).status).toBe(404);
-      expect((await pass(card, stationC, "ADENTRO")).status).toBe(400);
+      expect((await pass(card, stopC, "ADENTRO")).status).toBe(400);
       expect(
-        (await api().post("/operations/ridership/turnstile").set("X-Turnstile-Key", KEY).send({ idEstacion: Number(stationC), tipo: "ENTRADA" }))
+        (await api().post("/operations/ridership/turnstile").set("X-Turnstile-Key", KEY).send({ idParada: Number(stopC), tipo: "ENTRADA" }))
           .status,
       ).toBe(400);
 
@@ -316,19 +339,19 @@ describe("Ridership (e2e)", () => {
   // odd/tasks/user-web.md S7: a retried pass with the same idempotencyKey is
   // stored and charged once.
   describe("turnstile idempotency (user-web S7)", () => {
-    const passWithKey = (numeroTarjeta: string, idEstacion: string, tipo: string, idempotencyKey: unknown) =>
+    const passWithKey = (numeroTarjeta: string, idParada: string, tipo: string, idempotencyKey: unknown) =>
       api()
         .post("/operations/ridership/turnstile")
         .set("X-Turnstile-Key", KEY)
-        .send({ numeroTarjeta, idEstacion: Number(idEstacion), tipo, idempotencyKey });
+        .send({ numeroTarjeta, idParada: Number(idParada), tipo, idempotencyKey });
 
     it("returns the original pass for a retried key without a new event or charge", async () => {
       const card = await createCard("idem", "10.00");
       const key = `${runTag}-idem-1`;
       const before = await eventCount();
 
-      const first = await passWithKey(card, stationC, "ENTRADA", key);
-      const retry = await passWithKey(card, stationC, "ENTRADA", key);
+      const first = await passWithKey(card, stopC, "ENTRADA", key);
+      const retry = await passWithKey(card, stopC, "ENTRADA", key);
 
       expect(first.status).toBe(201);
       expect(first.body).toMatchObject({ repetido: false, montoCobrado: 1, saldo: 9 });
@@ -341,7 +364,7 @@ describe("Ridership (e2e)", () => {
         alertaGenerada: false,
         idAlerta: null,
       });
-      expect(retry.body.estacion.personasEnEstacion).toBe(first.body.estacion.personasEnEstacion);
+      expect(retry.body.parada.personasEnParada).toBe(first.body.parada.personasEnParada);
       expect(await eventCount()).toBe(before + 1);
       expect(await saldoOf(card)).toBe("9.00");
     });
@@ -350,12 +373,12 @@ describe("Ridership (e2e)", () => {
       const card = await createCard("idem-other", "10.00");
       const otherCard = await createCard("idem-other-2", "10.00");
       const key = `${runTag}-idem-2`;
-      expect((await passWithKey(card, stationC, "ENTRADA", key)).status).toBe(201);
+      expect((await passWithKey(card, stopC, "ENTRADA", key)).status).toBe(201);
       const before = await eventCount();
 
-      expect((await passWithKey(card, stationC, "SALIDA", key)).status).toBe(409);
-      expect((await passWithKey(card, stationB, "ENTRADA", key)).status).toBe(409);
-      expect((await passWithKey(otherCard, stationC, "ENTRADA", key)).status).toBe(409);
+      expect((await passWithKey(card, stopC, "SALIDA", key)).status).toBe(409);
+      expect((await passWithKey(card, stopB, "ENTRADA", key)).status).toBe(409);
+      expect((await passWithKey(otherCard, stopC, "ENTRADA", key)).status).toBe(409);
 
       expect(await eventCount()).toBe(before);
       expect(await saldoOf(card)).toBe("9.00");
@@ -368,7 +391,7 @@ describe("Ridership (e2e)", () => {
         const card = await createCard(`idem-bad-${String(key).length}-${typeof key}`, "10.00");
         const before = await eventCount();
 
-        expect((await passWithKey(card, stationC, "ENTRADA", key)).status).toBe(400);
+        expect((await passWithKey(card, stopC, "ENTRADA", key)).status).toBe(400);
 
         expect(await eventCount()).toBe(before);
         expect(await saldoOf(card)).toBe("10.00");
@@ -378,8 +401,8 @@ describe("Ridership (e2e)", () => {
     it("keeps passes without a key independent (repetido false each time)", async () => {
       const card = await createCard("idem-none", "10.00");
 
-      const a = await pass(card, stationC, "ENTRADA");
-      const b = await pass(card, stationC, "ENTRADA");
+      const a = await pass(card, stopC, "ENTRADA");
+      const b = await pass(card, stopC, "ENTRADA");
 
       expect(a.body.repetido).toBe(false);
       expect(b.body.repetido).toBe(false);
@@ -388,18 +411,18 @@ describe("Ridership (e2e)", () => {
     });
   });
 
-  describe("station capacity alert (S1, S7, S10)", () => {
-    it("creates one system alert at 150% of the capacity and not again while it is open", async () => {
-      // Capacity 4 -> 5 people is 125%, 6 people is 150%.
-      const fifth = await enter(stationA, 5);
+  describe("capacity alert per parada (parada-ridership S2, S6)", () => {
+    it("alerts a plain parada (no station) at 150% once, without station, and not again while it is open", async () => {
+      // Parada A has no station. Capacity 4 -> 5 people is 125%, 6 is 150%.
+      const fifth = await enter(stopA, 5);
       expect(fifth.body).toMatchObject({ alertaGenerada: false });
-      expect(fifth.body.estacion).toMatchObject({ personasEnEstacion: 5, porcentaje: 125, alertaActiva: false });
-      expect(await capacityAlerts(stationA)).toHaveLength(0);
+      expect(fifth.body.parada).toMatchObject({ personasEnParada: 5, porcentaje: 125, alertaActiva: false });
+      expect(await capacityAlerts(stopA)).toHaveLength(0);
 
-      const sixth = await enter(stationA, 1);
+      const sixth = await enter(stopA, 1);
       expect(sixth.body.alertaGenerada).toBe(true);
-      expect(sixth.body.estacion).toMatchObject({ personasEnEstacion: 6, porcentaje: 150, alertaActiva: true });
-      const alerts = await capacityAlerts(stationA);
+      expect(sixth.body.parada).toMatchObject({ personasEnParada: 6, porcentaje: 150, alertaActiva: true });
+      const alerts = await capacityAlerts(stopA);
       expect(alerts).toEqual([
         {
           idAlerta: String(sixth.body.idAlerta),
@@ -408,20 +431,22 @@ describe("Ridership (e2e)", () => {
           tipoOrigen: "ESTACION",
           tipoDestino: "CENTRAL",
           idUnidad: null,
+          idEstacionOrigen: null,
         },
       ]);
+      expect(sixth.body.parada).toMatchObject({ idParada: stopA, idEstacion: null, capacidadPasajeros: 4 });
 
-      const seventh = await enter(stationA, 1);
+      const seventh = await enter(stopA, 1);
       expect(seventh.body).toMatchObject({ alertaGenerada: false, idAlerta: null });
-      expect(await capacityAlerts(stationA)).toHaveLength(1);
+      expect(await capacityAlerts(stopA)).toHaveLength(1);
     });
 
     it("lists the alert, resolves it with the central endpoint (autor null) and alerts again afterwards", async () => {
       const list = await api().get("/operations/ridership/alerts").set("Authorization", `Bearer ${adminToken}`);
       expect(list.status).toBe(200);
-      const mine = list.body.filter((a: { estacion: { idEstacion: string } }) => a.estacion.idEstacion === stationA);
+      const mine = list.body.filter((a: { parada: { idParada: string } }) => a.parada.idParada === stopA);
       expect(mine).toHaveLength(1);
-      expect(mine[0]).toMatchObject({ estadoAlerta: "PENDIENTE", estacion: { idEstacion: stationA } });
+      expect(mine[0]).toMatchObject({ estadoAlerta: "PENDIENTE", parada: { idParada: stopA, idEstacion: null } });
 
       const resolved = await api()
         .patch(`/operations/alerts/central/${mine[0].idAlerta}/status`)
@@ -430,9 +455,39 @@ describe("Ridership (e2e)", () => {
       expect(resolved.status).toBe(200);
       expect(resolved.body).toMatchObject({ estadoAlerta: "RESUELTA", autor: null, tipoAlerta: "CAPACIDAD_ESTACION" });
 
-      const again = await enter(stationA, 1);
+      const again = await enter(stopA, 1);
       expect(again.body.alertaGenerada).toBe(true);
-      expect(await capacityAlerts(stationA)).toHaveLength(2);
+      expect(await capacityAlerts(stopA)).toHaveLength(2);
+    });
+
+    it("alerts a parada that is a station using the parada's capacity and stores its station", async () => {
+      // Parada D (with a station) has capacity 2 -> 3 people is 150%.
+      expect((await enter(stopD, 2)).body.alertaGenerada).toBe(false);
+
+      const third = await enter(stopD, 1);
+
+      expect(third.body.alertaGenerada).toBe(true);
+      expect(third.body.parada).toMatchObject({
+        idParada: stopD,
+        idEstacion: estacionOf.get(stopD),
+        capacidadPasajeros: 2,
+        personasEnParada: 3,
+        porcentaje: 150,
+      });
+      const alerts = await capacityAlerts(stopD);
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]!.idEstacionOrigen).toBe(estacionOf.get(stopD));
+      const list = await api().get("/operations/ridership/alerts").set("Authorization", `Bearer ${adminToken}`);
+      expect(list.body.find((a: { idAlerta: string }) => a.idAlerta === alerts[0]!.idAlerta)).toMatchObject({
+        parada: { idParada: stopD, idEstacion: estacionOf.get(stopD) },
+      });
+    });
+
+    it("answers 404 with the parada message for an unknown parada", async () => {
+      const res = await pass(walletCard, "999999999", "ENTRADA");
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toBe("Parada con ID 999999999 no existe.");
     });
 
     it("keeps capacity alerts out of the unit -> station central view", async () => {
@@ -444,17 +499,18 @@ describe("Ridership (e2e)", () => {
 
   describe("bus stops (S2, S8)", () => {
     it("boards the waiting on arrival and adds 5 minutes below 25% (9 of 40)", async () => {
-      await enter(stationB, 9);
+      await enter(stopB, 9);
 
       const res = await api()
         .post(`/operations/ridership/units/${unit1}/arrival`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idEstacion: Number(stationB) });
+        .send({ idParada: Number(stopB) });
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({
         idUnidad: unit1,
-        idEstacion: stationB,
+        idParada: stopB,
+        idEstacion: estacionOf.get(stopB),
         capacidadPasajeros: 40,
         ocupacionLlegada: 0,
         subieron: 9,
@@ -463,27 +519,27 @@ describe("Ridership (e2e)", () => {
         minutosEsperaExtra: 5,
         fechaSalida: null,
       });
-      const station = await api().get(`/operations/ridership/stations/${stationB}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(station.body.personasEnEstacion).toBe(0);
+      const station = await api().get(`/operations/ridership/stops/${stopB}`).set("Authorization", `Bearer ${adminToken}`);
+      expect(station.body.personasEnParada).toBe(0);
     });
 
     it("rejects a second arrival while the stop is open with 409", async () => {
       const res = await api()
         .post(`/operations/ridership/units/${unit1}/arrival`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idEstacion: Number(stationC) });
+        .send({ idParada: Number(stopC) });
       expect(res.status).toBe(409);
     });
 
     it("adds no minutes at exactly 25% (10 of 40)", async () => {
-      const waiting = (await api().get(`/operations/ridership/stations/${stationC}`).set("Authorization", `Bearer ${adminToken}`)).body
-        .personasEnEstacion as number;
-      await enter(stationC, 10 - waiting);
+      const waiting = (await api().get(`/operations/ridership/stops/${stopC}`).set("Authorization", `Bearer ${adminToken}`)).body
+        .personasEnParada as number;
+      await enter(stopC, 10 - waiting);
 
       const res = await api()
         .post(`/operations/ridership/units/${unit2}/arrival`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idEstacion: Number(stationC) });
+        .send({ idParada: Number(stopC) });
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ subieron: 10, ocupacionEstimada: 10, minutosEsperaExtra: 0 });
@@ -491,8 +547,8 @@ describe("Ridership (e2e)", () => {
 
     it("on departure boards the newly waiting and counts exits only up to the arrival occupancy", async () => {
       // unit1 arrived at B with 0 aboard: 2 exits cannot get anyone off.
-      await exit(stationB, 2);
-      await enter(stationB, 1);
+      await exit(stopB, 2);
+      await enter(stopB, 1);
 
       const res = await api()
         .post(`/operations/ridership/units/${unit1}/departure`)
@@ -509,9 +565,9 @@ describe("Ridership (e2e)", () => {
       const arrival = await api()
         .post(`/operations/ridership/units/${unit1}/arrival`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idEstacion: Number(stationC) });
+        .send({ idParada: Number(stopC) });
       expect(arrival.body).toMatchObject({ ocupacionLlegada: 10, subieron: 0, ocupacionEstimada: 10 });
-      await exit(stationC, 3);
+      await exit(stopC, 3);
 
       const res = await api().post(`/operations/ridership/units/${unit1}/departure`).set("Authorization", `Bearer ${adminToken}`).send();
 
@@ -522,19 +578,19 @@ describe("Ridership (e2e)", () => {
     });
 
     it("never boards more than the free seats and leaves the rest waiting", async () => {
-      const before = (await api().get(`/operations/ridership/stations/${stationA}`).set("Authorization", `Bearer ${adminToken}`)).body
-        .personasEnEstacion as number;
+      const before = (await api().get(`/operations/ridership/stops/${stopA}`).set("Authorization", `Bearer ${adminToken}`)).body
+        .personasEnParada as number;
 
       const res = await api()
         .post(`/operations/ridership/units/${unitSmall}/arrival`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idEstacion: Number(stationA) });
+        .send({ idParada: Number(stopA) });
 
       expect(res.body).toMatchObject({ capacidadPasajeros: 2, subieron: 2, ocupacionEstimada: 2, minutosEsperaExtra: 0 });
-      const after = await api().get(`/operations/ridership/stations/${stationA}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(after.body.personasEnEstacion).toBe(before - 2);
+      const after = await api().get(`/operations/ridership/stops/${stopA}`).set("Authorization", `Bearer ${adminToken}`);
+      expect(after.body.personasEnParada).toBe(before - 2);
       const unit = await api().get(`/operations/ridership/units/${unitSmall}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(unit.body.paradaAbierta).toMatchObject({ idEstacion: stationA, minutosEsperaExtra: 0 });
+      expect(unit.body.paradaAbierta).toMatchObject({ idParada: stopA, idEstacion: null, minutosEsperaExtra: 0 });
     });
 
     it("rejects a departure without an open stop (409), unknown unit or station (404) and stores nothing", async () => {
@@ -546,15 +602,15 @@ describe("Ridership (e2e)", () => {
 
       expect((await api().post(`/operations/ridership/units/${unit1}/departure`).set("Authorization", `Bearer ${adminToken}`).send()).status).toBe(409);
       expect(
-        (await api().post(`/operations/ridership/units/999999999/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idEstacion: Number(stationB) }))
+        (await api().post(`/operations/ridership/units/999999999/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idParada: Number(stopB) }))
           .status,
       ).toBe(404);
       expect(
-        (await api().post(`/operations/ridership/units/${unit1}/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idEstacion: 999999999 }))
+        (await api().post(`/operations/ridership/units/${unit1}/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idParada: 999999999 }))
           .status,
       ).toBe(404);
       expect((await api().get(`/operations/ridership/units/999999999`).set("Authorization", `Bearer ${adminToken}`)).status).toBe(404);
-      expect((await api().get(`/operations/ridership/stations/999999999`).set("Authorization", `Bearer ${adminToken}`)).status).toBe(404);
+      expect((await api().get(`/operations/ridership/stops/999999999`).set("Authorization", `Bearer ${adminToken}`)).status).toBe(404);
 
       expect(await stops()).toBe(before);
     });
@@ -562,11 +618,11 @@ describe("Ridership (e2e)", () => {
 
   describe("permissions (S8, S9)", () => {
     it("requires a token and the right permission", async () => {
-      expect((await api().get(`/operations/ridership/stations/${stationA}`)).status).toBe(401);
-      expect((await api().get(`/operations/ridership/stations/${stationA}`).set("Authorization", `Bearer ${pilotToken}`)).status).toBe(403);
+      expect((await api().get(`/operations/ridership/stops/${stopA}`)).status).toBe(401);
+      expect((await api().get(`/operations/ridership/stops/${stopA}`).set("Authorization", `Bearer ${pilotToken}`)).status).toBe(403);
       expect((await api().get(`/operations/ridership/alerts`).set("Authorization", `Bearer ${pilotToken}`)).status).toBe(403);
       expect(
-        (await api().post(`/operations/ridership/units/${unit2}/arrival`).set("Authorization", `Bearer ${pilotToken}`).send({ idEstacion: Number(stationB) }))
+        (await api().post(`/operations/ridership/units/${unit2}/arrival`).set("Authorization", `Bearer ${pilotToken}`).send({ idParada: Number(stopB) }))
           .status,
       ).toBe(403);
     });

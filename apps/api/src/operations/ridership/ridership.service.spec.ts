@@ -12,7 +12,7 @@ function uniqueViolation(constraint: string): QueryFailedError {
 describe("RidershipService.registerPass unique violations (user-web S7)", () => {
   const failWith = (error: Error) =>
     new RidershipService({ transaction: jest.fn(async () => Promise.reject(error)) } as unknown as DataSource);
-  const dto = { numeroTarjeta: "CARD", idEstacion: 1, tipo: "ENTRADA" as const, idempotencyKey: "key-12345" };
+  const dto = { numeroTarjeta: "CARD", idParada: 1, tipo: "ENTRADA" as const, idempotencyKey: "key-12345" };
 
   it("maps a race on clave_idempotencia to IdempotencyKeyConflict (409)", async () => {
     const service = failWith(uniqueViolation("tbl_evento_talanquera_clave_idempotencia_key"));
