@@ -237,7 +237,11 @@ describe("Alert line scoping (e2e)", () => {
       if (ids.estaciones.length) await q(`DELETE FROM tbl_estacion WHERE id_estacion = ANY($1::bigint[])`, [ids.estaciones]);
       if (ids.paradas.length) await q(`DELETE FROM tbl_parada WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
       if (ids.lineas.length) await q(`DELETE FROM tbl_linea WHERE id_linea = ANY($1::bigint[])`, [ids.lineas]);
-      if (ids.employees.length) await q(`DELETE FROM tbl_empleado WHERE id_emple = ANY($1::bigint[])`, [ids.employees]);
+      if (ids.employees.length) {
+        // Alert sends and state changes write audit rows authored by these employees.
+        await q(`DELETE FROM tbl_bitacora WHERE id_empleado = ANY($1::bigint[])`, [ids.employees]);
+        await q(`DELETE FROM tbl_empleado WHERE id_emple = ANY($1::bigint[])`, [ids.employees]);
+      }
     }
     if (app) await app.close();
   });

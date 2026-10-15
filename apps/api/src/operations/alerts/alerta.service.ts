@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
 
+import { AUDIT_RESULTS } from "../../authentication/entities/audit-log.entity.js";
 import { ESTADO_ASIGNACION } from "../../fleet/asignacion-estacion/asignacion-estacion.entity.js";
 import {
   OperatorHasNoStation,
@@ -15,8 +16,11 @@ import {
   UnitHasNoLine,
 } from "../shared/operations.errors.js";
 import {
+  ALERT_AUDIT_ACTIONS,
+  ALERT_ENTITY_TYPE,
   CENTRAL_ALERTS_LIMIT,
   ESTADOS_ALERTA,
+  OPERATIONS_MODULE,
   SENT_ALERTS_LIMIT,
   STATION_ALERTS_LIMIT,
   TIPO_DESTINO_ESTACION,
@@ -175,28 +179,45 @@ export class AlertaService {
   async create(employeeId: string, dto: CreateAlertaDto): Promise<AlertaResponseDto> {
     const unit = await this.findPilotUnitLine(employeeId);
     const stations = await this.findLineStations(unit.idLinea);
-    if (!stations.some((station) => String(station.idEstacion) === dto.idEstacionDestino)) {
+    const destination = stations.find(
+      (station) => String(station.idEstacion) === dto.idEstacionDestino,
+    );
+    if (!destination) {
       throw new DestinationNotOnLine();
     }
 
-    const inserted = (await this.dataSource.query(
-      `INSERT INTO tbl_alerta
-         (tipo_alerta, tipo_origen, tipo_destino, estado_alerta, id_unidad, id_estacion_destino, id_empleado, id_linea)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id_alerta AS "idAlerta"`,
-      [
-        dto.tipoAlerta,
-        TIPO_ORIGEN_UNIDAD,
-        TIPO_DESTINO_ESTACION,
-        "PENDIENTE",
-        String(unit.idUnidad),
-        dto.idEstacionDestino,
-        employeeId,
-        unit.idLinea,
-      ],
-    )) as { idAlerta: string }[];
+    const idAlerta = await this.dataSource.transaction(async (manager) => {
+      const inserted = (await manager.query(
+        `INSERT INTO tbl_alerta
+           (tipo_alerta, tipo_origen, tipo_destino, estado_alerta, id_unidad, id_estacion_destino, id_empleado, id_linea)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id_alerta AS "idAlerta"`,
+        [
+          dto.tipoAlerta,
+          TIPO_ORIGEN_UNIDAD,
+          TIPO_DESTINO_ESTACION,
+          "PENDIENTE",
+          String(unit.idUnidad),
+          dto.idEstacionDestino,
+          employeeId,
+          unit.idLinea,
+        ],
+      )) as { idAlerta: string }[];
+      const id = String(inserted[0]!.idAlerta);
+      await this.writeAudit(manager, employeeId, ALERT_AUDIT_ACTIONS.SEND, id, {
+        tipoAlerta: dto.tipoAlerta,
+        estado: "PENDIENTE",
+        idUnidad: String(unit.idUnidad),
+        numeroPlaca: unit.numeroPlaca,
+        idEstacionDestino: dto.idEstacionDestino,
+        nombreEstacion: destination.nombreEstacion,
+        idLinea: unit.idLinea,
+        numeroLinea: String(unit.numeroLinea),
+      });
+      return id;
+    });
 
-    return this.findById(String(inserted[0]!.idAlerta));
+    return this.findById(idAlerta);
   }
 
   async listSent(employeeId: string): Promise<AlertaResponseDto[]> {
@@ -322,9 +343,41 @@ export class AlertaService {
          VALUES ($1, $2, $3, $4, $5)`,
         [alert.estadoAlerta, dto.estado, dto.observacion ?? null, idAlerta, employeeId],
       );
+      await this.writeAudit(manager, employeeId, ALERT_AUDIT_ACTIONS.UPDATE_STATUS, idAlerta, {
+        estadoAnterior: alert.estadoAlerta,
+        estadoNuevo: dto.estado,
+        observacion: dto.observacion ?? null,
+        vista: scopeToOperatorStation ? "estacion" : "central",
+      });
     });
 
     return this.findById(idAlerta);
+  }
+
+  // One tbl_bitacora row on the caller's transaction, so the alert change and
+  // its audit row are committed or rolled back together. Raw SQL like the
+  // rest of this service; only successful changes are audited.
+  private async writeAudit(
+    runner: Queryable,
+    employeeId: string,
+    action: string,
+    idAlerta: string,
+    detalle: Record<string, unknown>,
+  ): Promise<void> {
+    await runner.query(
+      `INSERT INTO tbl_bitacora
+         (modulo, accion, entidad_tipo, entidad_id, resultado, id_empleado, detalle)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [
+        OPERATIONS_MODULE,
+        action,
+        ALERT_ENTITY_TYPE,
+        idAlerta,
+        AUDIT_RESULTS.SUCCESS,
+        employeeId,
+        JSON.stringify(detalle),
+      ],
+    );
   }
 
   private async findById(idAlerta: string): Promise<AlertaResponseDto> {

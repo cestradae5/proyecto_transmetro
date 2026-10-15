@@ -20,7 +20,7 @@ interface ReportCardProps {
 
 function ReportCard({ title, icon, desc, busy, disabled, onDownload, children }: ReportCardProps) {
   return (
-    <section className="flex flex-col gap-3 p-5 rounded-2xl border border-slate-200 bg-slate-50/50">
+    <section aria-label={title} className="flex flex-col gap-3 p-5 rounded-2xl border border-slate-200 bg-slate-50/50">
       <div className="flex items-center gap-3">
         <span className="material-symbols-outlined text-[22px] text-purple-700">{icon}</span>
         <h2 className="font-display font-bold text-sm text-slate-900">{title}</h2>
@@ -41,6 +41,54 @@ function ReportCard({ title, icon, desc, busy, disabled, onDownload, children }:
   );
 }
 
+interface RangedReportCardProps {
+  title: string;
+  icon: string;
+  desc: string;
+  busy: boolean;
+  /** Called with a complete, valid YYYY-MM-DD range. */
+  onDownload: (from: string, to: string) => void;
+}
+
+/** Report card with its own "Desde"/"Hasta" range, independent of other cards. */
+function RangedReportCard({ title, icon, desc, busy, onDownload }: RangedReportCardProps) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const rangeInvalid = Boolean(from && to && from > to);
+  const rangeIncomplete = !from || !to;
+
+  return (
+    <ReportCard
+      title={title}
+      icon={icon}
+      desc={desc}
+      busy={busy}
+      disabled={rangeIncomplete || rangeInvalid}
+      onDownload={() => onDownload(from, to)}
+    >
+      <div className="flex flex-wrap gap-3">
+        <label className="flex flex-col text-xs text-slate-600 gap-1">
+          Desde
+          <input type="date" className={CONTROL} value={from} max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="flex flex-col text-xs text-slate-600 gap-1">
+          Hasta
+          <input type="date" className={CONTROL} value={to} min={from || undefined}
+            onChange={(e) => setTo(e.target.value)} />
+        </label>
+      </div>
+      {rangeInvalid && <p className="text-xs text-red-600">{RANGE_ERROR}</p>}
+    </ReportCard>
+  );
+}
+
+/** Query string and fallback file name of a ranged report download. */
+function rangedDownload(path: string, filePrefix: string, from: string, to: string): [string, string] {
+  return [`${path}?${new URLSearchParams({ from, to }).toString()}`, `${filePrefix}-${from}_${to}.pdf`];
+}
+
 const SIMPLE_REPORTS = [
   { key: "fleet", title: "Flota", icon: "directions_bus", desc: "Unidades por estado, con su línea y piloto asignados.", fallback: "reporte-flota.pdf" },
   { key: "personnel", title: "Personal", icon: "badge", desc: "Empleados agrupados por rol, con su estado.", fallback: "reporte-personal.pdf" },
@@ -52,11 +100,6 @@ export function AdministrativeReportsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { downloading, error, download } = useReportDownload();
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-
-  const rangeInvalid = Boolean(from && to && from > to);
-  const rangeIncomplete = !from || !to;
 
   return (
     <div className="min-h-screen bg-[#fafbfc]">
@@ -95,35 +138,28 @@ export function AdministrativeReportsPage() {
                 />
               ))}
 
+            {canViewAdministrativeReports(user) && (
+              <RangedReportCard
+                title="Alertas operativas"
+                icon="notification_important"
+                desc="Alertas por estado, tipo, línea y estación, con el detalle de cada alerta en un rango de fechas."
+                busy={downloading === "alerts"}
+                onDownload={(from, to) =>
+                  download("alerts", ...rangedDownload("/reports/alerts", "reporte-alertas", from, to))
+                }
+              />
+            )}
+
             {canViewAuditLog(user) && (
-              <ReportCard
+              <RangedReportCard
                 title="Resumen de bitácora"
                 icon="history"
                 desc="Acciones registradas por módulo y por usuario en un rango de fechas."
                 busy={downloading === "audit-log"}
-                disabled={rangeIncomplete || rangeInvalid}
-                onDownload={() =>
-                  download(
-                    "audit-log",
-                    `/reports/audit-log?${new URLSearchParams({ from, to }).toString()}`,
-                    `reporte-bitacora-${from}_${to}.pdf`,
-                  )
+                onDownload={(from, to) =>
+                  download("audit-log", ...rangedDownload("/reports/audit-log", "reporte-bitacora", from, to))
                 }
-              >
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex flex-col text-xs text-slate-600 gap-1">
-                    Desde
-                    <input type="date" className={CONTROL} value={from} max={to || undefined}
-                      onChange={(e) => setFrom(e.target.value)} />
-                  </label>
-                  <label className="flex flex-col text-xs text-slate-600 gap-1">
-                    Hasta
-                    <input type="date" className={CONTROL} value={to} min={from || undefined}
-                      onChange={(e) => setTo(e.target.value)} />
-                  </label>
-                </div>
-                {rangeInvalid && <p className="text-xs text-red-600">{RANGE_ERROR}</p>}
-              </ReportCard>
+              />
             )}
           </div>
         </div>

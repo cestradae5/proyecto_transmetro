@@ -29,3 +29,11 @@ export const ALERTAS_OPERATIVAS_GESTIONAR = "ALERTAS_OPERATIVAS_GESTIONAR";
 export const SENT_ALERTS_LIMIT = 50;
 export const STATION_ALERTS_LIMIT = 100;
 export const CENTRAL_ALERTS_LIMIT = 300;
+
+// Audit log (tbl_bitacora) values written by AlertaService.
+export const OPERATIONS_MODULE = "operations";
+export const ALERT_ENTITY_TYPE = "alerta";
+export const ALERT_AUDIT_ACTIONS = {
+  SEND: "send_alert",
+  UPDATE_STATUS: "update_alert_status",
+} as const;

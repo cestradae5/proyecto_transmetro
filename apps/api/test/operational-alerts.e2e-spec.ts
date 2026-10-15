@@ -202,7 +202,11 @@ describe("Operational alerts (e2e)", () => {
       if (ids.estaciones.length) await q(`DELETE FROM tbl_estacion WHERE id_estacion = ANY($1::bigint[])`, [ids.estaciones]);
       if (ids.paradas.length) await q(`DELETE FROM tbl_parada WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
       if (ids.linea) await q(`DELETE FROM tbl_linea WHERE id_linea = $1`, [ids.linea]);
-      if (ids.employees.length) await q(`DELETE FROM tbl_empleado WHERE id_emple = ANY($1::bigint[])`, [ids.employees]);
+      if (ids.employees.length) {
+        // Alert sends and state changes write audit rows authored by these employees.
+        await q(`DELETE FROM tbl_bitacora WHERE id_empleado = ANY($1::bigint[])`, [ids.employees]);
+        await q(`DELETE FROM tbl_empleado WHERE id_emple = ANY($1::bigint[])`, [ids.employees]);
+      }
     }
     if (app) await app.close();
   });
@@ -212,6 +216,23 @@ describe("Operational alerts (e2e)", () => {
   const historyCount = async () =>
     Number(
       (await one<{ n: string }>(`SELECT COUNT(*) AS "n" FROM tbl_historial_estado WHERE id_alerta = $1`, [alertId])).n,
+    );
+
+  // Audit rows (module "operations") written for one alert, oldest first.
+  const alertAudit = (idAlerta: string) =>
+    rows<{ action: string; result: string; employeeId: string; detalle: Record<string, unknown> }>(
+      `SELECT accion AS "action", resultado AS "result", id_empleado::text AS "employeeId", detalle
+         FROM tbl_bitacora
+        WHERE modulo = 'operations' AND entidad_tipo = 'alerta' AND entidad_id = $1
+        ORDER BY id_bitacora`,
+      [idAlerta],
+    );
+  const pilotAuditCount = async () =>
+    Number(
+      (await one<{ n: string }>(
+        `SELECT COUNT(*) AS "n" FROM tbl_bitacora WHERE modulo = 'operations' AND id_empleado = $1`,
+        [pilotId],
+      )).n,
     );
 
   it("rejects unauthenticated requests with 401", async () => {
@@ -241,6 +262,7 @@ describe("Operational alerts (e2e)", () => {
 
     expect(res.body.error).toBe("DestinationNotOnLine");
     expect(await alertCount()).toBe(0);
+    expect(await pilotAuditCount()).toBe(0);
   });
 
   it("S3: rejects a type outside the catalog with 400 and stores nothing", async () => {
@@ -251,6 +273,7 @@ describe("Operational alerts (e2e)", () => {
       .expect(400);
 
     expect(await alertCount()).toBe(0);
+    expect(await pilotAuditCount()).toBe(0);
   });
 
   it("S6: stores a PENDIENTE unit -> station alert with the derived unit and author", async () => {
@@ -287,6 +310,26 @@ describe("Operational alerts (e2e)", () => {
     expect(await alertCount()).toBe(1);
   });
 
+  it("audit S2: the send writes one send_alert row authored by the pilot", async () => {
+    expect(await alertAudit(alertId)).toEqual([
+      {
+        action: "send_alert",
+        result: "EXITOSO",
+        employeeId: pilotId,
+        detalle: {
+          tipoAlerta: "ACCIDENTE",
+          estado: "PENDIENTE",
+          idUnidad: ids.unidad,
+          numeroPlaca: runTag.slice(-15),
+          idEstacionDestino: station1,
+          nombreEstacion: `${runTag} Estación P1`,
+          idLinea: ids.linea,
+          numeroLinea: runTag.slice(-12),
+        },
+      },
+    ]);
+  });
+
   it("S9: the pilot sees the alert in their sent list", async () => {
     const res = await api().get("/operations/alerts/sent").set("Authorization", `Bearer ${pilotToken}`).expect(200);
     expect(res.body.map((a: { idAlerta: string }) => a.idAlerta)).toEqual([alertId]);
@@ -312,6 +355,7 @@ describe("Operational alerts (e2e)", () => {
     const stored = await one<{ estado: string }>(`SELECT estado_alerta AS "estado" FROM tbl_alerta WHERE id_alerta = $1`, [alertId]);
     expect(stored.estado).toBe("PENDIENTE");
     expect(await historyCount()).toBe(0);
+    expect(await alertAudit(alertId)).toHaveLength(1);
   });
 
   it("S8: the operator moves it forward and one history row is written", async () => {
@@ -329,6 +373,15 @@ describe("Operational alerts (e2e)", () => {
     );
     expect(history).toEqual([
       { estado_anterior: "PENDIENTE", estado_nuevo: "RECIBIDA", observacion: "Unidad en camino", id_empleado: op1Id },
+    ]);
+    // Audit S3: one row authored by the operator.
+    expect((await alertAudit(alertId)).slice(1)).toEqual([
+      {
+        action: "update_alert_status",
+        result: "EXITOSO",
+        employeeId: op1Id,
+        detalle: { estadoAnterior: "PENDIENTE", estadoNuevo: "RECIBIDA", observacion: "Unidad en camino", vista: "estacion" },
+      },
     ]);
   });
 
@@ -349,6 +402,7 @@ describe("Operational alerts (e2e)", () => {
     const stored = await one<{ estado: string }>(`SELECT estado_alerta AS "estado" FROM tbl_alerta WHERE id_alerta = $1`, [alertId]);
     expect(stored.estado).toBe("RECIBIDA");
     expect(await historyCount()).toBe(1);
+    expect(await alertAudit(alertId)).toHaveLength(2);
   });
 
   it("S8: skipping forward to RESUELTA is allowed", async () => {
@@ -429,6 +483,14 @@ describe("Operational alerts (e2e)", () => {
     expect(history).toEqual([
       { estado_anterior: "PENDIENTE", estado_nuevo: "EN_ATENCION", observacion: "Central atiende", id_empleado: centralId },
     ]);
+    expect((await alertAudit(centralAlertId)).slice(1)).toEqual([
+      {
+        action: "update_alert_status",
+        result: "EXITOSO",
+        employeeId: centralId,
+        detalle: { estadoAnterior: "PENDIENTE", estadoNuevo: "EN_ATENCION", observacion: "Central atiende", vista: "central" },
+      },
+    ]);
 
     const inbox = await api().get("/operations/alerts/my-station").set("Authorization", `Bearer ${op2Token}`).expect(200);
     expect(inbox.body.alerts.map((a: { idAlerta: string; estadoAlerta: string }) => [a.idAlerta, a.estadoAlerta])).toEqual([
@@ -459,6 +521,7 @@ describe("Operational alerts (e2e)", () => {
       centralAlertId,
     ]);
     expect(Number(n.n)).toBe(1);
+    expect(await alertAudit(centralAlertId)).toHaveLength(2);
   });
 
   it("S15: the pilot, the station operator and central users see the observations, oldest first", async () => {

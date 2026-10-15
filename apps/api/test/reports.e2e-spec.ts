@@ -170,12 +170,27 @@ describe("Administrative reports /reports (e2e)", () => {
     await seedAudit("1999-05-11 23:30:00", "create_e2e", "EXITOSO");
     await seedAudit("1999-05-11 12:00:00", "update_e2e", "FALLIDO");
     await seedAudit("1999-05-12 00:00:00", "create_e2e", "EXITOSO");
+
+    // Alerts in another far-past window; the last one is just after it. One
+    // has no stored line (alert created before lines were stored).
+    const seedAlert = (when: string, type: string, state: string, withLine: boolean) =>
+      dataSource.query(
+        `INSERT INTO tbl_alerta (fecha_creacion, fecha_actualizacion, tipo_alerta, tipo_origen, tipo_destino,
+                                 estado_alerta, id_unidad, id_estacion_destino, id_empleado, id_linea)
+         VALUES ($1::timestamp, $1::timestamp, $2, 'UNIDAD', 'ESTACION', $3, $4, $5, $6, $7)`,
+        [when, type, state, ids.unit, ids.station, pilotId, withLine ? ids.line : null],
+      );
+    await seedAlert("1999-06-10 08:00:00", "ACCIDENTE", "PENDIENTE", true);
+    await seedAlert("1999-06-11 23:30:00", "RETRASO", "RESUELTA", true);
+    await seedAlert("1999-06-11 12:00:00", "FALLA_MECANICA", "RECIBIDA", false);
+    await seedAlert("1999-06-12 00:00:00", "ACCIDENTE", "PENDIENTE", true);
   });
 
   afterAll(async () => {
     if (dataSource) {
       const q = (sql: string, params: unknown[]) => dataSource.query(sql, params).catch(() => undefined);
       await q(`DELETE FROM tbl_bitacora WHERE id_empleado = ANY($1::bigint[])`, [employeeIds]);
+      await q(`DELETE FROM tbl_alerta WHERE id_unidad = $1`, [ids.unit]);
       await q(`DELETE FROM tbl_asignacion_piloto WHERE id_unidad = $1`, [ids.unit]);
       await q(`DELETE FROM tbl_asignacion_unidad WHERE id_unidad = $1`, [ids.unit]);
       await q(`DELETE FROM tbl_unidad WHERE id_unidad = $1`, [ids.unit]);
@@ -207,14 +222,20 @@ describe("Administrative reports /reports (e2e)", () => {
     expect(rows.map((r) => r.code)).toEqual(expect.arrayContaining([REPORTES, AUDITORIA]));
   });
 
-  it.each(["/reports/fleet", "/reports/personnel", "/reports/infrastructure", "/reports/audit-log?from=1999-05-10&to=1999-05-11"])(
+  it.each([
+    "/reports/fleet",
+    "/reports/personnel",
+    "/reports/infrastructure",
+    "/reports/audit-log?from=1999-05-10&to=1999-05-11",
+    "/reports/alerts?from=1999-06-10&to=1999-06-11",
+  ])(
     "%s returns 401 without a token",
     async (path) => {
       await download(path).expect(401);
     },
   );
 
-  it.each(["/reports/fleet", "/reports/personnel", "/reports/infrastructure"])(
+  it.each(["/reports/fleet", "/reports/personnel", "/reports/infrastructure", "/reports/alerts?from=1999-06-10&to=1999-06-11"])(
     "%s returns 403 without REPORTES_ADMINISTRATIVOS_CONSULTAR",
     async (path) => {
       await download(path, auditorToken).expect(403);
@@ -273,6 +294,56 @@ describe("Administrative reports /reports (e2e)", () => {
     ]);
     const byUser = renderer.last!.sections[1]!.rows.find((r) => r[0] === `${runTag} Auditor`);
     expect(byUser).toEqual([`${runTag} Auditor`, `${runTag}-1@transmetro.gt`.toLowerCase(), "3"]);
+  });
+
+  it("alerts: summarizes the inclusive range per state, type, line and station and lists each alert", async () => {
+    const res = await download("/reports/alerts?from=1999-06-10&to=1999-06-11", reporterToken).expect(200);
+    expect(res.headers["content-type"]).toBe("application/pdf");
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="reporte-alertas-1999-06-10_1999-06-11.pdf"');
+    expect((res.body as Buffer).subarray(0, 5).toString("latin1")).toBe("%PDF-");
+
+    const doc = renderer.last!;
+    expect(doc.title).toBe("Reporte de alertas operativas");
+    expect(doc.summary).toEqual([
+      ["Total de alertas", "3"],
+      ["Pendiente", "1"],
+      ["Recibida", "1"],
+      ["En atención", "0"],
+      ["Resuelta", "1"],
+    ]);
+    expect(doc.sections[0]!.rows.filter((r) => r[1] !== "0")).toEqual([
+      ["Accidente", "1"],
+      ["Falla mecánica", "1"],
+      ["Retraso", "1"],
+    ]);
+    const lineLabel = `${lineNumber} - ${runTag} Línea`;
+    const station = `${runTag} Estación`;
+    expect(doc.sections[1]!.rows).toEqual([
+      [lineLabel, station, "2", "1", "1"],
+      ["Sin línea", station, "1", "0", "0"],
+    ]);
+    expect(doc.sections[2]!.rows).toEqual([
+      ["1999-06-11 23:30", "Retraso", lineLabel, station, plate, `${runTag} Piloto`, "Resuelta"],
+      ["1999-06-11 12:00", "Falla mecánica", "Sin línea", station, plate, `${runTag} Piloto`, "Recibida"],
+      ["1999-06-10 08:00", "Accidente", lineLabel, station, plate, `${runTag} Piloto`, "Pendiente"],
+    ]);
+    expect(doc.sections[2]!.note).toBeUndefined();
+  });
+
+  it.each([
+    "/reports/alerts",
+    "/reports/alerts?from=1999-06-10",
+    "/reports/alerts?from=1999-06-12&to=1999-06-11",
+  ])("%s returns 400 and writes no audit row", async (path) => {
+    const before = (await auditRows(reporterId)).length;
+    await download(path, reporterToken).expect(400);
+    expect(await auditRows(reporterId)).toHaveLength(before);
+  });
+
+  it("records the range of an alerts export", async () => {
+    await download("/reports/alerts?from=1999-06-10&to=1999-06-11", reporterToken).expect(200);
+    const rows = await auditRows(reporterId);
+    expect(rows[rows.length - 1]!.detalle).toEqual({ report: "alerts", from: "1999-06-10", to: "1999-06-11" });
   });
 
   // --------------------------------------------------------------------------

@@ -7,6 +7,7 @@ const MODULE_LABELS: Record<string, string> = {
   fleet: "Flota",
   personal: "Personal",
   infrastructure: "Infraestructura",
+  operations: "Operaciones",
 };
 
 export const RESULT_LABELS: Record<AuditResult, string> = {

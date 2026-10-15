@@ -31,6 +31,20 @@ describe("AuditLogTable", () => {
     expect(row.queryByText(/#/)).not.toBeInTheDocument();
   });
 
+  it("labels operational alert rows with the 'Operaciones' module (alerts S4)", () => {
+    render(
+      <AuditLogTable
+        items={[{ ...ENTRY, module: "operations", action: "send_alert", entityType: "alerta", entityId: "100" }]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const row = within(screen.getAllByRole("row")[1]!);
+    expect(row.getByText("Operaciones")).toBeInTheDocument();
+    expect(row.getByText("send_alert")).toBeInTheDocument();
+    expect(row.getByText("alerta #100")).toBeInTheDocument();
+  });
+
   it("shows the empty state", () => {
     render(<AuditLogTable items={[]} onSelect={vi.fn()} />);
     expect(screen.getByText("No hay registros que coincidan con los filtros.")).toBeInTheDocument();

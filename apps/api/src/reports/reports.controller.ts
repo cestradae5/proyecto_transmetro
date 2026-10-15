@@ -66,6 +66,20 @@ export class ReportsController {
     return this.send("audit-log", request, response, { from: query.from, to: query.to });
   }
 
+  @Get("alerts")
+  @Permissions(REPORTES_ADMINISTRATIVOS_CONSULTAR)
+  @ApiOperation({ summary: "PDF: operational alerts per state, type, line and station within a date range" })
+  @ApiResponse({ status: 200, description: "PDF file" })
+  @ApiResponse({ status: 400, description: "Missing or invalid date range" })
+  @ApiResponse({ status: 403, description: "Missing REPORTES_ADMINISTRATIVOS_CONSULTAR permission" })
+  alerts(
+    @Query() query: AuditSummaryReportQueryDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    return this.send("alerts", request, response, { from: query.from, to: query.to });
+  }
+
   private async send(
     type: ReportType,
     request: Request,

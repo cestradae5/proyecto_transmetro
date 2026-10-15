@@ -187,6 +187,145 @@ describe("ReportsService", () => {
     });
   });
 
+  describe("alerts report (alerts S5)", () => {
+    const RANGE = { from: "2026-01-01", to: "2026-01-31" };
+    const agg = (
+      type: string,
+      state: string,
+      line: [string, string, string] | null,
+      stationId: string,
+      stationName: string,
+      total: string,
+    ) => ({
+      type,
+      state,
+      lineId: line?.[0] ?? null,
+      lineNumber: line?.[1] ?? null,
+      lineName: line?.[2] ?? null,
+      stationId,
+      stationName,
+      total,
+    });
+    const L12: [string, string, string] = ["3", "12", "Centra Sur"];
+    const L2: [string, string, string] = ["1", "2", "Ruta 2"];
+
+    beforeEach(() => {
+      tables["GROUP BY a.tipo_alerta"] = [
+        agg("ACCIDENTE", "PENDIENTE", L12, "22", "Estación Centro", "2"),
+        agg("RETRASO", "RESUELTA", L12, "21", "Estación Norte", "1"),
+        agg("ACCIDENTE", "RECIBIDA", L2, "22", "Estación Centro", "1"),
+        agg("FALLA_MECANICA", "EN_ATENCION", null, "23", "Estación Sur", "1"),
+      ];
+      tables["ORDER BY a.fecha_creacion DESC"] = [
+        { createdAt: "2026-01-20 10:30", type: "ACCIDENTE", state: "PENDIENTE", lineNumber: "12", lineName: "Centra Sur", stationName: "Estación Centro", plate: "P-001", pilotName: "Luis Piloto" },
+        { createdAt: "2026-01-02 08:00", type: "FALLA_MECANICA", state: "EN_ATENCION", lineNumber: null, lineName: null, stationName: "Estación Sur", plate: null, pilotName: "Beto" },
+      ];
+    });
+
+    it("summarizes per state, per type and per line and station, and lists the alerts of the range", async () => {
+      await service.export("alerts", ACTOR, RANGE);
+      const doc = renderedDocument();
+
+      expect(doc.title).toBe("Reporte de alertas operativas");
+      expect(doc.subtitle).toBe("Del 2026-01-01 al 2026-01-31");
+      expect(doc.summary).toEqual([
+        ["Total de alertas", "5"],
+        ["Pendiente", "2"],
+        ["Recibida", "1"],
+        ["En atención", "1"],
+        ["Resuelta", "1"],
+      ]);
+      expect(doc.sections.map((section) => section.heading)).toEqual([
+        "Alertas por tipo",
+        "Alertas por línea y estación",
+        "Detalle de alertas",
+      ]);
+      const [byType, byStation, detail] = doc.sections as [
+        (typeof doc.sections)[number],
+        (typeof doc.sections)[number],
+        (typeof doc.sections)[number],
+      ];
+      expect(byType.columns).toEqual(["Tipo", "Cantidad"]);
+      expect(byType.rows).toEqual([
+        ["Accidente", "3"],
+        ["Falla mecánica", "1"],
+        ["Emergencia médica", "0"],
+        ["Incidente de seguridad", "0"],
+        ["Retraso", "1"],
+        ["Unidad llena", "0"],
+      ]);
+      expect(byStation.columns).toEqual(["Línea", "Estación", "Total", "Pendientes", "Resueltas"]);
+      // Lines by number ("2" before "12"), stations by name, "Sin línea" last.
+      expect(byStation.rows).toEqual([
+        ["2 - Ruta 2", "Estación Centro", "1", "0", "0"],
+        ["12 - Centra Sur", "Estación Centro", "2", "2", "0"],
+        ["12 - Centra Sur", "Estación Norte", "1", "0", "1"],
+        ["Sin línea", "Estación Sur", "1", "0", "0"],
+      ]);
+      expect(detail.columns).toEqual(["Fecha", "Tipo", "Línea", "Estación", "Unidad", "Piloto", "Estado"]);
+      expect(detail.rows).toEqual([
+        ["2026-01-20 10:30", "Accidente", "12 - Centra Sur", "Estación Centro", "P-001", "Luis Piloto", "Pendiente"],
+        ["2026-01-02 08:00", "Falla mecánica", "Sin línea", "Estación Sur", "-", "Beto", "En atención"],
+      ]);
+    });
+
+    it("queries only unit->station alerts created inside the inclusive range, detail newest first, max 500", async () => {
+      await service.export("alerts", ACTOR, RANGE);
+
+      expect(query).toHaveBeenCalledTimes(2);
+      for (const [sql, params] of query.mock.calls) {
+        expect(sql).toContain("a.fecha_creacion >= $3 AND a.fecha_creacion < $4");
+        expect(params).toEqual(["UNIDAD", "ESTACION", "2026-01-01", "2026-02-01"]);
+      }
+      const detailSql = query.mock.calls.find(([sql]) => sql.includes("ORDER BY a.fecha_creacion DESC"))![0];
+      expect(detailSql).toContain("LIMIT 500");
+      expect(detailSql).toContain("a.id_linea");
+    });
+
+    it("notes how many alerts the detail shows when the range has more", async () => {
+      tables["GROUP BY a.tipo_alerta"] = [agg("RETRASO", "PENDIENTE", L12, "21", "Estación Norte", "501")];
+
+      await service.export("alerts", ACTOR, RANGE);
+
+      expect(renderedDocument().sections[2]!.note).toBe("Se muestran las 2 alertas más recientes de 501.");
+    });
+
+    it("prints empty messages when the range has no alerts", async () => {
+      tables = {};
+
+      await service.export("alerts", ACTOR, RANGE);
+      const doc = renderedDocument();
+
+      expect(doc.summary[0]).toEqual(["Total de alertas", "0"]);
+      expect(doc.sections[1]!.rows).toEqual([]);
+      expect(doc.sections[1]!.emptyMessage).toBe("No hay alertas en el rango.");
+      expect(doc.sections[2]!.emptyMessage).toBe("No hay alertas en el rango.");
+      expect(doc.sections[2]!.note).toBeUndefined();
+    });
+
+    it("rejects a missing or inverted range without querying, rendering or auditing", async () => {
+      await expect(service.export("alerts", ACTOR)).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        service.export("alerts", ACTOR, { from: "2026-02-01", to: "2026-01-31" }),
+      ).rejects.toThrow(new ValidationError("La fecha inicial no puede ser posterior a la fecha final."));
+      expect(query).not.toHaveBeenCalled();
+      expect(render).not.toHaveBeenCalled();
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
+    it("names the file after its range and audits the export with the range", async () => {
+      const result = await service.export("alerts", ACTOR, RANGE);
+
+      expect(result.fileName).toBe("reporte-alertas-2026-01-01_2026-01-31.pdf");
+      expect(auditCreate).toHaveBeenCalledTimes(1);
+      expect(auditCreate.mock.calls[0]![1]).toMatchObject({
+        action: "export_report",
+        module: "reports",
+        detalle: { report: "alerts", from: "2026-01-01", to: "2026-01-31" },
+      });
+    });
+  });
+
   describe("export result and audit trail (S3, S5)", () => {
     it("returns the rendered PDF with a dated file name and passes the actor to the renderer", async () => {
       const result = await service.export("fleet", ACTOR);
