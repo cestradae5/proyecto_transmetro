@@ -76,7 +76,6 @@ function makeEstacion(overrides: Partial<EstacionEntity> = {}): EstacionEntity {
     latitud: 14.6349,
     longitud: -90.5069,
     estadoEstacion: EstadoEstacion.ACTIVA,
-    capacidadPasajeros: 100,
     idParada: 3,
     ...overrides,
   } as EstacionEntity;
@@ -125,7 +124,6 @@ describe("EstacionService", () => {
         latitud: created.latitud,
         longitud: created.longitud,
         estadoEstacion: created.estadoEstacion,
-        capacidadPasajeros: 100,
         idParada: 5,
       });
       expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
@@ -181,30 +179,6 @@ describe("EstacionService", () => {
       const errors = await validate(plainToInstance(CreateEstacionDto, base));
 
       expect(errors.map((e) => e.property)).toContain("idParada");
-    });
-
-    it("accepts a payload without capacidadPasajeros (the database default applies)", async () => {
-      const errors = await validate(
-        plainToInstance(CreateEstacionDto, { ...base, idParada: 5 }),
-      );
-
-      expect(errors.map((e) => e.property)).not.toContain("capacidadPasajeros");
-    });
-
-    it("accepts a positive integer capacidadPasajeros", async () => {
-      const errors = await validate(
-        plainToInstance(CreateEstacionDto, { ...base, idParada: 5, capacidadPasajeros: 40 }),
-      );
-
-      expect(errors).toHaveLength(0);
-    });
-
-    it.each([0, -3, 2.5, "40", null])("rejects capacidadPasajeros %p", async (capacidadPasajeros) => {
-      const errors = await validate(
-        plainToInstance(CreateEstacionDto, { ...base, idParada: 5, capacidadPasajeros }),
-      );
-
-      expect(errors.map((e) => e.property)).toEqual(["capacidadPasajeros"]);
     });
 
     it("accepts a payload with a numeric idParada", async () => {
@@ -273,25 +247,6 @@ describe("EstacionService", () => {
         entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
         entityId: "1",
         detalle: { changedFields: ["nombreEstacion"] },
-      });
-    });
-
-    it("updates capacidadPasajeros and returns it", async () => {
-      const existing = makeEstacion();
-      estacionRepository.findOne.mockResolvedValue(existing);
-      estacionRepository.save.mockImplementation(async (entity) => entity as EstacionEntity);
-
-      const result = await service.update("1", { capacidadPasajeros: 4 }, ACTOR);
-
-      expect(estacionRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ capacidadPasajeros: 4 }),
-      );
-      expect(result.capacidadPasajeros).toBe(4);
-      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
-        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
-        entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
-        entityId: "1",
-        detalle: { changedFields: ["capacidadPasajeros"] },
       });
     });
 

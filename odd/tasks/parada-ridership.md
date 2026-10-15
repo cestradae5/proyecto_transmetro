@@ -16,7 +16,7 @@ Branch `feat/parada-ridership` (based on `feat/user-web`). Moves passenger count
 
 ## Tasks
 - [x] T1 [S3, S4] DB migration in `database/init.sql`; apply twice to `transmetro_test`, verify backfill — route: inline — commit: see L5
-- [ ] T2 [S3] API parada capacity, remove station capacity, specs, README — route: inline — commit:
+- [x] T2 [S3] API parada capacity, remove station capacity, specs, README — route: inline — commit: see L6
 - [ ] T3 [S2, S4-S8] API ridership by parada, e2e, README — route: inline — commit:
 - [ ] T4 [S1, S9, S10] API `/citizen/lines` + SPA simulator, e2e + vitest, READMEs — route: inline — commit:
 - [ ] T5 [S5, S7, S8] Postman collection + guide — route: inline — commit:
@@ -28,3 +28,4 @@ Branch `feat/parada-ridership` (based on `feat/user-web`). Moves passenger count
 - L3 (user): "ok vmos con el punto 1".
 - L4 (orchestrator decisions inside S-scope): contract fields renamed (`idEstacion` -> `idParada`, `estacion` -> `parada`, `stations/:id` -> `stops/:id`, `/citizen/stations` -> `/citizen/lines`) without aliases: the branches are unmerged and only user-web and the Postman collection consume them. Alert type stays `CAPACIDAD_ESTACION` (renaming stored data is not requested). "Sin línea" group added so "todas las paradas" holds for paradas outside any active line.
 - L5 (T1 evidence): scratch DB `transmetro_migcheck` (created and dropped): old `init.sql` (feat/user-web) + data (station cap 7 on P1, ENTRADA with key + SALIDA, one bus stop, one capacity alert), then new `init.sql` twice (exit 0): P1 cap 7, P2 cap 100, `tbl_estacion.capacidad_pasajeros` gone, both events and the stop on parada 1 (NOT NULL, `id_estacion` gone, idempotency key kept), alert `id_parada_origen` 1 / `id_estacion_origen` 1, new indexes present, old index gone. Fresh DB `transmetro_freshcheck`: new `init.sql` twice OK (created and dropped). `transmetro_test` migrated (twice, exit 0). Removed the `ALTER TABLE tbl_estacion ADD COLUMN IF NOT EXISTS capacidad_pasajeros` line that would re-create the dropped column on every apply. Dev DB `transmetro` NOT migrated (user re-applies `init.sql`).
+- L6 (T2 evidence, test-first): station files (`estacion.entity.ts`, DTOs, service, spec) and `infrastructure/README.md` restored to `main` (only ridership commits 380cca0/319ce6e had touched them). RED `jest src/infrastructure/parada src/infrastructure/estacion` 11 failed -> GREEN `jest src/infrastructure` 298: parada responses carry `capacidadPasajeros` (mock 100); update `{ capacidadPasajeros: 4 }` persists it, returns 4, audit `changedFields: ["capacidadPasajeros"]`; DTO accepts absent or 40, rejects 0, -3, 2.5, "40", null. tsc exit 0. Docs: infrastructure README (Paradas section).

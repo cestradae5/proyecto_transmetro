@@ -18,6 +18,9 @@ export class ParadaResponseDto {
   @ApiProperty({ enum: EstadoParada })
   estadoParada!: EstadoParada;
 
+  @ApiProperty({ description: "Capacidad de pasajeros esperando en la parada" })
+  capacidadPasajeros!: number;
+
   // Derived from tbl_estacion (1:1 extension of a parada); read-only. An
   // estación is still created/removed through /infrastructure/estaciones.
   @ApiProperty({

@@ -129,12 +129,18 @@ Base path: `/infrastructure`. All routes below require
 | DELETE | `/:id` | Soft delete → `INACTIVA` (línea links are kept) |
 
 ### Paradas — `/infrastructure/paradas`
+
+Every response includes `capacidadPasajeros`: people the parada holds while
+waiting. Passengers are counted per parada, and the ridership capacity alert
+fires at 150% of it; a station uses its parada's capacity
+(`apps/api/src/operations/README.md`).
+
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create (response has `esEstacion: false`, `idEstacion: null`) |
+| POST | `/` | Create (response has `esEstacion: false`, `idEstacion: null`); optional `capacidadPasajeros` (integer >= 1, default 100) |
 | GET | `/` | List all, each with derived `esEstacion`/`idEstacion` |
 | GET | `/:id` | Get one, with derived `esEstacion`/`idEstacion` |
-| PATCH | `/:id` | Update (body unchanged: no estación fields) |
+| PATCH | `/:id` | Update, including `capacidadPasajeros` (no estación fields) |
 | DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` hard-deletes |
 | GET | `/:id/accesos` | List the parada's accesos, ordered by `nombreAcceso` |
 | POST | `/:id/accesos` | Create an acceso; `tipoAcceso` is `PEATONAL`/`RAMPA`/`ESCALERA`/`ELEVADOR`; `estadoAcceso` defaults to `HABILITADO` |
@@ -143,17 +149,12 @@ Base path: `/infrastructure`. All routes below require
 | DELETE | `/:id/accesos/:accesoId` | Soft delete → `DESHABILITADO`; 404 if the acceso belongs to another parada |
 
 ### Estaciones — `/infrastructure/estaciones`
-
-Every response includes `capacidadPasajeros`: people the station holds while
-waiting. The ridership capacity alert fires at 150% of it
-(`apps/api/src/operations/README.md`).
-
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create; optional `capacidadPasajeros` (integer >= 1, default 100) |
+| POST | `/` | Create |
 | GET | `/` | List all |
 | GET | `/:id` | Get one |
-| PATCH | `/:id` | Update (including `capacidadPasajeros`) |
+| PATCH | `/:id` | Update |
 | DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` (exactly `"true"`) hard-deletes the row so the parada stops being an estación; rows still referencing it (FK violation `23503`) → 409 `ESTACION_IN_USE` |
 
 ### Parqueos — `/infrastructure/parqueos`

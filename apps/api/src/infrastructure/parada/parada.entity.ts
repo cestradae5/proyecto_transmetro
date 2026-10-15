@@ -28,4 +28,10 @@ export class ParadaEntity {
     enum: EstadoParada,
   })
   estadoParada!: EstadoParada;
+
+  // People the parada holds while waiting; the ridership capacity alert
+  // fires at 150% of it. A station uses its parada's value. The DB default
+  // (100) applies when a create omits it.
+  @Column({ name: "capacidad_pasajeros", type: "int", default: 100 })
+  capacidadPasajeros!: number;
 }
