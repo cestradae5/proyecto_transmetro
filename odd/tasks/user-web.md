@@ -17,7 +17,7 @@ Branch `feat/user-web` (based on `feat/ridership-capacity`). Step 2 of 3 (Engram
 
 ## Tasks
 - [x] T1 [S5-S7] DB: `tbl_evento_talanquera.clave_idempotencia` in `database/init.sql`; apply to `transmetro_test` — route: inline — commit: see L5
-- [ ] T2 [S7] API turnstile idempotency, unit + e2e — route: inline — commit:
+- [x] T2 [S7] API turnstile idempotency, e2e — route: inline — commit: see L7
 - [ ] T3 [S3-S6] API `citizen` module (cards, stations, recharge + flag), e2e, README, `.env.example` — route: inline — commit:
 - [ ] T4 [S8-S11] `apps/user-web` SPA (card, recharge, simulator), vitest, README — route: gentle-ai-worker (background, disjoint `apps/user-web/**`) — commit:
 - [ ] T5 [all] Full checks + independent verifier (risk: public money writes, public data read, key in bundle) — route: gentle-ai-verify — commit:
@@ -28,3 +28,5 @@ Branch `feat/user-web` (based on `feat/ridership-capacity`). Step 2 of 3 (Engram
 - L3 (user choice): "Solo número de tarjeta (Recomendado)" for "¿Cómo se identifica el ciudadano en la app de usuario (user-web) para ver saldo y recargar?".
 - L4 (orchestrator decisions inside S-scope): recharge limits Q1.00-Q500.00; recharge gated by its own env flag (free money while simulated); no card creation in this step (cards come from `docs/postman/ridership-test-data.sql` or the DB); public lookup exposes only balance and state, no history; SPA without router (one screen); Tailwind CDN like admin-web, no MUI.
 - L5 (T1 evidence): `init.sql` applied twice to `transmetro_test` (exit 0 both, idempotent); `clave_idempotencia` VARCHAR(64) nullable with one unique index. Recharge reuses existing `tbl_transaccion_pago`/`tbl_recarga`/`tbl_comprobante` (no schema change).
+- L6 (T4 route): `gentle-ai-worker` (task mv9mxo33-1-t44l, provider claude-bridge) failed "assistant reported an error" after 1 turn / 0 tool calls; not retried. T4 rerouted inline after T3.
+- L7 (T2 evidence, test-first): e2e RED `npm run test:e2e -- ridership` 7 failed / 18 passed -> GREEN 25/25. Same key twice: same `idEvento`, `repetido: true`, `montoCobrado: 1`, balance charged once (9.00), one event, same waiting count; reuse with SALIDA / other station / other card -> 409, events and both balances unchanged; keys "short", with spaces, 65 chars, number -> 400 with nothing stored; no key -> `repetido: false`, two events, two charges. Concurrent different-card race maps UNIQUE `23505` to 409 (`IdempotencyKeyConflict`; not exercised by e2e). tsc exit 0. Docs: operations README.

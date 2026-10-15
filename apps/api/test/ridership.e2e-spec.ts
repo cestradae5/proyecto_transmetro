@@ -313,6 +313,81 @@ describe("Ridership (e2e)", () => {
     });
   });
 
+  // odd/tasks/user-web.md S7: a retried pass with the same idempotencyKey is
+  // stored and charged once.
+  describe("turnstile idempotency (user-web S7)", () => {
+    const passWithKey = (numeroTarjeta: string, idEstacion: string, tipo: string, idempotencyKey: unknown) =>
+      api()
+        .post("/operations/ridership/turnstile")
+        .set("X-Turnstile-Key", KEY)
+        .send({ numeroTarjeta, idEstacion: Number(idEstacion), tipo, idempotencyKey });
+
+    it("returns the original pass for a retried key without a new event or charge", async () => {
+      const card = await createCard("idem", "10.00");
+      const key = `${runTag}-idem-1`;
+      const before = await eventCount();
+
+      const first = await passWithKey(card, stationC, "ENTRADA", key);
+      const retry = await passWithKey(card, stationC, "ENTRADA", key);
+
+      expect(first.status).toBe(201);
+      expect(first.body).toMatchObject({ repetido: false, montoCobrado: 1, saldo: 9 });
+      expect(retry.status).toBe(201);
+      expect(retry.body).toMatchObject({
+        idEvento: first.body.idEvento,
+        repetido: true,
+        montoCobrado: 1,
+        saldo: 9,
+        alertaGenerada: false,
+        idAlerta: null,
+      });
+      expect(retry.body.estacion.personasEnEstacion).toBe(first.body.estacion.personasEnEstacion);
+      expect(await eventCount()).toBe(before + 1);
+      expect(await saldoOf(card)).toBe("9.00");
+    });
+
+    it("rejects a key reused with another type, station or card with 409 and changes nothing", async () => {
+      const card = await createCard("idem-other", "10.00");
+      const otherCard = await createCard("idem-other-2", "10.00");
+      const key = `${runTag}-idem-2`;
+      expect((await passWithKey(card, stationC, "ENTRADA", key)).status).toBe(201);
+      const before = await eventCount();
+
+      expect((await passWithKey(card, stationC, "SALIDA", key)).status).toBe(409);
+      expect((await passWithKey(card, stationB, "ENTRADA", key)).status).toBe(409);
+      expect((await passWithKey(otherCard, stationC, "ENTRADA", key)).status).toBe(409);
+
+      expect(await eventCount()).toBe(before);
+      expect(await saldoOf(card)).toBe("9.00");
+      expect(await saldoOf(otherCard)).toBe("10.00");
+    });
+
+    it.each(["short", "has spaces in it", "x".repeat(65), 12345678])(
+      "rejects idempotencyKey %p with 400 and stores nothing",
+      async (key) => {
+        const card = await createCard(`idem-bad-${String(key).length}-${typeof key}`, "10.00");
+        const before = await eventCount();
+
+        expect((await passWithKey(card, stationC, "ENTRADA", key)).status).toBe(400);
+
+        expect(await eventCount()).toBe(before);
+        expect(await saldoOf(card)).toBe("10.00");
+      },
+    );
+
+    it("keeps passes without a key independent (repetido false each time)", async () => {
+      const card = await createCard("idem-none", "10.00");
+
+      const a = await pass(card, stationC, "ENTRADA");
+      const b = await pass(card, stationC, "ENTRADA");
+
+      expect(a.body.repetido).toBe(false);
+      expect(b.body.repetido).toBe(false);
+      expect(b.body.idEvento).not.toBe(a.body.idEvento);
+      expect(await saldoOf(card)).toBe("8.00");
+    });
+  });
+
   describe("station capacity alert (S1, S7, S10)", () => {
     it("creates one system alert at 150% of the capacity and not again while it is open", async () => {
       // Capacity 4 -> 5 people is 125%, 6 people is 150%.
