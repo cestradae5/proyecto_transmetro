@@ -30,6 +30,34 @@ export const AUDIT_RESULT_LABELS: Record<string, string> = {
   ERROR: "Error",
 };
 
+// Same codes and order as apps/api/src/operations/alerts/alerta.constants.ts.
+export const ALERT_TYPE_ORDER = [
+  "ACCIDENTE",
+  "FALLA_MECANICA",
+  "EMERGENCIA_MEDICA",
+  "INCIDENTE_SEGURIDAD",
+  "RETRASO",
+  "UNIDAD_LLENA",
+] as const;
+
+export const ALERT_TYPE_LABELS: Record<string, string> = {
+  ACCIDENTE: "Accidente",
+  FALLA_MECANICA: "Falla mecánica",
+  EMERGENCIA_MEDICA: "Emergencia médica",
+  INCIDENTE_SEGURIDAD: "Incidente de seguridad",
+  RETRASO: "Retraso",
+  UNIDAD_LLENA: "Unidad llena",
+};
+
+export const ALERT_STATE_ORDER = ["PENDIENTE", "RECIBIDA", "EN_ATENCION", "RESUELTA"] as const;
+
+export const ALERT_STATE_LABELS: Record<string, string> = {
+  PENDIENTE: "Pendiente",
+  RECIBIDA: "Recibida",
+  EN_ATENCION: "En atención",
+  RESUELTA: "Resuelta",
+};
+
 /** Falls back to the raw value so an unknown state is still printed. */
 export function label(labels: Record<string, string>, value: string): string {
   return labels[value] ?? value;

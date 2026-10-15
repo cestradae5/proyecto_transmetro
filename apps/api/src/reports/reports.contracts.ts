@@ -1,8 +1,11 @@
 // Report data model, independent of the output format: the service builds it
 // from read-only SQL and the PDF renderer only lays it out.
 
-export const REPORT_TYPES = ["fleet", "personnel", "infrastructure", "audit-log"] as const;
+export const REPORT_TYPES = ["fleet", "personnel", "infrastructure", "audit-log", "alerts"] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
+
+/** Report types that require a date range. */
+export const RANGED_REPORT_TYPES: readonly ReportType[] = ["audit-log", "alerts"];
 
 export interface ReportTable {
   heading: string;

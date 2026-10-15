@@ -8,8 +8,18 @@ import { AuditRepository } from "../authentication/infrastructure/audit.reposito
 import type { AuditActor } from "../fleet/shared/fleet.contracts.js";
 import { ValidationError } from "../shared/errors/domain-exception.filter.js";
 import { PdfRenderer } from "./pdf/pdf-renderer.js";
-import type { DateRange, ExportedReport, ReportDocument, ReportType } from "./reports.contracts.js";
 import {
+  RANGED_REPORT_TYPES,
+  type DateRange,
+  type ExportedReport,
+  type ReportDocument,
+  type ReportType,
+} from "./reports.contracts.js";
+import {
+  ALERT_STATE_LABELS,
+  ALERT_STATE_ORDER,
+  ALERT_TYPE_LABELS,
+  ALERT_TYPE_ORDER,
   AUDIT_RESULT_LABELS,
   EMPLOYEE_STATUS_LABELS,
   label,
@@ -24,12 +34,16 @@ export const REPORTS_MODULE = "reports";
 export const EXPORT_REPORT_ACTION = "export_report";
 const REPORT_ENTITY_TYPE = "report";
 const UNASSIGNED = "Sin asignar";
+const NO_LINE = "Sin línea";
+const NO_ALERTS = "No hay alertas en el rango.";
+const ALERTS_DETAIL_LIMIT = 500;
 
 const FILE_PREFIX: Record<ReportType, string> = {
   fleet: "reporte-flota",
   personnel: "reporte-personal",
   infrastructure: "reporte-infraestructura",
   "audit-log": "reporte-bitacora",
+  alerts: "reporte-alertas",
 };
 
 interface UnitRow {
@@ -75,6 +89,28 @@ interface AuditByActionRow {
   total: string | number;
 }
 
+interface AlertCountRow {
+  type: string;
+  state: string;
+  lineId: string | null;
+  lineNumber: string | null;
+  lineName: string | null;
+  stationId: string | null;
+  stationName: string | null;
+  total: string | number;
+}
+
+interface AlertDetailRow {
+  createdAt: string;
+  type: string;
+  state: string;
+  lineNumber: string | null;
+  lineName: string | null;
+  stationName: string | null;
+  plate: string | null;
+  pilotName: string | null;
+}
+
 interface AuditByUserRow {
   name: string;
   email: string;
@@ -94,7 +130,7 @@ export class ReportsService {
   ) {}
 
   async export(type: ReportType, actor: AuditActor, range?: DateRange): Promise<ExportedReport> {
-    if (type === "audit-log") validateRange(range);
+    if (RANGED_REPORT_TYPES.includes(type)) validateRange(range);
 
     const manager = this.dataSource.manager;
     const actorEntity = await manager
@@ -128,6 +164,8 @@ export class ReportsService {
         return this.infrastructureReport();
       case "audit-log":
         return this.auditSummaryReport(range!);
+      case "alerts":
+        return this.alertsReport(range!);
     }
   }
 
@@ -290,6 +328,122 @@ export class ReportsService {
       ],
     };
   }
+
+  // Unit -> station alerts created in the range, under the line stored on the
+  // alert (tbl_alerta.id_linea), like the central alerts view. Counts come
+  // from one grouped query; the detail lists the newest ALERTS_DETAIL_LIMIT.
+  private async alertsReport(range: DateRange): Promise<ReportDocument> {
+    const params = ["UNIDAD", "ESTACION", range.from, nextDay(range.to)];
+    const where = `WHERE a.tipo_origen = $1 AND a.tipo_destino = $2
+          AND a.fecha_creacion >= $3 AND a.fecha_creacion < $4`;
+    const counts = (await this.dataSource.query(
+      `SELECT a.tipo_alerta AS "type", a.estado_alerta AS "state",
+              a.id_linea AS "lineId", l.numero_linea AS "lineNumber", l.nombre_linea AS "lineName",
+              a.id_estacion_destino AS "stationId", es.nombre_estacion AS "stationName",
+              COUNT(*) AS "total"
+         FROM tbl_alerta a
+         LEFT JOIN tbl_linea l ON l.id_linea = a.id_linea
+         LEFT JOIN tbl_estacion es ON es.id_estacion = a.id_estacion_destino
+        ${where}
+        GROUP BY a.tipo_alerta, a.estado_alerta, a.id_linea, l.numero_linea, l.nombre_linea,
+                 a.id_estacion_destino, es.nombre_estacion`,
+      params,
+    )) as AlertCountRow[];
+    const detail = (await this.dataSource.query(
+      `SELECT to_char(a.fecha_creacion, 'YYYY-MM-DD HH24:MI') AS "createdAt",
+              a.tipo_alerta AS "type", a.estado_alerta AS "state",
+              l.numero_linea AS "lineNumber", l.nombre_linea AS "lineName",
+              es.nombre_estacion AS "stationName", u.numero_placa AS "plate", e.nombre_emple AS "pilotName"
+         FROM tbl_alerta a
+         LEFT JOIN tbl_linea l ON l.id_linea = a.id_linea
+         LEFT JOIN tbl_estacion es ON es.id_estacion = a.id_estacion_destino
+         LEFT JOIN tbl_unidad u ON u.id_unidad = a.id_unidad
+         LEFT JOIN tbl_empleado e ON e.id_emple = a.id_empleado
+        ${where}
+        ORDER BY a.fecha_creacion DESC, a.id_alerta DESC
+        LIMIT ${ALERTS_DETAIL_LIMIT}`,
+      params,
+    )) as AlertDetailRow[];
+
+    const sum = (rows: AlertCountRow[]) => rows.reduce((total, row) => total + Number(row.total), 0);
+    const total = sum(counts);
+    const states = orderedValues(ALERT_STATE_ORDER, counts.map((row) => row.state));
+    const types = orderedValues(ALERT_TYPE_ORDER, counts.map((row) => row.type));
+    const lineLabel = (number: string | null, name: string | null) =>
+      number === null ? NO_LINE : `${number} - ${name}`;
+
+    // One row per (stored line, destination station).
+    const stations = new Map<string, AlertCountRow[]>();
+    for (const row of counts) {
+      const key = `${row.lineId ?? ""}|${row.stationId ?? ""}`;
+      stations.set(key, [...(stations.get(key) ?? []), row]);
+    }
+    const byText = (a: string, b: string) => a.localeCompare(b, "es", { numeric: true, sensitivity: "base" });
+    const stationGroups = [...stations.values()].sort(([a], [b]) => {
+      if (a!.lineNumber !== b!.lineNumber) {
+        if (a!.lineNumber === null) return 1;
+        if (b!.lineNumber === null) return -1;
+        return byText(a!.lineNumber, b!.lineNumber);
+      }
+      return byText(a!.stationName ?? "", b!.stationName ?? "");
+    });
+
+    return {
+      title: "Reporte de alertas operativas",
+      subtitle: `Del ${range.from} al ${range.to}`,
+      summary: [
+        ["Total de alertas", String(total)],
+        ...states.map((state): [string, string] => [
+          label(ALERT_STATE_LABELS, state),
+          String(sum(counts.filter((row) => row.state === state))),
+        ]),
+      ],
+      sections: [
+        {
+          heading: "Alertas por tipo",
+          columns: ["Tipo", "Cantidad"],
+          rows: types.map((type) => [
+            label(ALERT_TYPE_LABELS, type),
+            String(sum(counts.filter((row) => row.type === type))),
+          ]),
+        },
+        {
+          heading: "Alertas por línea y estación",
+          columns: ["Línea", "Estación", "Total", "Pendientes", "Resueltas"],
+          rows: stationGroups.map((rows) => [
+            lineLabel(rows[0]!.lineNumber, rows[0]!.lineName),
+            rows[0]!.stationName ?? "-",
+            String(sum(rows)),
+            String(sum(rows.filter((row) => row.state === "PENDIENTE"))),
+            String(sum(rows.filter((row) => row.state === "RESUELTA"))),
+          ]),
+          emptyMessage: NO_ALERTS,
+        },
+        {
+          heading: "Detalle de alertas",
+          ...(total > detail.length
+            ? { note: `Se muestran las ${detail.length} alertas más recientes de ${total}.` }
+            : {}),
+          columns: ["Fecha", "Tipo", "Línea", "Estación", "Unidad", "Piloto", "Estado"],
+          rows: detail.map((row) => [
+            row.createdAt,
+            label(ALERT_TYPE_LABELS, row.type),
+            lineLabel(row.lineNumber, row.lineName),
+            row.stationName ?? "-",
+            row.plate ?? "-",
+            row.pilotName ?? "-",
+            label(ALERT_STATE_LABELS, row.state),
+          ]),
+          emptyMessage: NO_ALERTS,
+        },
+      ],
+    };
+  }
+}
+
+/** Fixed order first; any unexpected stored value is appended so nothing is lost. */
+function orderedValues(order: readonly string[], values: string[]): string[] {
+  return [...order, ...values].filter((value, index, all) => all.indexOf(value) === index);
 }
 
 function validateRange(range: DateRange | undefined): asserts range is DateRange {
