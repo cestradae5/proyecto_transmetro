@@ -1,9 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../authentication/auth-context';
 import { useMiUnidad } from '../../hooks/use-mi-unidad';
+import { usePasajerosUnidad } from '../../hooks/use-pasajeros-unidad';
 import { FLEET_REPORT_LOCATION_PERMISSION, hasPermission } from '../../permissions';
 import { EstadoUnidad, type LineaParadaStop, type Unidad } from '../../types/fleet.types';
 import { formatReportDate } from '../../utils/format';
+import { PasajerosPanel } from './pasajeros-panel';
 import { ReportarParadaPanel } from './reportar-parada-panel';
 
 const ESTADO_LABEL: Record<EstadoUnidad, string> = {
@@ -52,6 +54,7 @@ export function MiUnidadPage() {
 
   const { unit, noUnit, loading, error, refresh, stops, stopsLoading, stopsError, refreshStops, reportLocation } =
     useMiUnidad();
+  const pasajeros = usePasajerosUnidad();
 
   const renderContent = () => {
     if (loading && !unit) {
@@ -111,6 +114,15 @@ export function MiUnidadPage() {
                   onReport={reportLocation}
                 />
               </section>
+            )}
+            {canReport && (
+              <PasajerosPanel
+                occupancy={pasajeros.occupancy}
+                loading={pasajeros.loading}
+                error={pasajeros.error}
+                hasCurrentStop={Boolean(unit.idLineaParadaActual)}
+                onReport={pasajeros.report}
+              />
             )}
           </div>
         )}
