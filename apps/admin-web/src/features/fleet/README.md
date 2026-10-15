@@ -10,7 +10,7 @@ Admin UI for the fleet backend (`/fleet/*`). Module `fleet`.
 - `operator-only-route.tsx`: redirects `/fleet` to `/fleet/my-unit` without `FLOTA_GESTIONAR`
 - `hooks/`: `use-unidades`, `use-asignacion-unidad`, `use-asignacion-piloto`, `use-ubicacion-unidad`, `use-pilotos`, `use-mi-unidad`, `fleet-errors` (maps backend error class names to Spanish messages)
 - `components/unidades/`: form, dialog, table, and the line / pilot / location dialogs
-- `components/mi-unidad/`: `MiUnidadPage` and `ReportarUbicacionDialog` (POST-only, pilot-scoped stops)
+- `components/mi-unidad/`: `MiUnidadPage` and `ReportarParadaPanel` (one-tap stop buttons, POST-only, pilot-scoped stops)
 - `utils/format.ts`: `formatReportDate`, shared by both location views
 - `permissions.ts`: `hasPermission`
 

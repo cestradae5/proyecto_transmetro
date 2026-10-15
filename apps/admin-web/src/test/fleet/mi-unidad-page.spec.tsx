@@ -2,7 +2,7 @@
 // mocked: the hook test (use-mi-unidad.spec.ts) covers the API contract, and
 // these tests cover only the pilot-facing states and permission gating.
 
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { MiUnidadPage } from "../../features/fleet/components/mi-unidad/mi-unidad-page";
@@ -116,25 +116,34 @@ describe("MiUnidadPage", () => {
     expect(screen.getByText("120 pasajeros")).toBeInTheDocument();
     expect(screen.getByText("En servicio")).toBeInTheDocument();
     expect(screen.getByText("Línea 12")).toBeInTheDocument();
-    expect(screen.getByText("Centro")).toBeInTheDocument();
+    expect(screen.getByTestId("current-stop")).toHaveTextContent("Centro");
     expect(screen.getByText(/^Reportada el /)).toBeInTheDocument();
   });
 
   it("reports 'Sin reporte' when the unit has no current stop", () => {
     mockedUseMiUnidad.mockReturnValue(hookState({ unit: unit({ idLineaParadaActual: null }) }));
     renderPage();
-    expect(screen.getByText("Sin reporte")).toBeInTheDocument();
+    expect(screen.getByTestId("current-stop")).toHaveTextContent("Sin reporte");
+  });
+
+  it("resolves the current stop name from the stops list when the unit lacks it", () => {
+    mockedUseMiUnidad.mockReturnValue(
+      hookState({ unit: unit({ idLineaParadaActual: "101", nombreParadaActual: undefined }) }),
+    );
+    renderPage();
+    expect(screen.getByTestId("current-stop")).toHaveTextContent("Terminal");
   });
 
   it("falls back to identifiers when the line and stop names are absent", () => {
     mockedUseMiUnidad.mockReturnValue(
       hookState({
         unit: unit({ nombreLinea: undefined, idLineaParadaActual: "102", nombreParadaActual: undefined }),
+        stops: [],
       }),
     );
     renderPage();
     expect(screen.getByText("4")).toBeInTheDocument();
-    expect(screen.getByText("102")).toBeInTheDocument();
+    expect(screen.getByTestId("current-stop")).toHaveTextContent("102");
   });
 
   it("renders an empty state (not an error) when the pilot has no unit", () => {
@@ -142,7 +151,7 @@ describe("MiUnidadPage", () => {
     renderPage();
     expect(screen.getByText("No tiene una unidad asignada.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Reportar ubicación" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reportar en / })).not.toBeInTheDocument();
   });
 
   it("explains that a unit without a line cannot report, and hides the action", () => {
@@ -152,7 +161,7 @@ describe("MiUnidadPage", () => {
     renderPage();
     expect(screen.getByText("Sin línea asignada")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("La unidad no tiene una línea asignada");
-    expect(screen.queryByRole("button", { name: "Reportar ubicación" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reportar en / })).not.toBeInTheDocument();
   });
 
   it("hides the report action without METRICAS_UNIDAD_REPORTAR", () => {
@@ -166,21 +175,19 @@ describe("MiUnidadPage", () => {
     });
     renderPage();
     expect(screen.getByText("Línea 12")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Reportar ubicación" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reportar en / })).not.toBeInTheDocument();
   });
 
-  it("reports the location through the pilot dialog and closes it", async () => {
+  it("reports the location with one tap on a stop button, without a dialog", async () => {
     const reportLocation = vi.fn().mockResolvedValue({});
     mockedUseMiUnidad.mockReturnValue(hookState({ reportLocation }));
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: "Reportar ubicación" }));
-    const dialog = await screen.findByRole("dialog", { name: "Reportar ubicación" });
-    fireEvent.change(within(dialog).getByLabelText("Parada"), { target: { value: "101" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reportar ubicación" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reportar en Terminal" }));
 
     await waitFor(() => expect(reportLocation).toHaveBeenCalledWith("101"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByText("Ubicación actualizada: Terminal")).toBeInTheDocument();
   });
 
   it("shows a retryable error when the unit cannot be loaded", () => {
