@@ -646,7 +646,8 @@ BEGIN
         UPDATE tbl_alerta a
            SET id_parada_origen = e.id_parada
           FROM tbl_estacion e
-         WHERE e.id_estacion = a.id_estacion_origen;
+         WHERE e.id_estacion = a.id_estacion_origen
+           AND a.tipo_alerta = 'CAPACIDAD_ESTACION';
     END IF;
 END
 $$;
