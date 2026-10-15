@@ -1,15 +1,15 @@
 {
   "info": {
     "name": "Transmetro - Conteo de pasajeros (ridership)",
-    "description": "Talanquera, alerta de capacidad de estación (150%) y regla del bus bajo 25%. Guía: docs/postman/README.md.",
+    "description": "Talanquera, alerta de capacidad por parada (150%) y regla del bus bajo 25%. Guía: docs/postman/README.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "1. Estación",
+      "name": "1. Parada",
       "item": [
         {
-          "name": "1. Fijar capacidad de la estación (4)",
+          "name": "1. Fijar capacidad de la parada (4)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -19,14 +19,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/infrastructure/estaciones/{{idEstacion}}",
+              "raw": "{{baseUrl}}/infrastructure/paradas/{{idParada}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "infrastructure",
-                "estaciones",
-                "{{idEstacion}}"
+                "paradas",
+                "{{idParada}}"
               ]
             },
             "description": "Con capacidad 4, la alerta salta al llegar a 6 personas (150%).",
@@ -66,20 +66,20 @@
           ]
         },
         {
-          "name": "2. Leer ocupación de la estación",
+          "name": "2. Leer ocupación de la parada",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/operations/ridership/stations/{{idEstacion}}",
+              "raw": "{{baseUrl}}/operations/ridership/stops/{{idParada}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "operations",
                 "ridership",
-                "stations",
-                "{{idEstacion}}"
+                "stops",
+                "{{idParada}}"
               ]
             },
             "description": "",
@@ -103,9 +103,9 @@
                   "const body = pm.response.json();",
                   "pm.test(\"200\", () => pm.response.to.have.status(200));",
                   "pm.test(\"alertaActiva coherente con el 150%\", () => {",
-                  "  if (body.personasEnEstacion >= body.capacidadPasajeros * 1.5) pm.expect(body.alertaActiva).to.eql(true);",
+                  "  if (body.personasEnParada >= body.capacidadPasajeros * 1.5) pm.expect(body.alertaActiva).to.eql(true);",
                   "});",
-                  "pm.collectionVariables.set(\"personasAntes\", body.personasEnEstacion);"
+                  "pm.collectionVariables.set(\"personasAntes\", body.personasEnParada);"
                 ]
               }
             }
@@ -147,7 +147,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"ENTRADA\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -167,15 +167,15 @@
                   "  pm.response.to.have.status(201);",
                   "  pm.expect(body.montoCobrado).to.eql(1);",
                   "});",
-                  "pm.test(\"suma una persona a la estación\", () => {",
-                  "  if (!Number.isNaN(before)) pm.expect(body.estacion.personasEnEstacion).to.eql(before + 1);",
+                  "pm.test(\"suma una persona a la parada\", () => {",
+                  "  if (!Number.isNaN(before)) pm.expect(body.parada.personasEnParada).to.eql(before + 1);",
                   "});",
                   "pm.test(\"al 150% hay alerta activa\", () => {",
-                  "  const limit = body.estacion.capacidadPasajeros * 1.5;",
-                  "  if (body.estacion.personasEnEstacion >= limit) pm.expect(body.estacion.alertaActiva).to.eql(true);",
+                  "  const limit = body.parada.capacidadPasajeros * 1.5;",
+                  "  if (body.parada.personasEnParada >= limit) pm.expect(body.parada.alertaActiva).to.eql(true);",
                   "  else pm.expect(body.alertaGenerada).to.eql(false);",
                   "});",
-                  "pm.collectionVariables.set(\"personasAntes\", body.estacion.personasEnEstacion);",
+                  "pm.collectionVariables.set(\"personasAntes\", body.parada.personasEnParada);",
                   "pm.collectionVariables.set(\"saldo\", body.saldo);"
                 ]
               }
@@ -213,7 +213,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"SALIDA\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"SALIDA\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -234,7 +234,7 @@
                   "});",
                   "pm.test(\"no cambia las personas esperando\", () => {",
                   "  const before = Number(pm.collectionVariables.get(\"personasAntes\"));",
-                  "  if (!Number.isNaN(before)) pm.expect(body.estacion.personasEnEstacion).to.eql(before);",
+                  "  if (!Number.isNaN(before)) pm.expect(body.parada.personasEnParada).to.eql(before);",
                   "});"
                 ]
               }
@@ -268,7 +268,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"ENTRADA\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -319,7 +319,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"{{tarjetaBloqueada}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjetaBloqueada}}\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"ENTRADA\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -370,7 +370,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"{{tarjetaSinSaldo}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjetaSinSaldo}}\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"ENTRADA\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -421,7 +421,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"NO-EXISTE-0000\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"NO-EXISTE-0000\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"ENTRADA\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -472,7 +472,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ADENTRO\"\n}",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idParada\": {{idParada}},\n  \"tipo\": \"ADENTRO\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -533,7 +533,7 @@
                 "exec": [
                   "const list = pm.response.json();",
                   "pm.test(\"200\", () => pm.response.to.have.status(200));",
-                  "const open = list.find((a) => a.estacion.idEstacion === String(pm.collectionVariables.get(\"idEstacion\")) && a.estadoAlerta !== \"RESUELTA\");",
+                  "const open = list.find((a) => a.parada.idParada === String(pm.collectionVariables.get(\"idParada\")) && a.estadoAlerta !== \"RESUELTA\");",
                   "if (open) pm.collectionVariables.set(\"idAlerta\", open.idAlerta);"
                 ]
               }
@@ -640,7 +640,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idEstacion\": {{idEstacion}}\n}",
+              "raw": "{\n  \"idParada\": {{idParada}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -702,7 +702,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idEstacion\": {{idEstacion}}\n}",
+              "raw": "{\n  \"idParada\": {{idParada}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -869,7 +869,7 @@
       "value": "change-me"
     },
     {
-      "key": "idEstacion",
+      "key": "idParada",
       "value": "1"
     },
     {

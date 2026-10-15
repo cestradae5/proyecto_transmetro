@@ -1,14 +1,16 @@
 # Postman: conteo de pasajeros (ridership)
 
-Colección para probar a mano la talanquera, la alerta de capacidad de estación
+Colección para probar a mano la talanquera, la alerta de capacidad por parada
 (requerimiento 14) y la regla del bus bajo el 25% (requerimiento 15). Reglas y
 contrato: `apps/api/src/operations/README.md`.
 
 ## 1. Preparar el API
 
-1. Aplique `database/init.sql` a su base local (agrega `capacidad_pasajeros`,
-   `tbl_evento_talanquera`, `tbl_parada_unidad` y deja `tbl_alerta.id_empleado`
-   opcional). Se puede ejecutar varias veces.
+1. Aplique `database/init.sql` a su base local (agrega
+   `tbl_parada.capacidad_pasajeros`, `tbl_evento_talanquera`,
+   `tbl_parada_unidad`, deja `tbl_alerta.id_empleado` opcional y migra al
+   conteo por parada los datos de una versión anterior). Se puede ejecutar
+   varias veces.
 2. Cargue las tarjetas de prueba con `docs/postman/ridership-test-data.sql`
    (solo en una base local).
 3. En `apps/api/.env` agregue:
@@ -30,17 +32,17 @@ colección:
 | `baseUrl` | `http://localhost:3000` |
 | `token` | JWT de un usuario `ADMINISTRADOR_SISTEMA` u `OPERADOR_CENTRAL` (inicie sesión en admin-web y copie el token) |
 | `turnstileKey` | El mismo valor de `TURNSTILE_API_KEY` |
-| `idEstacion` | Una estación existente |
+| `idParada` | Una parada existente (sea o no estación: el conteo, la capacidad y la alerta son de la parada) |
 | `idUnidad` | Una unidad existente |
 
 La talanquera no usa el token: se identifica con el header `X-Turnstile-Key`.
 
 ## 3. Escenarios
 
-**Alerta de estación (150%)**
+**Alerta de capacidad de la parada (150%)**
 
-1. `1. Estación / Fijar capacidad de la estación (4)`.
-2. `1. Estación / Leer ocupación`: guarda cuántas personas hay.
+1. `1. Parada / Fijar capacidad de la parada (4)`.
+2. `1. Parada / Leer ocupación de la parada`: guarda cuántas personas hay.
 3. Envíe `2. Talanquera / Entrada` hasta llegar a 6 personas. En esa entrada
    la respuesta trae `alertaGenerada: true`; las siguientes no crean otra
    alerta mientras siga sin resolver.
