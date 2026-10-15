@@ -11,6 +11,7 @@ import { ProfileModule } from "./profile/profile.module.js";
 import { AuditLogModule } from "./audit-log/audit-log.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { OperationsModule } from "./operations/operations.module.js";
+import { CitizenModule } from "./citizen/citizen.module.js";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { OperationsModule } from "./operations/operations.module.js";
     AuditLogModule,
     ReportsModule,
     OperationsModule,
+    CitizenModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })
