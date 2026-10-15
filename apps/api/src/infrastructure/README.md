@@ -143,12 +143,17 @@ Base path: `/infrastructure`. All routes below require
 | DELETE | `/:id/accesos/:accesoId` | Soft delete → `DESHABILITADO`; 404 if the acceso belongs to another parada |
 
 ### Estaciones — `/infrastructure/estaciones`
+
+Every response includes `capacidadPasajeros`: people the station holds while
+waiting. The ridership capacity alert fires at 150% of it
+(`apps/api/src/operations/README.md`).
+
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create |
+| POST | `/` | Create; optional `capacidadPasajeros` (integer >= 1, default 100) |
 | GET | `/` | List all |
 | GET | `/:id` | Get one |
-| PATCH | `/:id` | Update |
+| PATCH | `/:id` | Update (including `capacidadPasajeros`) |
 | DELETE | `/:id?force=true` | Soft delete → `CERRADA`; `force=true` (exactly `"true"`) hard-deletes the row so the parada stops being an estación; rows still referencing it (FK violation `23503`) → 409 `ESTACION_IN_USE` |
 
 ### Parqueos — `/infrastructure/parqueos`
