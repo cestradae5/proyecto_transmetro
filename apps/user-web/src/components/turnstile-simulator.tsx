@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -17,13 +17,15 @@ interface TurnstileSimulatorProps {
 }
 
 // S10: development tool that plays the role of a station turnstile. Each
-// click is a new pass with its own idempotencyKey.
+// pass has its own idempotencyKey; repeating the same station and type right
+// after a network error reuses it, so the API never charges twice (S7).
 export function TurnstileSimulator({ numeroTarjeta, onBalance }: TurnstileSimulatorProps) {
   const [stations, setStations] = useState<Station[]>([]);
   const [idEstacion, setIdEstacion] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TurnstilePass | null>(null);
+  const pendingPass = useRef<{ idEstacion: string; tipo: TurnstileType; key: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -45,12 +47,25 @@ export function TurnstileSimulator({ numeroTarjeta, onBalance }: TurnstileSimula
     setSending(true);
     setError(null);
     setResult(null);
+    const previous = pendingPass.current;
+    const attempt =
+      previous && previous.idEstacion === idEstacion && previous.tipo === tipo
+        ? previous
+        : { idEstacion, tipo, key: crypto.randomUUID() };
+    pendingPass.current = attempt;
     try {
-      const pass = await passTurnstile(numeroTarjeta, Number(idEstacion), tipo, crypto.randomUUID());
+      const pass = await passTurnstile(numeroTarjeta, Number(idEstacion), tipo, attempt.key);
+      pendingPass.current = null;
       setResult(pass);
       onBalance(pass.saldo);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : NETWORK_ERROR_MESSAGE);
+      if (err instanceof ApiError) {
+        // The API answered: this pass is over, the next one is new.
+        pendingPass.current = null;
+        setError(err.message);
+      } else {
+        setError(NETWORK_ERROR_MESSAGE);
+      }
     } finally {
       setSending(false);
     }

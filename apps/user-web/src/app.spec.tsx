@@ -165,6 +165,23 @@ describe("recharge (S9)", () => {
     expect(call(3).body.referencia).not.toBe(call(1).body.referencia);
   });
 
+  // Verifier probe: a pending referencia never crosses to another card.
+  it("uses a new referencia for another card after a network error", async () => {
+    render(<App />);
+    await openCard();
+    answers.push("network-error");
+    await recharge("20");
+    await screen.findByText("No se pudo conectar con el servidor. Intente de nuevo.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Consultar otra tarjeta" }));
+    await openCard();
+    answers.push({ status: 201, body: receipt(32.5) });
+    await recharge("20");
+    await screen.findByText("Recarga exitosa");
+
+    expect(call(3).body.referencia).not.toBe(call(1).body.referencia);
+  });
+
   it("explains that recharges are not available when the route answers 404", async () => {
     render(<App />);
     await openCard();
@@ -263,6 +280,33 @@ describe("turnstile simulator (S10)", () => {
     expect(await screen.findByText("Cobro: Q1.00")).toBeInTheDocument();
     expect(screen.getByText("Q11.50")).toBeInTheDocument();
     expect(screen.queryByText("Q12.50")).not.toBeInTheDocument();
+  });
+
+  // S7/S10: retrying the same pass after a network error must not charge twice.
+  it("reuses the idempotencyKey when the same pass is retried after a network error", async () => {
+    await openSimulator();
+    answers.push("network-error");
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    expect(await screen.findByText("No se pudo conectar con el servidor.")).toBeInTheDocument();
+
+    answers.push({ status: 201, body: passResult() });
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    await screen.findByText("Cobro: Q1.00");
+
+    expect(call(3).body.idempotencyKey).toBe(call(2).body.idempotencyKey);
+  });
+
+  it("uses a new idempotencyKey when a different pass follows a network error", async () => {
+    await openSimulator();
+    answers.push("network-error");
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    await screen.findByText("No se pudo conectar con el servidor.");
+
+    answers.push({ status: 201, body: passResult({ tipo: "SALIDA", montoCobrado: 0 }) });
+    fireEvent.click(screen.getByRole("button", { name: "Salir" }));
+    await screen.findByText("Cobro: Q0.00");
+
+    expect(call(3).body.idempotencyKey).not.toBe(call(2).body.idempotencyKey);
   });
 
   it("announces a capacity alert", async () => {

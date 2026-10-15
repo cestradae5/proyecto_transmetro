@@ -84,6 +84,9 @@ interface CapacityAlertRow {
 
 const NUMERIC_ID = /^\d+$/;
 
+// Postgres' default name for UNIQUE (clave_idempotencia) in database/init.sql.
+const IDEMPOTENCY_UNIQUE = "tbl_evento_talanquera_clave_idempotencia_key";
+
 const STOP_COLUMNS = `
        pu.id_parada_unidad AS "idParadaUnidad",
        e.id_estacion AS "idEstacion",
@@ -117,8 +120,9 @@ export class RidershipService {
       return await this.registerPassOnce(dto);
     } catch (error) {
       // Two different cards racing with the same key: the UNIQUE column
-      // rejects the second insert.
-      if (error instanceof QueryFailedError && (error.driverError as { code?: string })?.code === "23505") {
+      // rejects the second insert. Any other UNIQUE is rethrown as is.
+      const driver = error instanceof QueryFailedError ? (error.driverError as { code?: string; constraint?: string }) : undefined;
+      if (driver?.code === "23505" && driver.constraint === IDEMPOTENCY_UNIQUE) {
         throw new IdempotencyKeyConflict();
       }
       throw error;

@@ -226,6 +226,33 @@ describe("Citizen (e2e)", () => {
       expect(await paymentRows()).toEqual(before);
     });
 
+    // Verifier probe: the client cannot set the balance; unknown fields are
+    // stripped by the global ValidationPipe whitelist.
+    it("ignores a saldo sent in the body", async () => {
+      const card = await createCard("extra", "5.00");
+      const before = await paymentRows();
+
+      const res = await recharge(card, { monto: 10, referencia: `${runTag}-extra`, saldo: 9999 });
+
+      expect(res.status).toBe(201);
+      expect(res.body.saldo).toBe(15);
+      expect(await saldoOf(card)).toBe("15.00");
+      expect(Number((await paymentRows()).tx)).toBe(Number(before.tx) + 1);
+    });
+
+    it("answers 404 and changes nothing when the simulator flag is unset", async () => {
+      const card = await createCard("rech-unset", "5.00");
+      const before = await paymentRows();
+      delete process.env.RECHARGE_SIMULATOR_ENABLED;
+      try {
+        expect((await recharge(card, { monto: 10, referencia: `${runTag}-unset` })).status).toBe(404);
+      } finally {
+        process.env.RECHARGE_SIMULATOR_ENABLED = "true";
+      }
+      expect(await saldoOf(card)).toBe("5.00");
+      expect(await paymentRows()).toEqual(before);
+    });
+
     it("accepts the bounds 1.00 and 500.00", async () => {
       const card = await createCard("bounds", "0.00");
 

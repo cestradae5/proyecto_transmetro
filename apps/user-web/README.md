@@ -69,6 +69,7 @@ deploy. The API already allows any origin (CORS `*`) and the
   sending. Each attempt has one `referencia`; retrying the same amount after
   a network error reuses it, so the API never charges twice. A 404 from the
   recharge route shows "Las recargas no están disponibles.".
-- **Simulator**: each click sends a new pass with a fresh `idempotencyKey`;
-  the balance is never sent (the API reads it). The shown balance follows
+- **Simulator**: each pass has its own `idempotencyKey`; repeating the same
+  station and type right after a network error reuses it, so the API never
+  charges twice. The balance is never sent (the API reads it). The shown balance follows
   the API answer.

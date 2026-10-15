@@ -33,6 +33,8 @@ const CARD_ACTIVE = "ACTIVA";
 const STATION_ACTIVE = "ACTIVA";
 const PAYMENT_APPROVED = "APROBADA";
 const RECEIPT_PREFIX = "SIM-";
+// Postgres' default name for UNIQUE (referencia_pago) in database/init.sql.
+const REFERENCE_UNIQUE = "tbl_transaccion_pago_referencia_pago_key";
 
 // Public endpoints for apps/user-web (odd/tasks/user-web.md). There is no
 // citizen login: the card number identifies the card (S2). Raw SQL on the
@@ -68,7 +70,9 @@ export class CitizenService {
       return await this.rechargeOnce(numeroTarjeta, dto);
     } catch (error) {
       // Two cards racing with the same referencia: UNIQUE referencia_pago.
-      if (error instanceof QueryFailedError && (error.driverError as { code?: string })?.code === "23505") {
+      // Any other UNIQUE is a different failure and is rethrown as is.
+      const driver = error instanceof QueryFailedError ? (error.driverError as { code?: string; constraint?: string }) : undefined;
+      if (driver?.code === "23505" && driver.constraint === REFERENCE_UNIQUE) {
         throw new RechargeReferenceConflict();
       }
       throw error;
