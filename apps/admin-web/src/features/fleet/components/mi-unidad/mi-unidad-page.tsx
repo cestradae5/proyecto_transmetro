@@ -1,11 +1,10 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../authentication/auth-context';
 import { useMiUnidad } from '../../hooks/use-mi-unidad';
 import { FLEET_REPORT_LOCATION_PERMISSION, hasPermission } from '../../permissions';
-import { EstadoUnidad, type Unidad } from '../../types/fleet.types';
+import { EstadoUnidad, type LineaParadaStop, type Unidad } from '../../types/fleet.types';
 import { formatReportDate } from '../../utils/format';
-import { ReportarUbicacionDialog } from './reportar-ubicacion-dialog';
+import { ReportarParadaPanel } from './reportar-parada-panel';
 
 const ESTADO_LABEL: Record<EstadoUnidad, string> = {
   [EstadoUnidad.DISPONIBLE]: 'Disponible',
@@ -28,14 +27,20 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   </div>
 );
 
-function CurrentStop({ unit }: { unit: Unidad }) {
-  if (!unit.idLineaParadaActual) return <>Sin reporte</>;
-  const reportedAt = formatReportDate(unit.fechaReporteUbicacion);
+function CurrentStop({ unit, stops }: { unit: Unidad; stops: LineaParadaStop[] }) {
+  const currentId = unit.idLineaParadaActual;
+  const name = currentId
+    ? (unit.nombreParadaActual ?? stops.find((s) => s.idLineaParada === currentId)?.nombre ?? currentId)
+    : null;
+  const reportedAt = currentId ? formatReportDate(unit.fechaReporteUbicacion) : null;
   return (
-    <>
-      {unit.nombreParadaActual ?? unit.idLineaParadaActual}
-      {reportedAt && <span className="block text-xs text-slate-500">Reportada el {reportedAt}</span>}
-    </>
+    <section aria-label="Parada actual" className="rounded-2xl bg-primary/5 border border-primary/20 p-5">
+      <p className="text-sm font-semibold uppercase tracking-wide text-primary">Parada actual</p>
+      <p data-testid="current-stop" className="mt-1 text-3xl font-bold text-slate-900 break-words">
+        {name ?? 'Sin reporte'}
+      </p>
+      {reportedAt && <p className="mt-1 text-base text-slate-600">Reportada el {reportedAt}</p>}
+    </section>
   );
 }
 
@@ -44,7 +49,6 @@ export function MiUnidadPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canReport = hasPermission(user, FLEET_REPORT_LOCATION_PERMISSION);
-  const [showReport, setShowReport] = useState(false);
 
   const { unit, noUnit, loading, error, refresh, stops, stopsLoading, stopsError, refreshStops, reportLocation } =
     useMiUnidad();
@@ -91,36 +95,40 @@ export function MiUnidadPage() {
             {ESTADO_LABEL[unit.estadoUnidad] ?? unit.estadoUnidad}
           </span>
         </div>
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {hasLine && (
+          <div className="space-y-6">
+            <CurrentStop unit={unit} stops={stops} />
+            {canReport && (
+              <section aria-label="Reportar ubicación">
+                <h3 className="text-lg font-bold text-slate-900 mb-1">¿En qué parada está?</h3>
+                <p className="text-base text-slate-500 mb-4">Toque la parada al detenerse. Nunca mientras conduce.</p>
+                <ReportarParadaPanel
+                  currentId={unit.idLineaParadaActual ?? null}
+                  stops={stops}
+                  stopsLoading={stopsLoading}
+                  stopsError={stopsError}
+                  onRetryStops={() => refreshStops()}
+                  onReport={reportLocation}
+                />
+              </section>
+            )}
+          </div>
+        )}
+
+        {!hasLine && (
+          <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
+            La unidad no tiene una línea asignada. No puede reportar su ubicación hasta que se le asigne una línea.
+          </div>
+        )}
+
+        <dl className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-2 gap-4">
+          <Field label="Línea">{hasLine ? (unit.nombreLinea ?? unit.idLinea) : 'Sin línea asignada'}</Field>
           <Field label="Marca / Modelo">
             {unit.marca} {unit.modelo}
           </Field>
           <Field label="Año">{unit.anio}</Field>
           <Field label="Capacidad">{unit.capacidadPasajeros} pasajeros</Field>
-          <Field label="Línea">{hasLine ? (unit.nombreLinea ?? unit.idLinea) : 'Sin línea asignada'}</Field>
-          {hasLine && (
-            <Field label="Parada actual">
-              <CurrentStop unit={unit} />
-            </Field>
-          )}
         </dl>
-
-        {!hasLine && (
-          <div role="status" className="mt-6 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-            La unidad no tiene una línea asignada. No puede reportar su ubicación hasta que se le asigne una línea.
-          </div>
-        )}
-
-        {hasLine && canReport && (
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={() => setShowReport(true)}
-              className="px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors"
-            >
-              Reportar ubicación
-            </button>
-          </div>
-        )}
       </>
     );
   };
@@ -136,24 +144,12 @@ export function MiUnidadPage() {
         </div>
       </header>
 
-      <main className="pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-3xl mx-auto">
-        <div className="bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04)] p-6 sm:p-11">
+      <main className="pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-6xl mx-auto">
+        <div className="bg-white rounded-3xl border border-slate-200/70 shadow-[0_10px_30px_-5px_rgba(0,0,0,0.04)] p-5 sm:p-8">
           <h1 className="font-display font-bold text-2xl sm:text-[28px] text-slate-900 tracking-tight mb-6">Mi unidad</h1>
           {renderContent()}
         </div>
       </main>
-
-      {showReport && unit && canReport && (
-        <ReportarUbicacionDialog
-          unit={unit}
-          stops={stops}
-          stopsLoading={stopsLoading}
-          stopsError={stopsError}
-          onRetryStops={() => refreshStops()}
-          onReport={reportLocation}
-          onClose={() => setShowReport(false)}
-        />
-      )}
     </div>
   );
 }
