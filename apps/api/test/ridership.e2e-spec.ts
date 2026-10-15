@@ -44,6 +44,7 @@ describe("Ridership (e2e)", () => {
     estaciones: [] as string[],
     unidades: [] as string[],
     tarjetas: [] as string[],
+    lineas: [] as string[],
   };
   let adminToken = "";
   let pilotToken = "";
@@ -54,9 +55,18 @@ describe("Ridership (e2e)", () => {
   let stopC = "";
   let stopD = "";
   const estacionOf = new Map<string, string>();
+  // Bus report (bus-passenger-report.md): line L runs E (plain parada) -> F
+  // (parada with a station). pilot1 drives unit1 (capacity 40); pilot2 drives
+  // unitSmall (capacity 2); pilot3 has no unit.
+  let stopE = "";
+  let stopF = "";
+  const linePositions = new Map<string, string>();
   let unit1 = "";
-  let unit2 = "";
   let unitSmall = "";
+  let pilot1 = { id: "", token: "" };
+  let pilot2 = { id: "", token: "" };
+  let pilot3Token = "";
+  let stationOperatorToken = "";
 
   async function rows<T>(sql: string, params: unknown[] = []): Promise<T[]> {
     return (await dataSource.query(sql, params)) as T[];
@@ -69,6 +79,10 @@ describe("Ridership (e2e)", () => {
   }
 
   async function createEmployee(roleCode: string, suffix: string): Promise<string> {
+    return (await createEmployeeWithId(roleCode, suffix)).token;
+  }
+
+  async function createEmployeeWithId(roleCode: string, suffix: string): Promise<{ id: string; token: string }> {
     const role = await one<{ idRol: string }>(`SELECT id_rol AS "idRol" FROM tbl_rol WHERE codigo = $1`, [roleCode]);
     const email = `${runTag.toLowerCase()}-${suffix}@transmetro.gt`;
     const emp = await one<{ id: string }>(
@@ -86,10 +100,42 @@ describe("Ridership (e2e)", () => {
         [roleCode],
       )
     ).map((r) => r.codigo);
-    return jwt.sign(
+    const token = jwt.sign(
       { employeeId: id, email, roles: [roleCode], permissions, scope: { role: roleCode, modules: [] } },
       JWT_SECRET,
       { expiresIn: "12h" },
+    );
+    return { id, token };
+  }
+
+  // A line whose route is the given paradas, in order; remembers each
+  // parada's tbl_linea_parada id so the pilot can report it as the stop.
+  async function createLine(route: string[]): Promise<string> {
+    const linea = await one<{ id: string }>(
+      `INSERT INTO tbl_linea (numero_linea, nombre_linea, color_hex, estado_linea, tipo_recorrido)
+       VALUES ($1, $2, '#FF6600', 'ACTIVA', 'LINEAL') RETURNING id_linea AS "id"`,
+      [runTag.slice(-12), `${runTag} Línea`],
+    );
+    ids.lineas.push(String(linea.id));
+    for (const [index, idParada] of route.entries()) {
+      const lp = await one<{ id: string }>(
+        `INSERT INTO tbl_linea_parada (orden, minutos_hasta_siguiente, id_parada, id_linea)
+         VALUES ($1, 3, $2, $3) RETURNING id_linea_parada AS "id"`,
+        [index + 1, idParada, linea.id],
+      );
+      linePositions.set(idParada, String(lp.id));
+    }
+    return String(linea.id);
+  }
+
+  async function assignPilot(pilotId: string, idUnidad: string, idLinea: string): Promise<void> {
+    await dataSource.query(
+      `INSERT INTO tbl_asignacion_piloto (fecha_asignacion, id_empleado, id_unidad) VALUES (CURRENT_TIMESTAMP, $1, $2)`,
+      [pilotId, idUnidad],
+    );
+    await dataSource.query(
+      `INSERT INTO tbl_asignacion_unidad (fecha_asignacion, id_unidad, id_linea) VALUES (CURRENT_TIMESTAMP, $1, $2)`,
+      [idUnidad, idLinea],
     );
   }
 
@@ -203,9 +249,17 @@ describe("Ridership (e2e)", () => {
     stopB = await createStop("B", 100, true);
     stopC = await createStop("C", 100, true);
     stopD = await createStop("D", 2, true);
+    stopE = await createStop("E", 100, false);
+    stopF = await createStop("F", 100, true);
+    const linea = await createLine([stopE, stopF]);
     unit1 = await createUnit("U1", 40);
-    unit2 = await createUnit("U2", 40);
     unitSmall = await createUnit("U3", 2);
+    pilot1 = await createEmployeeWithId("PILOTO", "pilot1");
+    pilot2 = await createEmployeeWithId("PILOTO", "pilot2");
+    pilot3Token = await createEmployee("PILOTO", "pilot3");
+    stationOperatorToken = await createEmployee("OPERADOR_ESTACION", "operador");
+    await assignPilot(pilot1.id, unit1, linea);
+    await assignPilot(pilot2.id, unitSmall, linea);
     walletCard = await createCard("wallet", "500.00");
   });
 
@@ -221,7 +275,16 @@ describe("Ridership (e2e)", () => {
         await q(`DELETE FROM tbl_evento_talanquera WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
         await q(`DELETE FROM tbl_parada_unidad WHERE id_parada = ANY($1::bigint[])`, [ids.paradas]);
       }
-      if (ids.unidades.length) await q(`DELETE FROM tbl_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades]);
+      if (ids.unidades.length) {
+        await q(`DELETE FROM tbl_parada_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades]);
+        await q(`DELETE FROM tbl_asignacion_piloto WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades]);
+        await q(`DELETE FROM tbl_asignacion_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades]);
+        await q(`DELETE FROM tbl_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades]);
+      }
+      if (ids.lineas.length) {
+        await q(`DELETE FROM tbl_linea_parada WHERE id_linea = ANY($1::bigint[])`, [ids.lineas]);
+        await q(`DELETE FROM tbl_linea WHERE id_linea = ANY($1::bigint[])`, [ids.lineas]);
+      }
       if (ids.tarjetas.length) {
         await q(`DELETE FROM tbl_tarjeta_ciudadana WHERE id_tarjeta_ciudadana = ANY($1::bigint[])`, [ids.tarjetas]);
       }
@@ -292,17 +355,29 @@ describe("Ridership (e2e)", () => {
       expect(event).toEqual({ tipo: "ENTRADA", monto: "1.00" });
     });
 
-    it("SALIDA charges nothing, ignores the card state and does not change the waiting count", async () => {
+    // bus-passenger-report S2: the turnstile is the only in/out of a parada.
+    it("SALIDA charges nothing, ignores the card state and removes one person from the parada", async () => {
       const card = await createCard("exit-blocked", "3.00", "BLOQUEADA");
       const waiting = (await api().get(`/operations/ridership/stops/${stopC}`).set("Authorization", `Bearer ${adminToken}`)).body
-        .personasEnParada;
+        .personasEnParada as number;
+      expect(waiting).toBeGreaterThan(0);
 
       const res = await pass(card, stopC, "SALIDA");
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ tipo: "SALIDA", montoCobrado: 0, saldo: 3, alertaGenerada: false });
-      expect(res.body.parada.personasEnParada).toBe(waiting);
+      expect(res.body.parada.personasEnParada).toBe(waiting - 1);
       expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("a SALIDA at an empty parada is accepted and the count stays at 0", async () => {
+      const empty = await createStop("Vacia", 10, false);
+
+      const res = await pass(walletCard, empty, "SALIDA");
+
+      expect(res.status).toBe(201);
+      expect(res.body.parada.personasEnParada).toBe(0);
+      expect((await enter(empty, 1)).body.parada.personasEnParada).toBe(1);
     });
 
     it.each([
@@ -497,133 +572,186 @@ describe("Ridership (e2e)", () => {
     });
   });
 
-  describe("bus stops (S2, S8)", () => {
-    it("boards the waiting on arrival and adds 5 minutes below 25% (9 of 40)", async () => {
-      await enter(stopB, 9);
-
+  // odd/tasks/bus-passenger-report.md S3-S9: the pilot reports, at the unit's
+  // current stop, how many got off and on; the bus only moves people.
+  describe("pilot passenger report (bus-passenger-report S3-S9)", () => {
+    const myUnit = (token: string) => api().get("/operations/ridership/my-unit").set("Authorization", `Bearer ${token}`);
+    const report = (token: string, body: Record<string, unknown>) =>
+      api().post("/operations/ridership/my-unit/stop-report").set("Authorization", `Bearer ${token}`).send(body);
+    const atStop = async (token: string, idParada: string) => {
       const res = await api()
-        .post(`/operations/ridership/units/${unit1}/arrival`)
-        .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idParada: Number(stopB) });
+        .post("/fleet/units/my-unit/location")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ idLineaParada: linePositions.get(idParada) });
+      expect(res.status).toBe(200);
+    };
+    const people = async (idParada: string) =>
+      (await api().get(`/operations/ridership/stops/${idParada}`).set("Authorization", `Bearer ${adminToken}`)).body
+        .personasEnParada as number;
+    const reportCount = async () =>
+      Number(
+        (await one<{ n: string }>(`SELECT COUNT(*) AS "n" FROM tbl_parada_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades])).n,
+      );
+
+    it("starts with nobody on board and no report", async () => {
+      const res = await myUnit(pilot1.token);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        idUnidad: unit1,
+        numeroPlaca: `${runTag.slice(-10)}U1`,
+        capacidadPasajeros: 40,
+        aBordo: 0,
+        porcentaje: 0,
+        ultimoReporte: null,
+      });
+    });
+
+    it("rejects a report before the unit has a current stop (409) and stores nothing", async () => {
+      const before = await reportCount();
+
+      const res = await report(pilot1.token, { bajaron: 0, subieron: 1 });
+
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe("Reporte primero la parada en la que se encuentra la unidad.");
+      expect(await reportCount()).toBe(before);
+    });
+
+    it("accepts boarding more people than the parada counts and floors the parada at 0 (S4); 5 of 40 waits 5 minutes", async () => {
+      await enter(stopE, 3);
+      await atStop(pilot1.token, stopE);
+
+      const res = await report(pilot1.token, { bajaron: 0, subieron: 5 });
 
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({
-        idUnidad: unit1,
-        idParada: stopB,
-        idEstacion: estacionOf.get(stopB),
-        capacidadPasajeros: 40,
-        ocupacionLlegada: 0,
-        subieron: 9,
+        idParada: stopE,
+        nombreParada: `${runTag} E`,
         bajaron: 0,
-        ocupacionEstimada: 9,
+        subieron: 5,
+        aBordo: 5,
+        porcentaje: 13,
         minutosEsperaExtra: 5,
-        fechaSalida: null,
       });
-      const station = await api().get(`/operations/ridership/stops/${stopB}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(station.body.personasEnParada).toBe(0);
+      expect(await people(stopE)).toBe(0);
+      // The floor sticks: the extra 2 boarders never eat a later entry.
+      expect((await enter(stopE, 1)).body.parada.personasEnParada).toBe(1);
+      await exit(stopE, 1);
+      expect(await people(stopE)).toBe(0);
+      const stored = await one<{ idEmpleado: string; idParada: string }>(
+        `SELECT id_empleado AS "idEmpleado", id_parada AS "idParada" FROM tbl_parada_unidad WHERE id_parada_unidad = $1`,
+        [res.body.idParadaUnidad],
+      );
+      expect(stored).toEqual({ idEmpleado: pilot1.id, idParada: stopE });
     });
 
-    it("rejects a second arrival while the stop is open with 409", async () => {
-      const res = await api()
-        .post(`/operations/ridership/units/${unit1}/arrival`)
-        .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idParada: Number(stopC) });
-      expect(res.status).toBe(409);
-    });
+    it("drops passengers at the next parada before boarding (bus -> parada, parada -> bus)", async () => {
+      await enter(stopF, 2);
+      await atStop(pilot1.token, stopF);
 
-    it("adds no minutes at exactly 25% (10 of 40)", async () => {
-      const waiting = (await api().get(`/operations/ridership/stops/${stopC}`).set("Authorization", `Bearer ${adminToken}`)).body
-        .personasEnParada as number;
-      await enter(stopC, 10 - waiting);
-
-      const res = await api()
-        .post(`/operations/ridership/units/${unit2}/arrival`)
-        .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idParada: Number(stopC) });
+      const res = await report(pilot1.token, { bajaron: 2, subieron: 1 });
 
       expect(res.status).toBe(201);
-      expect(res.body).toMatchObject({ subieron: 10, ocupacionEstimada: 10, minutosEsperaExtra: 0 });
+      expect(res.body).toMatchObject({ idParada: stopF, bajaron: 2, subieron: 1, aBordo: 4, minutosEsperaExtra: 5 });
+      // 2 entered + 2 got off the bus - 1 got on.
+      expect(await people(stopF)).toBe(3);
     });
 
-    it("on departure boards the newly waiting and counts exits only up to the arrival occupancy", async () => {
-      // unit1 arrived at B with 0 aboard: 2 exits cannot get anyone off.
-      await exit(stopB, 2);
-      await enter(stopB, 1);
+    it("adds no minutes at exactly 25% (10 of 40) and shows the last report", async () => {
+      const res = await report(pilot1.token, { bajaron: 0, subieron: 6 });
+      expect(res.body).toMatchObject({ aBordo: 10, porcentaje: 25, minutosEsperaExtra: 0 });
 
-      const res = await api()
-        .post(`/operations/ridership/units/${unit1}/departure`)
-        .set("Authorization", `Bearer ${adminToken}`)
-        .send();
+      const unit = await myUnit(pilot1.token);
+      expect(unit.body).toMatchObject({ aBordo: 10, porcentaje: 25 });
+      expect(unit.body.ultimoReporte).toMatchObject({
+        idParadaUnidad: res.body.idParadaUnidad,
+        idParada: stopF,
+        bajaron: 0,
+        subieron: 6,
+        aBordo: 10,
+        minutosEsperaExtra: 0,
+      });
+      expect(new Date(unit.body.ultimoReporte.fecha).toISOString()).toBe(unit.body.ultimoReporte.fecha);
 
-      expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ ocupacionLlegada: 0, bajaron: 0, subieron: 10, ocupacionEstimada: 10 });
-      expect(res.body.fechaSalida).not.toBeNull();
+      const central = await api().get(`/operations/ridership/units/${unit1}`).set("Authorization", `Bearer ${adminToken}`);
+      expect(central.status).toBe(200);
+      expect(central.body).toEqual(unit.body);
     });
 
-    it("subtracts exits from the occupancy the bus arrived with", async () => {
-      await api().post(`/operations/ridership/units/${unit2}/departure`).set("Authorization", `Bearer ${adminToken}`).send();
-      const arrival = await api()
-        .post(`/operations/ridership/units/${unit1}/arrival`)
-        .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idParada: Number(stopC) });
-      expect(arrival.body).toMatchObject({ ocupacionLlegada: 10, subieron: 0, ocupacionEstimada: 10 });
-      await exit(stopC, 3);
+    it("accepts a 0/0 report (the bus stopped and nobody moved)", async () => {
+      const res = await report(pilot1.token, { bajaron: 0, subieron: 0 });
 
-      const res = await api().post(`/operations/ridership/units/${unit1}/departure`).set("Authorization", `Bearer ${adminToken}`).send();
-
-      expect(res.body).toMatchObject({ ocupacionLlegada: 10, bajaron: 3, ocupacionEstimada: 7 });
-      const unit = await api().get(`/operations/ridership/units/${unit1}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(unit.status).toBe(200);
-      expect(unit.body).toMatchObject({ idUnidad: unit1, capacidadPasajeros: 40, ocupacionEstimada: 7, paradaAbierta: null });
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ bajaron: 0, subieron: 0, aBordo: 10 });
     });
 
-    it("never boards more than the free seats and leaves the rest waiting", async () => {
-      const before = (await api().get(`/operations/ridership/stops/${stopA}`).set("Authorization", `Bearer ${adminToken}`)).body
-        .personasEnParada as number;
+    it("rejects more people getting off than are on board (409), changing nothing", async () => {
+      const before = await reportCount();
+      const waiting = await people(stopF);
 
-      const res = await api()
-        .post(`/operations/ridership/units/${unitSmall}/arrival`)
-        .set("Authorization", `Bearer ${adminToken}`)
-        .send({ idParada: Number(stopA) });
+      const res = await report(pilot1.token, { bajaron: 11, subieron: 0 });
 
-      expect(res.body).toMatchObject({ capacidadPasajeros: 2, subieron: 2, ocupacionEstimada: 2, minutosEsperaExtra: 0 });
-      const after = await api().get(`/operations/ridership/stops/${stopA}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(after.body.personasEnParada).toBe(before - 2);
-      const unit = await api().get(`/operations/ridership/units/${unitSmall}`).set("Authorization", `Bearer ${adminToken}`);
-      expect(unit.body.paradaAbierta).toMatchObject({ idParada: stopA, idEstacion: null, minutosEsperaExtra: 0 });
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe("No pueden bajar 11 pasajeros: la unidad lleva 10.");
+      expect(await reportCount()).toBe(before);
+      expect(await people(stopF)).toBe(waiting);
+      expect((await myUnit(pilot1.token)).body.aBordo).toBe(10);
     });
 
-    it("rejects a departure without an open stop (409), unknown unit or station (404) and stores nothing", async () => {
-      const stops = async () =>
-        Number(
-          (await one<{ n: string }>(`SELECT COUNT(*) AS "n" FROM tbl_parada_unidad WHERE id_unidad = ANY($1::bigint[])`, [ids.unidades])).n,
-        );
-      const before = await stops();
+    it("rejects going over the unit capacity (409), changing nothing", async () => {
+      await atStop(pilot2.token, stopE);
+      const before = await reportCount();
 
-      expect((await api().post(`/operations/ridership/units/${unit1}/departure`).set("Authorization", `Bearer ${adminToken}`).send()).status).toBe(409);
+      const res = await report(pilot2.token, { bajaron: 0, subieron: 3 });
+
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe("La unidad quedaría con 3 pasajeros y su capacidad es 2.");
+      expect(await reportCount()).toBe(before);
+      expect((await report(pilot2.token, { bajaron: 0, subieron: 2 })).body).toMatchObject({ aBordo: 2, minutosEsperaExtra: 0 });
+    });
+
+    it.each([
+      ["a negative number", { bajaron: -1, subieron: 0 }],
+      ["a decimal", { bajaron: 0, subieron: 1.5 }],
+      ["a string", { bajaron: "2", subieron: 0 }],
+      ["a missing field", { subieron: 1 }],
+    ])("rejects %s with 400 and stores nothing", async (_label, body) => {
+      const before = await reportCount();
+
+      expect((await report(pilot1.token, body)).status).toBe(400);
+      expect(await reportCount()).toBe(before);
+    });
+
+    it("answers 404 to a pilot without a unit", async () => {
+      expect((await myUnit(pilot3Token)).status).toBe(404);
+      expect((await report(pilot3Token, { bajaron: 0, subieron: 0 })).status).toBe(404);
+    });
+
+    it("no longer serves arrival and departure", async () => {
       expect(
-        (await api().post(`/operations/ridership/units/999999999/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idParada: Number(stopB) }))
+        (await api().post(`/operations/ridership/units/${unit1}/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idParada: Number(stopE) }))
           .status,
       ).toBe(404);
-      expect(
-        (await api().post(`/operations/ridership/units/${unit1}/arrival`).set("Authorization", `Bearer ${adminToken}`).send({ idParada: 999999999 }))
-          .status,
-      ).toBe(404);
-      expect((await api().get(`/operations/ridership/units/999999999`).set("Authorization", `Bearer ${adminToken}`)).status).toBe(404);
-      expect((await api().get(`/operations/ridership/stops/999999999`).set("Authorization", `Bearer ${adminToken}`)).status).toBe(404);
-
-      expect(await stops()).toBe(before);
+      expect((await api().post(`/operations/ridership/units/${unit1}/departure`).set("Authorization", `Bearer ${adminToken}`).send()).status).toBe(404);
     });
   });
 
-  describe("permissions (S8, S9)", () => {
+  describe("permissions", () => {
     it("requires a token and the right permission", async () => {
       expect((await api().get(`/operations/ridership/stops/${stopA}`)).status).toBe(401);
       expect((await api().get(`/operations/ridership/stops/${stopA}`).set("Authorization", `Bearer ${pilotToken}`)).status).toBe(403);
       expect((await api().get(`/operations/ridership/alerts`).set("Authorization", `Bearer ${pilotToken}`)).status).toBe(403);
+      expect((await api().get("/operations/ridership/my-unit")).status).toBe(401);
       expect(
-        (await api().post(`/operations/ridership/units/${unit2}/arrival`).set("Authorization", `Bearer ${pilotToken}`).send({ idParada: Number(stopB) }))
-          .status,
+        (await api().get("/operations/ridership/my-unit").set("Authorization", `Bearer ${stationOperatorToken}`)).status,
+      ).toBe(403);
+      expect(
+        (
+          await api()
+            .post("/operations/ridership/my-unit/stop-report")
+            .set("Authorization", `Bearer ${stationOperatorToken}`)
+            .send({ bajaron: 0, subieron: 0 })
+        ).status,
       ).toBe(403);
     });
   });

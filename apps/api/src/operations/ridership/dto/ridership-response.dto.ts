@@ -27,32 +27,26 @@ export class TurnstilePassResponseDto {
   repetido!: boolean;
 }
 
-export class UnitStopDto {
+// One pilot report at a parada (bus-passenger-report S3, S7).
+export class StopReportDto {
   @ApiProperty() idParadaUnidad!: string;
-  @ApiProperty() idUnidad!: string;
-  @ApiProperty() numeroPlaca!: string;
-  @ApiProperty() capacidadPasajeros!: number;
   @ApiProperty() idParada!: string;
   @ApiProperty() nombreParada!: string;
-  @ApiProperty({ type: String, nullable: true }) idEstacion!: string | null;
-  @ApiProperty({ description: "Pasajeros a bordo al llegar" }) ocupacionLlegada!: number;
-  @ApiProperty() subieron!: number;
   @ApiProperty() bajaron!: number;
-  @ApiProperty({ description: "Estimación de pasajeros a bordo" }) ocupacionEstimada!: number;
+  @ApiProperty() subieron!: number;
+  @ApiProperty({ description: "Pasajeros a bordo después del reporte" }) aBordo!: number;
   @ApiProperty() porcentaje!: number;
   @ApiProperty({ description: "5 si la unidad quedó bajo el 25% de su capacidad" }) minutosEsperaExtra!: number;
-  @ApiProperty({ description: "ISO 8601" }) fechaLlegada!: string;
-  @ApiProperty({ type: String, nullable: true, description: "ISO 8601; null mientras sigue detenida" })
-  fechaSalida!: string | null;
+  @ApiProperty({ description: "ISO 8601" }) fecha!: string;
 }
 
 export class UnitOccupancyDto {
   @ApiProperty() idUnidad!: string;
   @ApiProperty() numeroPlaca!: string;
   @ApiProperty() capacidadPasajeros!: number;
-  @ApiProperty() ocupacionEstimada!: number;
+  @ApiProperty({ description: "Pasajeros a bordo según el último reporte (0 sin reportes)" }) aBordo!: number;
   @ApiProperty() porcentaje!: number;
-  @ApiProperty({ type: UnitStopDto, nullable: true }) paradaAbierta!: UnitStopDto | null;
+  @ApiProperty({ type: StopReportDto, nullable: true }) ultimoReporte!: StopReportDto | null;
 }
 
 export class CapacityAlertParadaDto {

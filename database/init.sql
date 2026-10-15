@@ -231,7 +231,8 @@ CREATE TABLE IF NOT EXISTS tbl_parada (
     latitud DECIMAL(10,8) NOT NULL CHECK (latitud BETWEEN -90 AND 90),
     longitud DECIMAL(11,8) NOT NULL CHECK (longitud BETWEEN -180 AND 180),
     estado_parada VARCHAR(20) NOT NULL CHECK (estado_parada IN ('ACTIVA', 'CERRADA', 'MANTENIMIENTO')),
-    capacidad_pasajeros INTEGER NOT NULL DEFAULT 100 CHECK (capacidad_pasajeros > 0)
+    capacidad_pasajeros INTEGER NOT NULL DEFAULT 100 CHECK (capacidad_pasajeros > 0),
+    personas_en_parada INTEGER NOT NULL DEFAULT 0 CHECK (personas_en_parada >= 0)
 );
 
 -- An estacion is a 1:1 extension of a parada.
@@ -679,5 +680,32 @@ ALTER TABLE tbl_parada_unidad ADD COLUMN IF NOT EXISTS id_empleado BIGINT REFERE
 
 CREATE INDEX IF NOT EXISTS idx_parada_unidad_unidad
     ON tbl_parada_unidad (id_unidad, fecha_reporte);
+
+-- tbl_parada.personas_en_parada — personas esperando ahora en la parada.
+-- Lo cambian, con la fila de la parada bloqueada y en la misma transacción
+-- que guarda el evento: la talanquera (+1 entrada, -1 salida) y el reporte
+-- del piloto (+bajaron, -subieron), nunca por debajo de 0. Al agregar la
+-- columna a una base existente se calcula una vez desde los eventos y los
+-- reportes guardados.
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'tbl_parada' AND column_name = 'personas_en_parada'
+    ) THEN
+        ALTER TABLE tbl_parada
+            ADD COLUMN personas_en_parada INTEGER NOT NULL DEFAULT 0 CHECK (personas_en_parada >= 0);
+        UPDATE tbl_parada p
+           SET personas_en_parada = GREATEST(0,
+                 (SELECT COUNT(*) FILTER (WHERE tipo_evento = 'ENTRADA')
+                       - COUNT(*) FILTER (WHERE tipo_evento = 'SALIDA')
+                    FROM tbl_evento_talanquera ev WHERE ev.id_parada = p.id_parada)
+               + (SELECT COALESCE(SUM(pu.bajaron - pu.subieron), 0)
+                    FROM tbl_parada_unidad pu WHERE pu.id_parada = p.id_parada));
+    END IF;
+END
+$$;
 
 COMMIT;

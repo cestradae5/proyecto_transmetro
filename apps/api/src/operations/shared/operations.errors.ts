@@ -73,17 +73,25 @@ export class InsufficientBalance extends ConflictError {
   }
 }
 
-export class UnitAlreadyAtStop extends ConflictError {
-  constructor(id: string) {
-    super(`La unidad ${id} ya está detenida en una estación; registre su salida primero.`);
-    this.name = "UnitAlreadyAtStop";
+// bus-passenger-report S3, S5: pilot stop reports.
+export class NoCurrentStop extends ConflictError {
+  constructor() {
+    super("Reporte primero la parada en la que se encuentra la unidad.");
+    this.name = "NoCurrentStop";
   }
 }
 
-export class UnitNotAtStop extends ConflictError {
-  constructor(id: string) {
-    super(`La unidad ${id} no está detenida en ninguna estación.`);
-    this.name = "UnitNotAtStop";
+export class TooManyGettingOff extends ConflictError {
+  constructor(bajaron: number, aBordo: number) {
+    super(`No pueden bajar ${bajaron} pasajeros: la unidad lleva ${aBordo}.`);
+    this.name = "TooManyGettingOff";
+  }
+}
+
+export class OverCapacity extends ConflictError {
+  constructor(aBordo: number, capacidad: number) {
+    super(`La unidad quedaría con ${aBordo} pasajeros y su capacidad es ${capacidad}.`);
+    this.name = "OverCapacity";
   }
 }
 

@@ -1,10 +1,4 @@
-import {
-  board,
-  extraWaitMinutes,
-  getOff,
-  percentOf,
-  reachesStationAlert,
-} from "./ridership.rules.js";
+import { extraWaitMinutes, percentOf, reachesStationAlert } from "./ridership.rules.js";
 
 describe("ridership rules", () => {
   describe("reachesStationAlert (S1: at least 150% of the station capacity)", () => {
@@ -36,32 +30,6 @@ describe("ridership rules", () => {
       [1, 4, 0],
     ])("occupancy %i of %i -> %i minutes", (occupancy, capacity, expected) => {
       expect(extraWaitMinutes(occupancy, capacity)).toBe(expected);
-    });
-  });
-
-  describe("board (S8)", () => {
-    it.each([
-      [3, 0, 40, 3],
-      [50, 0, 40, 40],
-      [8, 39, 40, 1],
-      [8, 40, 40, 0],
-      [0, 10, 40, 0],
-      // A capacity lowered below the carried occupancy boards nobody.
-      [5, 45, 40, 0],
-      [10, 5, 4, 0],
-    ])("%i waiting, %i aboard, capacity %i -> %i board", (waiting, aboard, capacity, expected) => {
-      expect(board(waiting, aboard, capacity)).toBe(expected);
-    });
-  });
-
-  describe("getOff (S8)", () => {
-    it.each([
-      [2, 0, 0],
-      [3, 10, 3],
-      [12, 10, 10],
-      [0, 10, 0],
-    ])("%i exits with %i aboard on arrival -> %i get off", (exits, arrivedWith, expected) => {
-      expect(getOff(exits, arrivedWith)).toBe(expected);
     });
   });
 

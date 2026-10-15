@@ -2,14 +2,16 @@ import { Injectable } from "@nestjs/common";
 import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource, QueryFailedError } from "typeorm";
 
+import { PilotHasNoUnitAssigned } from "../../fleet/shared/fleet.errors.js";
 import {
   CardNotActive,
   CardNotFound,
   IdempotencyKeyConflict,
   InsufficientBalance,
+  NoCurrentStop,
+  OverCapacity,
   ParadaNotFound,
-  UnitAlreadyAtStop,
-  UnitNotAtStop,
+  TooManyGettingOff,
   UnitNotFound,
 } from "../shared/operations.errors.js";
 import {
@@ -20,32 +22,39 @@ import {
   CARD_ACTIVE,
   FARE,
 } from "./ridership.constants.js";
-import { board, extraWaitMinutes, getOff, percentOf, reachesStationAlert } from "./ridership.rules.js";
+import { extraWaitMinutes, percentOf, reachesStationAlert } from "./ridership.rules.js";
 import type {
   CapacityAlertDto,
   ParadaOccupancyDto,
+  StopReportDto,
   TurnstilePassResponseDto,
   UnitOccupancyDto,
-  UnitStopDto,
 } from "./dto/ridership-response.dto.js";
-import type { TurnstilePassDto, UnitArrivalDto } from "./dto/ridership-request.dto.js";
+import type { StopReportRequestDto, TurnstilePassDto } from "./dto/ridership-request.dto.js";
 
 interface Queryable {
   query(sql: string, params?: unknown[]): Promise<unknown>;
 }
 
-// A parada and, when it is also a station, its tbl_estacion id.
+// A parada, its current count and, when it is also a station, its
+// tbl_estacion id.
 interface ParadaRow {
   idParada: string;
   nombreParada: string;
   idEstacion: string | null;
   capacidadPasajeros: number;
+  personasEnParada: number;
 }
 
 interface UnitRow {
   idUnidad: string;
   numeroPlaca: string;
   capacidadPasajeros: number;
+}
+
+// The pilot's unit and the parada of its current reported stop, if any.
+interface PilotUnitRow extends UnitRow {
+  idParadaActual: string | null;
 }
 
 interface CardRow {
@@ -62,18 +71,15 @@ interface KeyedEventRow {
   montoCobrado: string;
 }
 
-interface StopRow {
+interface ReportRow {
   idParadaUnidad: string;
   idParada: string;
   nombreParada: string;
-  idEstacion: string | null;
-  fechaLlegada: Date | string;
-  fechaSalida: Date | string | null;
-  ocupacionLlegada: number;
-  subieron: number;
   bajaron: number;
+  subieron: number;
   ocupacionResultante: number;
   minutosEsperaExtra: number;
+  fechaReporte: Date | string;
 }
 
 interface CapacityAlertRow {
@@ -91,29 +97,29 @@ const NUMERIC_ID = /^\d+$/;
 // Postgres' default name for UNIQUE (clave_idempotencia) in database/init.sql.
 const IDEMPOTENCY_UNIQUE = "tbl_evento_talanquera_clave_idempotencia_key";
 
-const STOP_COLUMNS = `
-       pu.id_parada_unidad AS "idParadaUnidad",
-       p.id_parada AS "idParada",
-       p.nombre_parada AS "nombreParada",
-       e.id_estacion AS "idEstacion",
-       pu.fecha_llegada AS "fechaLlegada",
-       pu.fecha_salida AS "fechaSalida",
-       pu.ocupacion_llegada AS "ocupacionLlegada",
-       pu.subieron AS "subieron",
-       pu.bajaron AS "bajaron",
-       pu.ocupacion_resultante AS "ocupacionResultante",
-       pu.minutos_espera_extra AS "minutosEsperaExtra"`;
-
-const STOP_FROM = `
+const REPORT_SELECT = `
+       SELECT pu.id_parada_unidad AS "idParadaUnidad",
+              p.id_parada AS "idParada",
+              p.nombre_parada AS "nombreParada",
+              pu.bajaron AS "bajaron",
+              pu.subieron AS "subieron",
+              pu.ocupacion_resultante AS "ocupacionResultante",
+              pu.minutos_espera_extra AS "minutosEsperaExtra",
+              pu.fecha_reporte AS "fechaReporte"
          FROM tbl_parada_unidad pu
-        INNER JOIN tbl_parada p ON p.id_parada = pu.id_parada
-         LEFT JOIN tbl_estacion e ON e.id_parada = p.id_parada`;
+        INNER JOIN tbl_parada p ON p.id_parada = pu.id_parada`;
 
-// Passenger counting from turnstile events (odd/tasks/ridership-capacity.md,
-// odd/tasks/parada-ridership.md). The turnstile sees people entering and
-// leaving a PARADA (a station is a parada with a tbl_estacion row and uses
-// its parada's count and capacity); who rides a bus is an estimate per stop.
-// Raw SQL on the shared DataSource, like AlertaService.
+// Passenger counting (odd/tasks/ridership-capacity.md, parada-ridership.md,
+// bus-passenger-report.md). Two separate features:
+// - The turnstile is the only way into or out of a PARADA: ENTRADA adds one
+//   person and charges the fare, SALIDA removes one. A station is a parada
+//   with a tbl_estacion row and uses its parada's count and capacity.
+// - The bus only moves people between paradas: at its current stop the
+//   pilot reports how many got off (bus -> parada) and on (parada -> bus).
+// The parada keeps its current count (tbl_parada.personas_en_parada), floored
+// at 0, changed in the same transaction that stores the event or report;
+// events and reports stay as the audit trail. Raw SQL on the shared
+// DataSource, like AlertaService.
 //
 // Locks keep the counts consistent under concurrent requests, always taken
 // in the same order to avoid deadlocks: unit, then parada, then card.
@@ -124,8 +130,8 @@ export class RidershipService {
     private readonly dataSource: DataSource,
   ) {}
 
-  // S4, S5, S1, S7: one turnstile pass. With an idempotencyKey a retry
-  // returns the original pass (user-web S7).
+  // One turnstile pass. With an idempotencyKey a retry returns the original
+  // pass (user-web S7).
   async registerPass(dto: TurnstilePassDto): Promise<TurnstilePassResponseDto> {
     try {
       return await this.registerPassOnce(dto);
@@ -163,7 +169,7 @@ export class RidershipService {
           ) {
             throw new IdempotencyKeyConflict();
           }
-          const people = await this.waitingAt(manager, parada.idParada);
+          const people = parada.personasEnParada;
           return {
             idEvento: String(original.idEvento),
             tipo: dto.tipo,
@@ -203,7 +209,7 @@ export class RidershipService {
         [parada.idParada, card.idTarjeta, dto.tipo, charged.toFixed(2), key],
       )) as { idEvento: string }[];
 
-      const people = await this.waitingAt(manager, parada.idParada);
+      const people = await this.moveParadaCount(manager, parada.idParada, dto.tipo === "ENTRADA" ? 1 : -1);
       let idAlerta: string | null = null;
       // The parada row lock serializes passes at this parada, so two
       // concurrent entries cannot both create the alert.
@@ -239,106 +245,71 @@ export class RidershipService {
     });
   }
 
-  // S8, S2: the bus stops at a parada and boards the waiting.
-  async arrive(idUnidad: string, dto: UnitArrivalDto): Promise<UnitStopDto> {
-    const stopId = await this.dataSource.transaction(async (manager) => {
-      const unit = await this.lockUnit(manager, idUnidad);
-      const parada = await this.lockParada(manager, String(dto.idParada));
-      if (await this.findOpenStop(manager, unit.idUnidad)) {
-        throw new UnitAlreadyAtStop(unit.idUnidad);
-      }
+  // bus-passenger-report S3-S6: the pilot reports, at the unit's current
+  // stop, who got off (first) and who got on. Boarding more people than the
+  // parada counts is accepted (S4: the parada count floors at 0); the bus
+  // limits are strict.
+  async reportStop(employeeId: string, dto: StopReportRequestDto): Promise<StopReportDto> {
+    const idParadaUnidad = await this.dataSource.transaction(async (manager) => {
+      const unit = await this.findPilotUnit(manager, employeeId, true);
+      if (unit.idParadaActual === null) throw new NoCurrentStop();
+      const parada = await this.lockParada(manager, unit.idParadaActual);
 
-      // A lowered unit capacity never leaves more aboard than it holds.
-      const arrivedWith = Math.min(
-        await this.lastOccupancy(manager, unit.idUnidad),
-        unit.capacidadPasajeros,
-      );
-      const boarded = board(await this.waitingAt(manager, parada.idParada), arrivedWith, unit.capacidadPasajeros);
-      const occupancy = arrivedWith + boarded;
+      const onBoard = await this.onBoard(manager, unit);
+      if (dto.bajaron > onBoard) throw new TooManyGettingOff(dto.bajaron, onBoard);
+      const after = onBoard - dto.bajaron + dto.subieron;
+      if (after > unit.capacidadPasajeros) throw new OverCapacity(after, unit.capacidadPasajeros);
+
+      // People who got off join the parada; people who got on leave it. More
+      // boarding than the parada counts is accepted (S4): the count floors at 0.
+      await this.moveParadaCount(manager, parada.idParada, dto.bajaron - dto.subieron);
 
       const inserted = (await manager.query(
         `INSERT INTO tbl_parada_unidad
-           (id_unidad, id_parada, ocupacion_llegada, subieron, bajaron, ocupacion_resultante, minutos_espera_extra)
-         VALUES ($1, $2, $3, $4, 0, $5, $6)
+           (id_unidad, id_parada, id_empleado, bajaron, subieron, ocupacion_resultante, minutos_espera_extra)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id_parada_unidad AS "id"`,
         [
           unit.idUnidad,
           parada.idParada,
-          arrivedWith,
-          boarded,
-          occupancy,
-          extraWaitMinutes(occupancy, unit.capacidadPasajeros),
+          employeeId,
+          dto.bajaron,
+          dto.subieron,
+          after,
+          extraWaitMinutes(after, unit.capacidadPasajeros),
         ],
       )) as { id: string }[];
       return String(inserted[0]!.id);
     });
-    return this.findStop(stopId);
+
+    const rows = (await this.dataSource.query(`${REPORT_SELECT} WHERE pu.id_parada_unidad = $1`, [
+      idParadaUnidad,
+    ])) as ReportRow[];
+    const unit = await this.findPilotUnit(this.dataSource, employeeId, false);
+    return this.toReportDto(rows[0]!, unit.capacidadPasajeros);
   }
 
-  // S8: the bus leaves. Exits during the stop get off, then the passengers
-  // who arrived meanwhile board.
-  async depart(idUnidad: string): Promise<UnitStopDto> {
-    const stopId = await this.dataSource.transaction(async (manager) => {
-      const unit = await this.lockUnit(manager, idUnidad);
-      const open = await this.findOpenStop(manager, unit.idUnidad);
-      if (!open) throw new UnitNotAtStop(unit.idUnidad);
-      await this.lockParada(manager, open.idParada);
-
-      const exits = Number(
-        firstRow(
-          (await manager.query(
-            `SELECT COUNT(*) AS "n" FROM tbl_evento_talanquera
-              WHERE id_parada = $1 AND tipo_evento = 'SALIDA' AND fecha_evento >= $2`,
-            [open.idParada, open.fechaLlegada],
-          )) as { n: string }[],
-        ).n,
-      );
-      const gotOff = getOff(exits, Number(open.ocupacionLlegada));
-      const afterExits = Math.min(Number(open.ocupacionResultante) - gotOff, unit.capacidadPasajeros);
-      const boarded = board(await this.waitingAt(manager, open.idParada), afterExits, unit.capacidadPasajeros);
-
-      await manager.query(
-        `UPDATE tbl_parada_unidad
-            SET fecha_salida = CURRENT_TIMESTAMP,
-                bajaron = $1,
-                subieron = subieron + $2,
-                ocupacion_resultante = $3
-          WHERE id_parada_unidad = $4`,
-        [gotOff, boarded, afterExits + boarded, open.idParadaUnidad],
-      );
-      return String(open.idParadaUnidad);
-    });
-    return this.findStop(stopId);
+  // bus-passenger-report S7: the pilot's unit, people on board and the last
+  // report.
+  async getMyUnit(employeeId: string): Promise<UnitOccupancyDto> {
+    return this.toUnitDto(this.dataSource, await this.findPilotUnit(this.dataSource, employeeId, false));
   }
 
-  // S9 (parada-ridership S8)
+  // bus-passenger-report S9: the same reading for central operation.
+  async getUnit(idUnidad: string): Promise<UnitOccupancyDto> {
+    return this.toUnitDto(this.dataSource, await this.findUnit(this.dataSource, idUnidad));
+  }
+
+  // parada-ridership S8
   async getParada(idParada: string): Promise<ParadaOccupancyDto> {
     const parada = await this.findParada(this.dataSource, idParada, false);
-    const people = await this.waitingAt(this.dataSource, parada.idParada);
     return {
-      ...this.toParadaDto(parada, people),
+      ...this.toParadaDto(parada, parada.personasEnParada),
       alertaActiva: await this.hasOpenAlert(this.dataSource, parada.idParada),
     };
   }
 
-  // S9: occupancy carried by the open stop, else by the last closed one.
-  async getUnit(idUnidad: string): Promise<UnitOccupancyDto> {
-    const unit = await this.findUnit(this.dataSource, idUnidad, false);
-    const open = await this.findOpenStop(this.dataSource, unit.idUnidad);
-    const occupancy = open
-      ? Number(open.ocupacionResultante)
-      : Math.min(await this.lastOccupancy(this.dataSource, unit.idUnidad), unit.capacidadPasajeros);
-    return {
-      idUnidad: unit.idUnidad,
-      numeroPlaca: unit.numeroPlaca,
-      capacidadPasajeros: unit.capacidadPasajeros,
-      ocupacionEstimada: occupancy,
-      porcentaje: percentOf(occupancy, unit.capacidadPasajeros),
-      paradaAbierta: open ? this.toStopDto(unit, open) : null,
-    };
-  }
-
-  // S9: newest capacity alerts, with their parada (and station, if any).
+  // Newest capacity alerts, with their parada (and station, if any).
   async listCapacityAlerts(): Promise<CapacityAlertDto[]> {
     const rows = (await this.dataSource.query(
       `SELECT a.id_alerta AS "idAlerta",
@@ -368,20 +339,18 @@ export class RidershipService {
     }));
   }
 
-  // S7: people who entered the parada minus those who boarded a bus there.
-  // Exits are passengers leaving buses, so they do not change the waiting.
-  private async waitingAt(runner: Queryable, idParada: string): Promise<number> {
-    const row = firstRow(
-      (await runner.query(
-        `SELECT GREATEST(0,
-                  (SELECT COUNT(*) FROM tbl_evento_talanquera
-                    WHERE id_parada = $1 AND tipo_evento = 'ENTRADA')
-                - (SELECT COALESCE(SUM(subieron), 0) FROM tbl_parada_unidad
-                    WHERE id_parada = $1))::int AS "people"`,
-        [idParada],
-      )) as { people: number }[],
-    );
-    return Number(row.people);
+  // bus-passenger-report S2, S4: applies a change to the parada's current
+  // count, never below 0, and returns the new count. The caller holds the
+  // parada row lock. The floor sticks: an exit at an empty parada, or more
+  // boarding than counted, never eats later entries.
+  private async moveParadaCount(runner: Queryable, idParada: string, delta: number): Promise<number> {
+    const updated = (await runner.query(
+      `UPDATE tbl_parada SET personas_en_parada = GREATEST(0, personas_en_parada + $1)
+        WHERE id_parada = $2
+        RETURNING personas_en_parada AS "people"`,
+      [delta, idParada],
+    )) as [{ people: number }[], number] | { people: number }[];
+    return Number(firstRow(updated).people);
   }
 
   private async hasOpenAlert(runner: Queryable, idParada: string): Promise<boolean> {
@@ -394,39 +363,49 @@ export class RidershipService {
     return rows.length > 0;
   }
 
-  private async lastOccupancy(runner: Queryable, idUnidad: string): Promise<number> {
+  private async lastReport(runner: Queryable, idUnidad: string): Promise<ReportRow | null> {
     const rows = (await runner.query(
-      `SELECT ocupacion_resultante AS "ocupacion" FROM tbl_parada_unidad
-        WHERE id_unidad = $1 AND fecha_salida IS NOT NULL
-        ORDER BY fecha_salida DESC, id_parada_unidad DESC
+      `${REPORT_SELECT}
+        WHERE pu.id_unidad = $1
+        ORDER BY pu.fecha_reporte DESC, pu.id_parada_unidad DESC
         LIMIT 1`,
       [idUnidad],
-    )) as { ocupacion: number }[];
-    return rows[0] ? Number(rows[0].ocupacion) : 0;
-  }
-
-  private async findOpenStop(runner: Queryable, idUnidad: string): Promise<StopRow | null> {
-    const rows = (await runner.query(
-      `SELECT ${STOP_COLUMNS} ${STOP_FROM}
-        WHERE pu.id_unidad = $1 AND pu.fecha_salida IS NULL`,
-      [idUnidad],
-    )) as StopRow[];
+    )) as ReportRow[];
     return rows[0] ?? null;
   }
 
-  private async findStop(idParadaUnidad: string): Promise<UnitStopDto> {
-    const rows = (await this.dataSource.query(
-      `SELECT ${STOP_COLUMNS},
-              u.id_unidad AS "idUnidad",
+  // The resulting occupancy of the unit's last report (0 without reports).
+  private async onBoard(runner: Queryable, unit: UnitRow): Promise<number> {
+    const last = await this.lastReport(runner, unit.idUnidad);
+    return last ? Number(last.ocupacionResultante) : 0;
+  }
+
+  // tbl_asignacion_piloto has one row per pilot (id_empleado UNIQUE); the
+  // current stop is the unit's last reported tbl_linea_parada, if any.
+  // FOR UPDATE OF u: only the unit row is locked (the outer joins are
+  // nullable), and it serializes the unit's reports.
+  private async findPilotUnit(runner: Queryable, employeeId: string, lock: boolean): Promise<PilotUnitRow> {
+    const rows = (await runner.query(
+      `SELECT u.id_unidad AS "idUnidad",
               u.numero_placa AS "numeroPlaca",
-              u.capacidad_pasajeros AS "capacidadPasajeros"
-        ${STOP_FROM}
-        INNER JOIN tbl_unidad u ON u.id_unidad = pu.id_unidad
-        WHERE pu.id_parada_unidad = $1`,
-      [idParadaUnidad],
-    )) as (StopRow & UnitRow)[];
-    const row = rows[0]!;
-    return this.toStopDto(row, row);
+              u.capacidad_pasajeros AS "capacidadPasajeros",
+              lp.id_parada AS "idParadaActual"
+         FROM tbl_asignacion_piloto ap
+        INNER JOIN tbl_unidad u ON u.id_unidad = ap.id_unidad
+         LEFT JOIN tbl_asignacion_unidad au ON au.id_unidad = u.id_unidad
+         LEFT JOIN tbl_linea_parada lp ON lp.id_linea_parada = au.id_linea_parada_actual
+        WHERE ap.id_empleado = $1
+        ${lock ? "FOR UPDATE OF u" : ""}`,
+      [employeeId],
+    )) as PilotUnitRow[];
+    const row = rows[0];
+    if (!row) throw new PilotHasNoUnitAssigned();
+    return {
+      idUnidad: String(row.idUnidad),
+      numeroPlaca: row.numeroPlaca,
+      capacidadPasajeros: Number(row.capacidadPasajeros),
+      idParadaActual: nullableId(row.idParadaActual),
+    };
   }
 
   private lockParada(runner: Queryable, idParada: string): Promise<ParadaRow> {
@@ -441,6 +420,7 @@ export class RidershipService {
       `SELECT p.id_parada AS "idParada",
               p.nombre_parada AS "nombreParada",
               p.capacidad_pasajeros AS "capacidadPasajeros",
+              p.personas_en_parada AS "personasEnParada",
               e.id_estacion AS "idEstacion"
          FROM tbl_parada p
          LEFT JOIN tbl_estacion e ON e.id_parada = p.id_parada
@@ -455,21 +435,17 @@ export class RidershipService {
       nombreParada: row.nombreParada,
       idEstacion: nullableId(row.idEstacion),
       capacidadPasajeros: Number(row.capacidadPasajeros),
+      personasEnParada: Number(row.personasEnParada),
     };
   }
 
-  private lockUnit(runner: Queryable, idUnidad: string): Promise<UnitRow> {
-    return this.findUnit(runner, idUnidad, true);
-  }
-
-  private async findUnit(runner: Queryable, idUnidad: string, lock: boolean): Promise<UnitRow> {
+  private async findUnit(runner: Queryable, idUnidad: string): Promise<UnitRow> {
     if (!NUMERIC_ID.test(idUnidad)) throw new UnitNotFound(idUnidad);
     const rows = (await runner.query(
       `SELECT id_unidad AS "idUnidad",
               numero_placa AS "numeroPlaca",
               capacidad_pasajeros AS "capacidadPasajeros"
-         FROM tbl_unidad WHERE id_unidad = $1
-         ${lock ? "FOR UPDATE" : ""}`,
+         FROM tbl_unidad WHERE id_unidad = $1`,
       [idUnidad],
     )) as UnitRow[];
     const row = rows[0];
@@ -493,6 +469,19 @@ export class RidershipService {
     return { ...row, idTarjeta: String(row.idTarjeta) };
   }
 
+  private async toUnitDto(runner: Queryable, unit: UnitRow): Promise<UnitOccupancyDto> {
+    const last = await this.lastReport(runner, unit.idUnidad);
+    const aBordo = last ? Number(last.ocupacionResultante) : 0;
+    return {
+      idUnidad: unit.idUnidad,
+      numeroPlaca: unit.numeroPlaca,
+      capacidadPasajeros: unit.capacidadPasajeros,
+      aBordo,
+      porcentaje: percentOf(aBordo, unit.capacidadPasajeros),
+      ultimoReporte: last ? this.toReportDto(last, unit.capacidadPasajeros) : null,
+    };
+  }
+
   private toParadaDto(parada: ParadaRow, people: number): Omit<ParadaOccupancyDto, "alertaActiva"> {
     return {
       idParada: parada.idParada,
@@ -504,25 +493,18 @@ export class RidershipService {
     };
   }
 
-  private toStopDto(unit: UnitRow, stop: StopRow): UnitStopDto {
-    const capacity = Number(unit.capacidadPasajeros);
-    const occupancy = Number(stop.ocupacionResultante);
+  private toReportDto(row: ReportRow, capacity: number): StopReportDto {
+    const aBordo = Number(row.ocupacionResultante);
     return {
-      idParadaUnidad: String(stop.idParadaUnidad),
-      idUnidad: String(unit.idUnidad),
-      numeroPlaca: unit.numeroPlaca,
-      capacidadPasajeros: capacity,
-      idParada: String(stop.idParada),
-      nombreParada: stop.nombreParada,
-      idEstacion: nullableId(stop.idEstacion),
-      ocupacionLlegada: Number(stop.ocupacionLlegada),
-      subieron: Number(stop.subieron),
-      bajaron: Number(stop.bajaron),
-      ocupacionEstimada: occupancy,
-      porcentaje: percentOf(occupancy, capacity),
-      minutosEsperaExtra: Number(stop.minutosEsperaExtra),
-      fechaLlegada: new Date(stop.fechaLlegada).toISOString(),
-      fechaSalida: stop.fechaSalida === null ? null : new Date(stop.fechaSalida).toISOString(),
+      idParadaUnidad: String(row.idParadaUnidad),
+      idParada: String(row.idParada),
+      nombreParada: row.nombreParada,
+      bajaron: Number(row.bajaron),
+      subieron: Number(row.subieron),
+      aBordo,
+      porcentaje: percentOf(aBordo, capacity),
+      minutosEsperaExtra: Number(row.minutosEsperaExtra),
+      fecha: new Date(row.fechaReporte).toISOString(),
     };
   }
 }
