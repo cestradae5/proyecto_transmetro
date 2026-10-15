@@ -6,7 +6,7 @@ import {
   Max,
   IsEnum,
   IsInt,
-  IsOptional,
+  ValidateIf,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
@@ -52,7 +52,8 @@ export class CreateEstacionDto {
     minimum: 1,
     default: 100,
   })
-  @IsOptional()
+  // Absent -> DB default; null is rejected (the column is NOT NULL).
+  @ValidateIf((o: { capacidadPasajeros?: unknown }) => o.capacidadPasajeros !== undefined)
   @IsInt()
   @Min(1)
   capacidadPasajeros?: number;

@@ -199,7 +199,7 @@ describe("EstacionService", () => {
       expect(errors).toHaveLength(0);
     });
 
-    it.each([0, -3, 2.5, "40"])("rejects capacidadPasajeros %p", async (capacidadPasajeros) => {
+    it.each([0, -3, 2.5, "40", null])("rejects capacidadPasajeros %p", async (capacidadPasajeros) => {
       const errors = await validate(
         plainToInstance(CreateEstacionDto, { ...base, idParada: 5, capacidadPasajeros }),
       );

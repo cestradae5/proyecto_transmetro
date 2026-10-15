@@ -17,6 +17,8 @@ describe("ridership rules", () => {
       [7, 5, false],
       [8, 5, true],
       [0, 1, false],
+      [14, 10, false],
+      [15, 10, true],
     ])("%i people with capacity %i -> %p", (people, capacity, expected) => {
       expect(reachesStationAlert(people, capacity)).toBe(expected);
     });
@@ -30,6 +32,8 @@ describe("ridership rules", () => {
       [40, 40, 0],
       [0, 2, 5],
       [1, 2, 0],
+      [0, 4, 5],
+      [1, 4, 0],
     ])("occupancy %i of %i -> %i minutes", (occupancy, capacity, expected) => {
       expect(extraWaitMinutes(occupancy, capacity)).toBe(expected);
     });
@@ -44,6 +48,7 @@ describe("ridership rules", () => {
       [0, 10, 40, 0],
       // A capacity lowered below the carried occupancy boards nobody.
       [5, 45, 40, 0],
+      [10, 5, 4, 0],
     ])("%i waiting, %i aboard, capacity %i -> %i board", (waiting, aboard, capacity, expected) => {
       expect(board(waiting, aboard, capacity)).toBe(expected);
     });
