@@ -34,3 +34,55 @@ export class InvalidAlertTransition extends ConflictError {
     this.name = "InvalidAlertTransition";
   }
 }
+
+// Ridership (odd/tasks/ridership-capacity.md). Every rejection is thrown
+// inside the transaction, so nothing is stored or charged.
+
+export class StationNotFound extends NotFoundError {
+  constructor(id: string) {
+    super(`Estación con ID ${id} no existe.`);
+    this.name = "StationNotFound";
+  }
+}
+
+export class UnitNotFound extends NotFoundError {
+  constructor(id: string) {
+    super(`Unidad con ID ${id} no existe.`);
+    this.name = "UnitNotFound";
+  }
+}
+
+export class CardNotFound extends NotFoundError {
+  constructor() {
+    super("La tarjeta no existe.");
+    this.name = "CardNotFound";
+  }
+}
+
+export class CardNotActive extends ConflictError {
+  constructor(estado: string) {
+    super(`La tarjeta está ${estado} y no puede ingresar.`);
+    this.name = "CardNotActive";
+  }
+}
+
+export class InsufficientBalance extends ConflictError {
+  constructor(saldo: number, tarifa: number) {
+    super(`Saldo insuficiente: Q${saldo.toFixed(2)} disponible, el pasaje cuesta Q${tarifa.toFixed(2)}.`);
+    this.name = "InsufficientBalance";
+  }
+}
+
+export class UnitAlreadyAtStop extends ConflictError {
+  constructor(id: string) {
+    super(`La unidad ${id} ya está detenida en una estación; registre su salida primero.`);
+    this.name = "UnitAlreadyAtStop";
+  }
+}
+
+export class UnitNotAtStop extends ConflictError {
+  constructor(id: string) {
+    super(`La unidad ${id} no está detenida en ninguna estación.`);
+    this.name = "UnitNotAtStop";
+  }
+}

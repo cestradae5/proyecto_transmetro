@@ -81,6 +81,59 @@ have `ALERTAS_OPERATIVAS_GESTIONAR`.
   `{ estadoAnterior, estadoNuevo, observacion, vista }` with `vista`
   `estacion` or `central`. Rejected requests (400/404/409) write no row.
 
+## Ridership: passenger counting
+
+Spec: `odd/tasks/ridership-capacity.md`. The only signal is the turnstile
+(talanquera) at the station: it sees people entering and leaving a STATION.
+Who rides a bus is an estimate per stop, never an exact count.
+
+| Method | Path | Access | Result |
+|---|---|---|---|
+| POST | `ridership/turnstile` | `X-Turnstile-Key` (no login) | `{ numeroTarjeta, idEstacion, tipo: "ENTRADA" \| "SALIDA" }` -> 201 `{ idEvento, tipo, numeroTarjeta, montoCobrado, saldo, estacion, alertaGenerada, idAlerta }` |
+| POST | `ridership/units/:id/arrival` | `FLOTA_GESTIONAR` | `{ idEstacion }` -> 201 stop |
+| POST | `ridership/units/:id/departure` | `FLOTA_GESTIONAR` | 200 stop |
+| GET | `ridership/stations/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ idEstacion, nombreEstacion, capacidadPasajeros, personasEnEstacion, porcentaje, alertaActiva }` |
+| GET | `ridership/units/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ idUnidad, numeroPlaca, capacidadPasajeros, ocupacionEstimada, porcentaje, paradaAbierta }` |
+| GET | `ridership/alerts` | `ALERTAS_OPERATIVAS_GESTIONAR` | Station capacity alerts, newest first, max 100 |
+
+A stop is `{ idParadaUnidad, idUnidad, numeroPlaca, capacidadPasajeros,
+idEstacion, nombreEstacion, ocupacionLlegada, subieron, bajaron,
+ocupacionEstimada, porcentaje, minutosEsperaExtra, fechaLlegada, fechaSalida }`.
+
+- **Turnstile access**: answers 404 unless `TURNSTILE_SIMULATOR_ENABLED` is
+  exactly `true`; needs `X-Turnstile-Key` equal to `TURNSTILE_API_KEY`
+  (missing, wrong or unset key -> 401). CORS allows the header.
+- **Fare**: the client never sends the balance. `ENTRADA` needs an `ACTIVA`
+  card with `saldo >= 1.00` and charges Q1.00 (`FARE`); `SALIDA` charges
+  nothing and ignores the card state. Unknown card or station -> 404; card
+  not `ACTIVA` or insufficient balance -> 409; bad body -> 400. A rejected
+  pass stores no event and charges nothing.
+- **Events**: every accepted pass is one `tbl_evento_talanquera` row; there
+  is no stored counter.
+- **People in a station**: `ENTRADA` events minus passengers who boarded a bus
+  there (`tbl_parada_unidad.subieron`), never below 0. Exits are passengers
+  leaving buses, so they do not change it.
+- **Capacity alert (requirement 14)**: after an `ENTRADA`, if the people reach
+  `1.5 x tbl_estacion.capacidad_pasajeros` and the station has no capacity
+  alert that is not `RESUELTA`, one `tbl_alerta` row is created:
+  `CAPACIDAD_ESTACION`, `ESTACION` -> `CENTRAL`, `id_estacion_origen` = the
+  station, no unit and no author (`autor: null`). It moves with
+  `PATCH central/:id/status`; once `RESUELTA`, the next entry over the limit
+  creates a new one. It is not part of the `central` unit -> station view.
+- **Bus stop (requirement 15)**: `arrival` opens a stop. The bus carries the
+  occupancy of its last closed stop (0 for the first), boards
+  `min(waiting, free seats)` and, if the result is below 25% of
+  `tbl_unidad.capacidad_pasajeros`, returns `minutosEsperaExtra: 5` (else 0).
+  `departure` closes it: `bajaron = min(SALIDA events at the station since
+  arrival, ocupacionLlegada)`, then the newly waiting board up to capacity.
+  One open stop per unit: a second arrival -> 409; departure without an open
+  stop -> 409.
+- **Concurrency**: each request locks its rows (unit, then station, then
+  card) so two passes cannot both create the alert or overdraw a card.
+- **Limits**: two buses stopped at the same station at once both count the
+  same exits (bounded by what each carried); occupancy is not reset at the
+  end of a route.
+
 ## Not in v1
 
 - No real-time push: the admin-web screens poll every ~10 s.

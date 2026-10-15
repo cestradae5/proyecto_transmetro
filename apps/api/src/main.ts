@@ -12,7 +12,8 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: "*", // Permitir todos los orígenes (JWT no tiene riesgo CSRF)
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    // X-Turnstile-Key: turnstile simulator (operations/ridership).
+    allowedHeaders: ["Content-Type", "Authorization", "X-Turnstile-Key"],
     // Lets the browser read the file name of downloaded reports (PDF).
     exposedHeaders: ["Content-Disposition"],
   });
