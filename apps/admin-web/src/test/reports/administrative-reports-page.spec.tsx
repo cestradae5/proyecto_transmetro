@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { useAuth, type User } from "../../features/authentication/auth-context";
@@ -68,6 +68,12 @@ function renderPage() {
 const downloadButton = (title: string) =>
   screen.getByRole("button", { name: `Descargar PDF: ${title}` });
 
+/** Date inputs of one ranged report card; each card keeps its own range. */
+const rangeOf = (title: string) => {
+  const card = within(screen.getByRole("region", { name: title }));
+  return { from: card.getByLabelText("Desde"), to: card.getByLabelText("Hasta") };
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   savedNames = [];
@@ -83,10 +89,10 @@ beforeEach(() => {
 afterEach(() => clickSpy.mockRestore());
 
 describe("AdministrativeReportsPage", () => {
-  it("lists the four reports for a user with both permissions", () => {
+  it("lists the five reports for a user with both permissions", () => {
     signIn(ALL);
     renderPage();
-    for (const title of ["Flota", "Personal", "Infraestructura", "Resumen de bitácora"]) {
+    for (const title of ["Flota", "Personal", "Infraestructura", "Alertas operativas", "Resumen de bitácora"]) {
       expect(downloadButton(title)).toBeInTheDocument();
     }
   });
@@ -96,6 +102,7 @@ describe("AdministrativeReportsPage", () => {
     renderPage();
     expect(downloadButton("Resumen de bitácora")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Descargar PDF: Flota" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Descargar PDF: Alertas operativas" })).not.toBeInTheDocument();
   });
 
   it("hides the audit summary from a user without AUDITORIA_BITACORA_CONSULTAR", () => {
@@ -124,9 +131,9 @@ describe("AdministrativeReportsPage", () => {
     renderPage();
     expect(downloadButton("Resumen de bitácora")).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText("Desde"), { target: { value: "2026-01-01" } });
+    fireEvent.change(rangeOf("Resumen de bitácora").from, { target: { value: "2026-01-01" } });
     expect(downloadButton("Resumen de bitácora")).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Hasta"), { target: { value: "2026-01-31" } });
+    fireEvent.change(rangeOf("Resumen de bitácora").to, { target: { value: "2026-01-31" } });
     fireEvent.click(downloadButton("Resumen de bitácora"));
 
     await waitFor(() =>
@@ -140,11 +147,50 @@ describe("AdministrativeReportsPage", () => {
   it("blocks a range whose start is after its end", () => {
     signIn(ALL);
     renderPage();
-    fireEvent.change(screen.getByLabelText("Desde"), { target: { value: "2026-02-01" } });
-    fireEvent.change(screen.getByLabelText("Hasta"), { target: { value: "2026-01-31" } });
+    fireEvent.change(rangeOf("Resumen de bitácora").from, { target: { value: "2026-02-01" } });
+    fireEvent.change(rangeOf("Resumen de bitácora").to, { target: { value: "2026-01-31" } });
 
     expect(screen.getByText("La fecha inicial no puede ser posterior a la fecha final.")).toBeInTheDocument();
     expect(downloadButton("Resumen de bitácora")).toBeDisabled();
+  });
+
+  it("requires both dates for the alerts report and sends them (alerts S7)", async () => {
+    signIn(["REPORTES_ADMINISTRATIVOS_CONSULTAR"]);
+    renderPage();
+    expect(downloadButton("Alertas operativas")).toBeDisabled();
+
+    fireEvent.change(rangeOf("Alertas operativas").from, { target: { value: "2026-03-01" } });
+    expect(downloadButton("Alertas operativas")).toBeDisabled();
+    fireEvent.change(rangeOf("Alertas operativas").to, { target: { value: "2026-03-31" } });
+    fireEvent.click(downloadButton("Alertas operativas"));
+
+    await waitFor(() =>
+      expect(mockDownload).toHaveBeenCalledWith(
+        "/reports/alerts?from=2026-03-01&to=2026-03-31",
+        "reporte-alertas-2026-03-01_2026-03-31.pdf",
+      ),
+    );
+  });
+
+  it("keeps the alerts range independent of the audit summary range", () => {
+    signIn(ALL);
+    renderPage();
+    fireEvent.change(rangeOf("Resumen de bitácora").from, { target: { value: "2026-01-01" } });
+    fireEvent.change(rangeOf("Resumen de bitácora").to, { target: { value: "2026-01-31" } });
+
+    expect(downloadButton("Resumen de bitácora")).toBeEnabled();
+    expect(downloadButton("Alertas operativas")).toBeDisabled();
+    expect(rangeOf("Alertas operativas").from).toHaveValue("");
+  });
+
+  it("blocks an inverted alerts range", () => {
+    signIn(["REPORTES_ADMINISTRATIVOS_CONSULTAR"]);
+    renderPage();
+    fireEvent.change(rangeOf("Alertas operativas").from, { target: { value: "2026-04-01" } });
+    fireEvent.change(rangeOf("Alertas operativas").to, { target: { value: "2026-03-31" } });
+
+    expect(screen.getByText("La fecha inicial no puede ser posterior a la fecha final.")).toBeInTheDocument();
+    expect(downloadButton("Alertas operativas")).toBeDisabled();
   });
 
   it("disables the button and shows progress while downloading", async () => {

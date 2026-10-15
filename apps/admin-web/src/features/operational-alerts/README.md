@@ -22,3 +22,12 @@ come from the backend error codes in `errors.ts`, not from error banners.
 
 API contract and rules: `apps/api/src/operations/README.md`.
 Spec: `odd/tasks/operational-alerts.md`. Tests: `src/test/operational-alerts/`.
+
+## Audit log and reports
+
+- Every alert send and state change is recorded by the API in the audit log;
+  the audit log viewer (`/audit-log`) shows those rows under the module
+  "Operaciones" (`send_alert`, `update_alert_status`).
+- "Reportes administrativos" (`/reports/administrative`) has an "Alertas
+  operativas" card for `REPORTES_ADMINISTRATIVOS_CONSULTAR`: it downloads
+  `GET /reports/alerts?from&to` as a PDF, with its own date range.
