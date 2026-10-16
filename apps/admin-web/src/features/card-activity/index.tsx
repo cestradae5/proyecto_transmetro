@@ -155,7 +155,7 @@ export function CardActivityPage() {
             <p className="text-sm text-slate-500">No hay tarjetas que coincidan.</p>
           )}
           {cards.data && cards.data.items.length > 0 && (
-            <table className="w-full">
+            <table aria-label="Tarjetas" className="w-full">
               <thead>
                 <tr>
                   <th className={TH}>Número</th>

@@ -214,6 +214,25 @@ describe("Card activity (e2e)", () => {
       expect(res.body.total).toBe(0);
     });
 
+    // Verifier probe: a page past the bound is a 400, never a database error.
+    it.each(["page=1000001", "page=99999999999999999999"])("rejects the out-of-range %s with 400", async (query) => {
+      expect((await get(`/cards?${query}`)).status).toBe(400);
+    });
+
+    it("accepts the last allowed page and returns it empty", async () => {
+      const res = await get(`/cards?search=${encodeURIComponent(runTag)}&page=1000000`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ total: 22, page: 1000000, items: [] });
+    });
+
+    it("treats a backslash in the search as a literal character", async () => {
+      const res = await get(`/cards?search=${encodeURIComponent(`${runTag}\\`)}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(0);
+    });
+
     it.each(["page=0", "page=abc", `search=${"x".repeat(51)}`])("rejects %s with 400", async (query) => {
       expect((await get(`/cards?${query}`)).status).toBe(400);
     });

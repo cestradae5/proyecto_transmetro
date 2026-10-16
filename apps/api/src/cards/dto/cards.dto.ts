@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsInt, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from "class-validator";
 
 export const CARDS_PAGE_SIZE = 20;
+// Keeps the interpolated OFFSET a small, bounded integer.
+export const CARDS_MAX_PAGE = 1_000_000;
 export const ACTIVITY_LIMIT = 100;
 
 const trim = ({ value }: { value: unknown }) => (typeof value === "string" ? value.trim() : value);
@@ -16,11 +18,12 @@ export class QueryCardsDto {
   @MaxLength(50)
   search?: string;
 
-  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @ApiPropertyOptional({ minimum: 1, maximum: CARDS_MAX_PAGE, default: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(CARDS_MAX_PAGE)
   page?: number;
 }
 

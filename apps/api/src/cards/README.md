@@ -16,7 +16,7 @@ dates ISO 8601.
 
 - **Search**: optional, trimmed, max 50 chars; matches part of the number,
   case-insensitive. `%`, `_` and `\` are literal characters. `page` is an
-  integer >= 1 (default 1). Anything else -> 400.
+  integer from 1 to 1000000 (default 1). Anything else -> 400.
 - **pasadas**: the card's turnstile events, newest first, max 100:
   `{ idEvento, tipo: "ENTRADA" | "SALIDA", montoCobrado, parada: { idParada,
   nombreParada, esEstacion }, fecha }`.

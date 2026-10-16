@@ -1,7 +1,7 @@
 // odd/tasks/card-activity.md S5: staff view of each card's turnstile passes
 // and recharges. The API client is mocked by path; the API contract itself is
 // covered by apps/api/test/card-activity.e2e-spec.ts.
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { CardActivityPage } from "../../features/card-activity";
@@ -179,6 +179,32 @@ describe("CardActivityPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de A/B 1" }));
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/cards/A%2FB%201/activity"));
+  });
+
+  // Verifier probe: a late answer for a card no longer selected is ignored.
+  it("ignores a late activity response for a card that is no longer selected", async () => {
+    let releaseFirst: (value: unknown) => void = () => {};
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === "/cards/TEST-0001/activity") return new Promise((resolve) => (releaseFirst = resolve));
+      if (path === "/cards/TEST-0002/activity") return { tarjeta: CARD_B, pasadas: [], recargas: [] };
+      return page([CARD_A, CARD_B]);
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de TEST-0001" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ver actividad de TEST-0002" }));
+    await screen.findByRole("region", { name: "Actividad de TEST-0002" });
+    await act(async () => releaseFirst(ACTIVITY));
+
+    expect(screen.getByRole("region", { name: "Actividad de TEST-0002" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Actividad de TEST-0001" })).not.toBeInTheDocument();
+  });
+
+  it("names the card list table", async () => {
+    routeGet(page([CARD_A]));
+    renderPage();
+
+    expect(await screen.findByRole("table", { name: "Tarjetas" })).toBeInTheDocument();
   });
 
   it("says when the card has no passes or recharges", async () => {
