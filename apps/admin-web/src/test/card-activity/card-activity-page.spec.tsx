@@ -1,0 +1,218 @@
+// odd/tasks/card-activity.md S5: staff view of each card's turnstile passes
+// and recharges. The API client is mocked by path; the API contract itself is
+// covered by apps/api/test/card-activity.e2e-spec.ts.
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { CardActivityPage } from "../../features/card-activity";
+
+vi.mock("../../lib/api-client", () => ({
+  apiClient: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  ApiError: class ApiError extends Error {
+    constructor(
+      public status: number,
+      message: string,
+      public data?: any,
+    ) {
+      super(message);
+      this.name = "ApiError";
+    }
+  },
+}));
+
+import { apiClient, ApiError } from "../../lib/api-client";
+
+const mockGet = vi.mocked(apiClient.get);
+
+const page = (items: { numeroTarjeta: string; saldo: number; estadoTarjeta: string }[], total = items.length, pageNumber = 1) => ({
+  total,
+  page: pageNumber,
+  pageSize: 20,
+  items,
+});
+
+const CARD_A = { numeroTarjeta: "TEST-0001", saldo: 12.5, estadoTarjeta: "ACTIVA" };
+const CARD_B = { numeroTarjeta: "TEST-0002", saldo: 0, estadoTarjeta: "BLOQUEADA" };
+
+const ACTIVITY = {
+  tarjeta: CARD_A,
+  pasadas: [
+    {
+      idEvento: "2",
+      tipo: "SALIDA",
+      montoCobrado: 0,
+      parada: { idParada: "3", nombreParada: "Parada Centro", esEstacion: true },
+      fecha: "2026-10-01T16:02:00.000Z",
+    },
+    {
+      idEvento: "1",
+      tipo: "ENTRADA",
+      montoCobrado: 1,
+      parada: { idParada: "5", nombreParada: "Parada Norte", esEstacion: false },
+      fecha: "2026-10-01T16:01:00.000Z",
+    },
+  ],
+  recargas: [
+    {
+      idTransaccion: "8",
+      referencia: "ref-2",
+      monto: 15,
+      estadoPago: "PENDIENTE_AUTENTICACION",
+      origen: "QPAYPRO",
+      numeroComprobante: null,
+      fecha: "2026-10-01T16:04:00.000Z",
+    },
+    {
+      idTransaccion: "7",
+      referencia: "ref-1",
+      monto: 20,
+      estadoPago: "APROBADA",
+      origen: "SIMULADA",
+      numeroComprobante: "SIM-7",
+      fecha: "2026-10-01T16:03:00.000Z",
+    },
+  ],
+};
+
+/** Answers by path: the list for /cards?..., the activity for /cards/:n/activity. */
+function routeGet(list: unknown, activity: unknown = ACTIVITY) {
+  mockGet.mockImplementation(async (path: string) => {
+    const value = path.includes("/activity") ? activity : list;
+    if (value instanceof Error) throw value;
+    return value;
+  });
+}
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={["/recharges"]}>
+      <Routes>
+        <Route path="/recharges" element={<CardActivityPage />} />
+        <Route path="/landing" element={<div>Landing destination</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+beforeEach(() => vi.clearAllMocks());
+
+describe("CardActivityPage", () => {
+  it("lists the first page of cards with state and balance", async () => {
+    routeGet(page([CARD_A, CARD_B]));
+    renderPage();
+
+    const rows = await screen.findAllByRole("row");
+    expect(mockGet).toHaveBeenCalledWith("/cards?page=1");
+    expect(rows.slice(1).map((row) => row.textContent)).toEqual([
+      expect.stringContaining("TEST-0001"),
+      expect.stringContaining("TEST-0002"),
+    ]);
+    expect(within(rows[1]!).getByText("Activa")).toBeInTheDocument();
+    expect(within(rows[1]!).getByText("Q12.50")).toBeInTheDocument();
+    expect(within(rows[2]!).getByText("Bloqueada")).toBeInTheDocument();
+    expect(screen.getByText("Tarjetas (2)")).toBeInTheDocument();
+  });
+
+  it("searches by number after typing (debounced) from page 1", async () => {
+    routeGet(page([CARD_A]));
+    renderPage();
+    await screen.findByText("TEST-0001");
+
+    fireEvent.change(screen.getByLabelText("Buscar por número"), { target: { value: "  0001 " } });
+
+    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith("/cards?search=0001&page=1"));
+  });
+
+  it("says when no card matches", async () => {
+    routeGet(page([]));
+    renderPage();
+
+    expect(await screen.findByText("No hay tarjetas que coincidan.")).toBeInTheDocument();
+  });
+
+  it("pages through the cards", async () => {
+    routeGet(page([CARD_A], 25));
+    renderPage();
+    await screen.findByText("TEST-0001");
+
+    expect(screen.getByText("Página 1 de 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+
+    await waitFor(() => expect(mockGet).toHaveBeenLastCalledWith("/cards?page=2"));
+  });
+
+  it("shows the selected card's passes and recharges", async () => {
+    routeGet(page([CARD_A]));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de TEST-0001" }));
+
+    const detail = await screen.findByRole("region", { name: "Actividad de TEST-0001" });
+    expect(mockGet).toHaveBeenCalledWith("/cards/TEST-0001/activity");
+    expect(within(detail).getByText("Saldo: Q12.50")).toBeInTheDocument();
+
+    const passes = within(within(detail).getByRole("table", { name: "Pasadas por talanquera" })).getAllByRole("row");
+    expect(passes).toHaveLength(3);
+    expect(within(passes[1]!).getByText("Salida")).toBeInTheDocument();
+    expect(within(passes[1]!).getByText("Parada Centro (estación)")).toBeInTheDocument();
+    expect(within(passes[1]!).getByText("Q0.00")).toBeInTheDocument();
+    expect(within(passes[2]!).getByText("Entrada")).toBeInTheDocument();
+    expect(within(passes[2]!).getByText("Parada Norte")).toBeInTheDocument();
+    expect(within(passes[2]!).getByText("Q1.00")).toBeInTheDocument();
+
+    const recharges = within(within(detail).getByRole("table", { name: "Recargas" })).getAllByRole("row");
+    expect(recharges).toHaveLength(3);
+    expect(within(recharges[1]!).getByText("Q15.00")).toBeInTheDocument();
+    expect(within(recharges[1]!).getByText("Pendiente de autenticación")).toBeInTheDocument();
+    expect(within(recharges[1]!).getByText("QPayPro")).toBeInTheDocument();
+    expect(within(recharges[1]!).getByText("—")).toBeInTheDocument();
+    expect(within(recharges[2]!).getByText("Aprobada")).toBeInTheDocument();
+    expect(within(recharges[2]!).getByText("Simulada")).toBeInTheDocument();
+    expect(within(recharges[2]!).getByText("SIM-7")).toBeInTheDocument();
+  });
+
+  it("encodes the card number in the activity request", async () => {
+    routeGet(page([{ ...CARD_A, numeroTarjeta: "A/B 1" }]), { ...ACTIVITY, tarjeta: { ...CARD_A, numeroTarjeta: "A/B 1" } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de A/B 1" }));
+
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith("/cards/A%2FB%201/activity"));
+  });
+
+  it("says when the card has no passes or recharges", async () => {
+    routeGet(page([CARD_B]), { tarjeta: CARD_B, pasadas: [], recargas: [] });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de TEST-0002" }));
+
+    expect(await screen.findByText("Sin pasadas registradas.")).toBeInTheDocument();
+    expect(screen.getByText("Sin recargas registradas.")).toBeInTheDocument();
+  });
+
+  it("shows a message when the list cannot be loaded", async () => {
+    routeGet(new ApiError(403, "Forbidden"));
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("No tiene permiso para consultar las tarjetas.");
+  });
+
+  it("shows a message when the activity cannot be loaded", async () => {
+    routeGet(page([CARD_A]), new ApiError(404, "La tarjeta no existe."));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de TEST-0001" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("La tarjeta no existe.");
+  });
+
+  it("navigates back to the landing page", async () => {
+    routeGet(page([]));
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Volver" }));
+
+    expect(await screen.findByText("Landing destination")).toBeInTheDocument();
+  });
+});
