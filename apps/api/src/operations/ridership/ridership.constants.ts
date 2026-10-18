@@ -24,4 +24,6 @@ export const CAPACITY_ALERTS_LIMIT = 100;
 // S6: device access for the turnstile endpoint.
 export const TURNSTILE_KEY_HEADER = "x-turnstile-key";
 
-export const FLOTA_GESTIONAR = "FLOTA_GESTIONAR";
+// bus-passenger-report: the pilot reads its unit and reports passengers.
+export const UNIDAD_ASIGNADA_CONSULTAR = "UNIDAD_ASIGNADA_CONSULTAR";
+export const METRICAS_UNIDAD_REPORTAR = "METRICAS_UNIDAD_REPORTAR";

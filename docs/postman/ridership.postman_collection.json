@@ -183,7 +183,7 @@
           ]
         },
         {
-          "name": "Salida (no cobra)",
+          "name": "Salida (no cobra, resta de la parada)",
           "request": {
             "method": "POST",
             "header": [
@@ -232,10 +232,11 @@
                   "  pm.response.to.have.status(201);",
                   "  pm.expect(body.montoCobrado).to.eql(0);",
                   "});",
-                  "pm.test(\"no cambia las personas esperando\", () => {",
+                  "pm.test(\"resta una persona de la parada (nunca menos de 0)\", () => {",
                   "  const before = Number(pm.collectionVariables.get(\"personasAntes\"));",
-                  "  if (!Number.isNaN(before)) pm.expect(body.parada.personasEnParada).to.eql(before);",
-                  "});"
+                  "  if (!Number.isNaN(before)) pm.expect(body.parada.personasEnParada).to.eql(Math.max(0, before - 1));",
+                  "});",
+                  "pm.collectionVariables.set(\"personasAntes\", body.parada.personasEnParada);"
                 ]
               }
             }
@@ -602,10 +603,11 @@
       ]
     },
     {
-      "name": "4. Bus",
+      "name": "4. Bus (piloto)",
+      "description": "El bus solo traslada pasajeros. El piloto marca su parada actual y reporta cuántos bajaron y subieron. Usa {{tokenPiloto}} (un usuario PILOTO con unidad asignada).",
       "item": [
         {
-          "name": "Llegada del bus (regla del 25%)",
+          "name": "1. Marcar parada actual",
           "request": {
             "method": "POST",
             "header": [
@@ -615,32 +617,126 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/arrival",
+              "raw": "{{baseUrl}}/fleet/units/my-unit/location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fleet",
+                "units",
+                "my-unit",
+                "location"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPiloto}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "idLineaParada: posición de la parada en la línea de la unidad (GET /fleet/units/my-unit/stops).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idLineaParada\": {{idLineaParada}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Leer mi unidad",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/my-unit",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "operations",
                 "ridership",
-                "units",
-                "{{idUnidad}}",
-                "arrival"
+                "my-unit"
               ]
             },
-            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token}}",
+                  "value": "{{tokenPiloto}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set(\"aBordoAntes\", body.aBordo);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Reportar pasajeros",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/my-unit/stop-report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "my-unit",
+                "stop-report"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPiloto}}",
                   "type": "string"
                 }
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idParada\": {{idParada}}\n}",
+              "raw": "{\n  \"bajaron\": 0,\n  \"subieron\": 3\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -655,19 +751,22 @@
                 "type": "text/javascript",
                 "exec": [
                   "const body = pm.response.json();",
+                  "const before = Number(pm.collectionVariables.get(\"aBordoAntes\"));",
                   "pm.test(\"201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"5 minutos extra solo bajo el 25%\", () => {",
-                  "  const expected = body.ocupacionEstimada < body.capacidadPasajeros * 0.25 ? 5 : 0;",
-                  "  pm.expect(body.minutosEsperaExtra).to.eql(expected);",
+                  "pm.test(\"a bordo = antes - bajaron + subieron\", () => {",
+                  "  if (!Number.isNaN(before)) pm.expect(body.aBordo).to.eql(before - body.bajaron + body.subieron);",
                   "});",
-                  "pm.test(\"nunca supera la capacidad\", () => pm.expect(body.ocupacionEstimada).to.be.at.most(body.capacidadPasajeros));"
+                  "pm.test(\"5 minutos extra solo bajo el 25%\", () => {",
+                  "  pm.expect(body.minutosEsperaExtra).to.eql(body.porcentaje < 25 ? 5 : 0);",
+                  "});",
+                  "pm.collectionVariables.set(\"aBordoAntes\", body.aBordo);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Error: llegada con parada abierta (409)",
+          "name": "Error: bajan más de los que van a bordo (409)",
           "request": {
             "method": "POST",
             "header": [
@@ -677,32 +776,30 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/arrival",
+              "raw": "{{baseUrl}}/operations/ridership/my-unit/stop-report",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "operations",
                 "ridership",
-                "units",
-                "{{idUnidad}}",
-                "arrival"
+                "my-unit",
+                "stop-report"
               ]
             },
-            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{token}}",
+                  "value": "{{tokenPiloto}}",
                   "type": "string"
                 }
               ]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"idParada\": {{idParada}}\n}",
+              "raw": "{\n  \"bajaron\": 9999,\n  \"subieron\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -723,7 +820,61 @@
           ]
         },
         {
-          "name": "Leer ocupación del bus",
+          "name": "Error: cantidades inválidas (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/my-unit/stop-report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "my-unit",
+                "stop-report"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenPiloto}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bajaron\": -1,\n  \"subieron\": 1.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Leer unidad (operación central)",
           "request": {
             "method": "GET",
             "header": [],
@@ -739,7 +890,6 @@
                 "{{idUnidad}}"
               ]
             },
-            "description": "",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -758,95 +908,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Salida del bus",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/departure",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "ridership",
-                "units",
-                "{{idUnidad}}",
-                "departure"
-              ]
-            },
-            "description": "",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "pm.test(\"200 y parada cerrada\", () => {",
-                  "  pm.response.to.have.status(200);",
-                  "  pm.expect(body.fechaSalida).to.not.eql(null);",
-                  "  pm.expect(body.bajaron).to.be.at.most(body.ocupacionLlegada);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Error: salida sin parada abierta (409)",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/departure",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "operations",
-                "ridership",
-                "units",
-                "{{idUnidad}}",
-                "departure"
-              ]
-            },
-            "description": "",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"409\", () => pm.response.to.have.status(409));"
                 ]
               }
             }
@@ -898,6 +959,18 @@
     },
     {
       "key": "idAlerta",
+      "value": ""
+    },
+    {
+      "key": "tokenPiloto",
+      "value": ""
+    },
+    {
+      "key": "idLineaParada",
+      "value": ""
+    },
+    {
+      "key": "aBordoAntes",
       "value": ""
     }
   ]

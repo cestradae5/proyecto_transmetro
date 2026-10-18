@@ -34,6 +34,8 @@ colección:
 | `turnstileKey` | El mismo valor de `TURNSTILE_API_KEY` |
 | `idParada` | Una parada existente (sea o no estación: el conteo, la capacidad y la alerta son de la parada) |
 | `idUnidad` | Una unidad existente |
+| `tokenPiloto` | JWT de un usuario `PILOTO` con unidad asignada y línea (para la carpeta del bus) |
+| `idLineaParada` | Posición de una parada en la línea de esa unidad (`GET /fleet/units/my-unit/stops`) |
 
 La talanquera no usa el token: se identifica con el header `X-Turnstile-Key`.
 
@@ -50,14 +52,22 @@ La talanquera no usa el token: se identifica con el header `X-Turnstile-Key`.
    pasa a `RESUELTA` con `autor: null`. La próxima entrada por encima del
    150% genera una alerta nueva.
 
-**Bus bajo el 25%**
+**Talanquera y bus: dos funciones separadas**
 
-1. `4. Bus / Llegada del bus`: suben los que esperan. Si la ocupación queda
-   bajo el 25% de la capacidad del bus, `minutosEsperaExtra` es `5`.
-2. Opcional: envíe `Salida` y `Entrada` en la talanquera mientras el bus está
-   detenido.
-3. `4. Bus / Salida del bus`: bajan las salidas registradas (como máximo los
-   que venían a bordo) y suben los que llegaron mientras tanto.
+- La talanquera es lo único que suma o resta personas en una parada:
+  `Entrada` suma 1 y cobra el pasaje; `Salida` resta 1 (nunca baja de 0).
+- El bus solo traslada pasajeros entre paradas: lo reporta el piloto.
+
+**Bus bajo el 25% (con el token del piloto)**
+
+1. `4. Bus (piloto) / 1. Marcar parada actual`: la parada donde está la unidad.
+2. `2. Leer mi unidad`: guarda cuántos van a bordo.
+3. `3. Reportar pasajeros` con `{ "bajaron": N, "subieron": M }`: primero
+   bajan (pasan a la parada) y después suben (salen de la parada). Si la
+   unidad queda bajo el 25% de su capacidad, `minutosEsperaExtra` es `5`. Se
+   acepta que suban más de los que cuenta la parada (la parada queda en 0).
+4. Errores: bajan más de los que van a bordo o se supera la capacidad (409);
+   números negativos o con decimales (400).
 
 Las carpetas de errores comprueban 401 (sin clave), 409 (tarjeta bloqueada,
 saldo insuficiente, parada abierta o inexistente), 404 (tarjeta inexistente)

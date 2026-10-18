@@ -31,10 +31,16 @@ export class TurnstilePassDto {
   idempotencyKey?: string;
 }
 
-// S8: the parada where the bus stops.
-export class UnitArrivalDto {
-  @ApiProperty({ description: "Parada donde se detiene la unidad", minimum: 1 })
+// bus-passenger-report S3: what the pilot saw at the unit's current stop.
+// First `bajaron` get off, then `subieron` get on.
+export class StopReportRequestDto {
+  @ApiProperty({ description: "Pasajeros que bajaron de la unidad", minimum: 0 })
   @IsInt()
-  @Min(1)
-  idParada!: number;
+  @Min(0)
+  bajaron!: number;
+
+  @ApiProperty({ description: "Pasajeros que subieron a la unidad", minimum: 0 })
+  @IsInt()
+  @Min(0)
+  subieron!: number;
 }
