@@ -17,9 +17,6 @@ export class EstacionResponseDto {
   @ApiProperty({ description: "Estado de la estación", enum: EstadoEstacion })
   estadoEstacion!: EstadoEstacion;
 
-  @ApiProperty({ description: "Capacidad de pasajeros esperando en la estación" })
-  capacidadPasajeros!: number;
-
   @ApiProperty({ description: "ID de la parada que la estación extiende" })
   idParada!: number;
 }

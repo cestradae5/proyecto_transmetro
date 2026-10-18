@@ -220,6 +220,7 @@ export class AsignacionUnidadService {
       idParada: String(stop.idParada),
       nombre: stop.parada?.nombreParada ?? "",
       orden: stop.orden,
+      personasEnParada: Number(stop.parada?.personasEnParada ?? 0),
     }));
   }
 

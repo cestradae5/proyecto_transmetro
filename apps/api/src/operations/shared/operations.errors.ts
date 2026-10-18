@@ -38,10 +38,10 @@ export class InvalidAlertTransition extends ConflictError {
 // Ridership (odd/tasks/ridership-capacity.md). Every rejection is thrown
 // inside the transaction, so nothing is stored or charged.
 
-export class StationNotFound extends NotFoundError {
+export class ParadaNotFound extends NotFoundError {
   constructor(id: string) {
-    super(`Estación con ID ${id} no existe.`);
-    this.name = "StationNotFound";
+    super(`Parada con ID ${id} no existe.`);
+    this.name = "ParadaNotFound";
   }
 }
 
@@ -73,16 +73,31 @@ export class InsufficientBalance extends ConflictError {
   }
 }
 
-export class UnitAlreadyAtStop extends ConflictError {
-  constructor(id: string) {
-    super(`La unidad ${id} ya está detenida en una estación; registre su salida primero.`);
-    this.name = "UnitAlreadyAtStop";
+// bus-passenger-report S3, S5: pilot stop reports.
+export class NoCurrentStop extends ConflictError {
+  constructor() {
+    super("Reporte primero la parada en la que se encuentra la unidad.");
+    this.name = "NoCurrentStop";
   }
 }
 
-export class UnitNotAtStop extends ConflictError {
-  constructor(id: string) {
-    super(`La unidad ${id} no está detenida en ninguna estación.`);
-    this.name = "UnitNotAtStop";
+export class TooManyGettingOff extends ConflictError {
+  constructor(bajaron: number, aBordo: number) {
+    super(`No pueden bajar ${bajaron} pasajeros: la unidad lleva ${aBordo}.`);
+    this.name = "TooManyGettingOff";
+  }
+}
+
+export class OverCapacity extends ConflictError {
+  constructor(aBordo: number, capacidad: number) {
+    super(`La unidad quedaría con ${aBordo} pasajeros y su capacidad es ${capacidad}.`);
+    this.name = "OverCapacity";
+  }
+}
+
+export class IdempotencyKeyConflict extends ConflictError {
+  constructor() {
+    super("La clave de idempotencia ya se usó para otra operación.");
+    this.name = "IdempotencyKeyConflict";
   }
 }

@@ -1,5 +1,5 @@
-import { ApiProperty } from "@nestjs/swagger";
-import { IsEnum, IsNotEmpty, IsNumber, IsString, Max, Min } from "class-validator";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsString, Max, Min, ValidateIf } from "class-validator";
 
 import { EstadoParada } from "../parada.entity.js";
 
@@ -27,4 +27,11 @@ export class CreateParadaDto {
   @IsNotEmpty()
   @IsEnum(EstadoParada)
   estadoParada!: EstadoParada;
+
+  // Absent -> DB default (100); null is rejected (the column is NOT NULL).
+  @ApiPropertyOptional({ description: "Capacidad de pasajeros esperando en la parada", minimum: 1, default: 100 })
+  @ValidateIf((o: { capacidadPasajeros?: unknown }) => o.capacidadPasajeros !== undefined)
+  @IsInt()
+  @Min(1)
+  capacidadPasajeros?: number;
 }

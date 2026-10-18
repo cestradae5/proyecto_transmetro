@@ -168,6 +168,27 @@ describe("LandingPage card filtering (task 5)", () => {
     expect(await screen.findByText("Alerts destination")).toBeInTheDocument();
   });
 
+  // odd/tasks/card-activity.md S5: the Recarga card opens the card activity view.
+  it("navigates to /recharges when the Recarga card is clicked and marks it clickable", async () => {
+    seedSession(["recharge_reporting"], ["RECARGAS_REPORTES_CONSULTAR"]);
+    render(
+      <MemoryRouter initialEntries={["/landing"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/recharges" element={<div>Recharges destination</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    const card = (await screen.findByText("Recarga")).closest("div[class*='border']") as HTMLElement;
+    expect(card.className).toContain("cursor-pointer");
+
+    fireEvent.click(card);
+    expect(await screen.findByText("Recharges destination")).toBeInTheDocument();
+  });
+
   it("navigates to /reports when the Reportes card is clicked and marks it clickable", async () => {
     seedSession(["reports"], ["AUDITORIA_BITACORA_CONSULTAR"]);
     render(

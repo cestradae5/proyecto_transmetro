@@ -536,6 +536,7 @@ describe("AsignacionPiloto pilot-assignment and self-service (e2e)", () => {
             idParada: String(paradaId),
             nombre: "E2E Piloto Parada",
             orden: 1,
+            personasEnParada: 0,
           },
         ]);
 

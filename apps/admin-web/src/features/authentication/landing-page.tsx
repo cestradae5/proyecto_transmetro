@@ -64,6 +64,8 @@ export function LandingPage() {
                   navigate('/reports');
                 } else if (module === 'self_profile') {
                   navigate('/profile');
+                } else if (module === 'recharge_reporting') {
+                  navigate('/recharges');
                 }
               };
               const isNavigable =
@@ -72,7 +74,8 @@ export function LandingPage() {
                 module === 'personnel' ||
                 module === 'operational_alerts' ||
                 module === 'reports' ||
-                module === 'self_profile';
+                module === 'self_profile' ||
+                module === 'recharge_reporting';
               
               return (
                 <div

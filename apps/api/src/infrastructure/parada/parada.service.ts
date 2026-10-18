@@ -155,6 +155,7 @@ export class ParadaService {
       latitud: parada.latitud,
       longitud: parada.longitud,
       estadoParada: parada.estadoParada,
+      capacidadPasajeros: parada.capacidadPasajeros,
       esEstacion: idEstacion !== null,
       idEstacion,
     };

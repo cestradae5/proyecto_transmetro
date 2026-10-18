@@ -14,6 +14,7 @@ import { MiUnidadPage } from "../features/fleet/components/mi-unidad/mi-unidad-p
 import { MiEstacionPage } from "../features/fleet/components/mi-estacion/mi-estacion-page";
 import { OperatorOnlyRoute } from "../features/fleet/operator-only-route";
 import { AlertsPage } from "../features/operational-alerts";
+import { CardActivityPage } from "../features/card-activity";
 import { AuthProvider } from "../features/authentication/auth-context";
 import { AuthenticationGuard } from "../features/dashboard/protected-route";
 
@@ -34,6 +35,7 @@ export function App() {
           <Route path="/alerts" element={<AuthenticationGuard requiredModule="operational_alerts"><AlertsPage /></AuthenticationGuard>} />
           <Route path="/personal" element={<AuthenticationGuard requiredModule="personnel"><PersonalPage /></AuthenticationGuard>} />
           <Route path="/reports" element={<AuthenticationGuard requiredModule="reports"><ReportsHubPage /></AuthenticationGuard>} />
+          <Route path="/recharges" element={<AuthenticationGuard requiredModule="recharge_reporting"><CardActivityPage /></AuthenticationGuard>} />
           <Route path="/reports/audit-log" element={<AuthenticationGuard requiredModule="reports"><ReportsPermissionRoute allowed={canViewAuditLog}><AuditLogPage /></ReportsPermissionRoute></AuthenticationGuard>} />
           <Route path="/reports/administrative" element={<AuthenticationGuard requiredModule="reports"><ReportsPermissionRoute allowed={canOpenReportsPage}><AdministrativeReportsPage /></ReportsPermissionRoute></AuthenticationGuard>} />
         </Routes>

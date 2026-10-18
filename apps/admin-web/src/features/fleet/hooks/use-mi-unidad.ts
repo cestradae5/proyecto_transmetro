@@ -41,6 +41,9 @@ export function useMiUnidad(): UseMiUnidadResult {
   // After the first successful load, refetches are silent so the page does not
   // flash its loading state after a location report.
   const hasLoaded = useRef(false);
+  // Same for the stops: once loaded, reloading them (to refresh the people
+  // waiting) keeps the stop buttons on screen.
+  const stopsLoaded = useRef(false);
 
   const fetchUnit = useCallback(async () => {
     if (!hasLoaded.current) setLoading(true);
@@ -71,11 +74,12 @@ export function useMiUnidad(): UseMiUnidadResult {
       setStopsError(null);
       return;
     }
-    setStopsLoading(true);
+    if (!stopsLoaded.current) setStopsLoading(true);
     setStopsError(null);
     try {
       const data = await apiClient.get<LineaParadaStop[]>(`${MY_UNIT_PATH}/stops`);
       setStops([...data].sort((a, b) => a.orden - b.orden));
+      stopsLoaded.current = true;
     } catch (err: unknown) {
       // The line may have been unassigned since the unit loaded: same as no line.
       if (getFleetErrorCode(err) === FLEET_ERROR_CODES.UNIT_HAS_NO_LINE_ASSIGNMENT) {
@@ -95,7 +99,9 @@ export function useMiUnidad(): UseMiUnidadResult {
     } catch (err: unknown) {
       return mapFleetError(err);
     }
-    await fetchUnit();
+    // The people waiting change with every turnstile pass: reload them when
+    // the unit reaches a stop.
+    await Promise.all([fetchUnit(), fetchStops()]);
     return result;
   };
 

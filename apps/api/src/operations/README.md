@@ -83,56 +83,78 @@ have `ALERTAS_OPERATIVAS_GESTIONAR`.
 
 ## Ridership: passenger counting
 
-Spec: `odd/tasks/ridership-capacity.md`. The only signal is the turnstile
-(talanquera) at the station: it sees people entering and leaving a STATION.
-Who rides a bus is an estimate per stop, never an exact count.
+Specs: `odd/tasks/ridership-capacity.md`, `odd/tasks/parada-ridership.md`,
+`odd/tasks/bus-passenger-report.md`. Two separate features:
+
+- **Turnstile** (talanquera): the only way into or out of a PARADA. `ENTRADA`
+  adds one person and charges the fare; `SALIDA` removes one.
+- **Bus**: only moves people between paradas. At the unit's current stop the
+  pilot reports how many got off (bus -> parada) and how many got on
+  (parada -> bus).
+
+A station is a parada that also has a `tbl_estacion` row; it uses its
+parada's count, capacity and alert. The parada keeps its current count in
+`tbl_parada.personas_en_parada`, never below 0, changed in the same
+transaction (with the parada row locked) that stores the turnstile event or
+the pilot report; events and reports stay as the audit trail.
 
 | Method | Path | Access | Result |
 |---|---|---|---|
-| POST | `ridership/turnstile` | `X-Turnstile-Key` (no login) | `{ numeroTarjeta, idEstacion, tipo: "ENTRADA" \| "SALIDA" }` -> 201 `{ idEvento, tipo, numeroTarjeta, montoCobrado, saldo, estacion, alertaGenerada, idAlerta }` |
-| POST | `ridership/units/:id/arrival` | `FLOTA_GESTIONAR` | `{ idEstacion }` -> 201 stop |
-| POST | `ridership/units/:id/departure` | `FLOTA_GESTIONAR` | 200 stop |
-| GET | `ridership/stations/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ idEstacion, nombreEstacion, capacidadPasajeros, personasEnEstacion, porcentaje, alertaActiva }` |
-| GET | `ridership/units/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ idUnidad, numeroPlaca, capacidadPasajeros, ocupacionEstimada, porcentaje, paradaAbierta }` |
-| GET | `ridership/alerts` | `ALERTAS_OPERATIVAS_GESTIONAR` | Station capacity alerts, newest first, max 100 |
+| POST | `ridership/turnstile` | `X-Turnstile-Key` (no login) | `{ numeroTarjeta, idParada, tipo: "ENTRADA" \| "SALIDA", idempotencyKey? }` -> 201 `{ idEvento, tipo, numeroTarjeta, montoCobrado, saldo, parada, alertaGenerada, idAlerta, repetido }` |
+| GET | `ridership/my-unit` | `UNIDAD_ASIGNADA_CONSULTAR` | The caller's unit: `{ idUnidad, numeroPlaca, capacidadPasajeros, aBordo, porcentaje, ultimoReporte }` |
+| POST | `ridership/my-unit/stop-report` | `METRICAS_UNIDAD_REPORTAR` | `{ bajaron, subieron }` -> 201 report |
+| GET | `ridership/stops/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | `parada`: `{ idParada, nombreParada, idEstacion, capacidadPasajeros, personasEnParada, porcentaje, alertaActiva }` (`idEstacion` is `null` for a parada that is not a station) |
+| GET | `ridership/units/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | Same shape as `my-unit`, for any unit |
+| GET | `ridership/alerts` | `ALERTAS_OPERATIVAS_GESTIONAR` | Capacity alerts `{ idAlerta, estadoAlerta, fechaCreacion, fechaActualizacion, parada: { idParada, nombreParada, idEstacion } }`, newest first, max 100 |
 
-A stop is `{ idParadaUnidad, idUnidad, numeroPlaca, capacidadPasajeros,
-idEstacion, nombreEstacion, ocupacionLlegada, subieron, bajaron,
-ocupacionEstimada, porcentaje, minutosEsperaExtra, fechaLlegada, fechaSalida }`.
+A report is `{ idParadaUnidad, idParada, nombreParada, bajaron, subieron,
+aBordo, porcentaje, minutosEsperaExtra, fecha }`; `ultimoReporte` is the
+unit's last report or `null`, and `aBordo` is its resulting occupancy (0
+without reports).
 
 - **Turnstile access**: answers 404 unless `TURNSTILE_SIMULATOR_ENABLED` is
   exactly `true`; needs `X-Turnstile-Key` equal to `TURNSTILE_API_KEY`
   (missing, wrong or unset key -> 401). CORS allows the header.
 - **Fare**: the client never sends the balance. `ENTRADA` needs an `ACTIVA`
   card with `saldo >= 1.00` and charges Q1.00 (`FARE`); `SALIDA` charges
-  nothing and ignores the card state. Unknown card or station -> 404; card
-  not `ACTIVA` or insufficient balance -> 409; bad body -> 400. A rejected
-  pass stores no event and charges nothing.
-- **Events**: every accepted pass is one `tbl_evento_talanquera` row; there
-  is no stored counter.
-- **People in a station**: `ENTRADA` events minus passengers who boarded a bus
-  there (`tbl_parada_unidad.subieron`), never below 0. Exits are passengers
-  leaving buses, so they do not change it.
+  nothing and ignores the card state. Unknown card -> 404; unknown parada
+  -> 404 "Parada con ID <id> no existe."; card not `ACTIVA` or insufficient
+  balance -> 409; bad body -> 400. A rejected pass stores no event and
+  charges nothing.
+- **Events**: every accepted pass is one `tbl_evento_talanquera` row. A
+  `SALIDA` at an empty parada is accepted and the count stays at 0.
+- **Retries**: optional `idempotencyKey` (8-64 chars `[A-Za-z0-9-]`, else
+  400). The same key with the same card, parada and type returns the
+  original pass with `repetido: true` (stored charge, current balance and
+  parada, `alertaGenerada: false`) and stores or charges nothing; the same
+  key with another card, parada or type -> 409. Without a key every pass is
+  new (`repetido: false`).
 - **Capacity alert (requirement 14)**: after an `ENTRADA`, if the people reach
-  `1.5 x tbl_estacion.capacidad_pasajeros` and the station has no capacity
-  alert that is not `RESUELTA`, one `tbl_alerta` row is created:
-  `CAPACIDAD_ESTACION`, `ESTACION` -> `CENTRAL`, `id_estacion_origen` = the
-  station, no unit and no author (`autor: null`). It moves with
-  `PATCH central/:id/status`; once `RESUELTA`, the next entry over the limit
-  creates a new one. It is not part of the `central` unit -> station view.
-- **Bus stop (requirement 15)**: `arrival` opens a stop. The bus carries the
-  occupancy of its last closed stop (0 for the first), boards
-  `min(waiting, free seats)` and, if the result is below 25% of
-  `tbl_unidad.capacidad_pasajeros`, returns `minutosEsperaExtra: 5` (else 0).
-  `departure` closes it: `bajaron = min(SALIDA events at the station since
-  arrival, ocupacionLlegada)`, then the newly waiting board up to capacity.
-  One open stop per unit: a second arrival -> 409; departure without an open
-  stop -> 409.
-- **Concurrency**: each request locks its rows (unit, then station, then
-  card) so two passes cannot both create the alert or overdraw a card.
-- **Limits**: two buses stopped at the same station at once both count the
-  same exits (bounded by what each carried); occupancy is not reset at the
-  end of a route.
+  `1.5 x tbl_parada.capacidad_pasajeros` and the parada has no capacity alert
+  that is not `RESUELTA`, one `tbl_alerta` row is created:
+  `CAPACIDAD_ESTACION`, `ESTACION` -> `CENTRAL`, `id_parada_origen` = the
+  parada, `id_estacion_origen` = its station or `NULL`, no unit and no
+  author (`autor: null`). It moves with `PATCH central/:id/status`; once
+  `RESUELTA`, the next entry over the limit creates a new one. It is not part
+  of the `central` unit -> station view.
+- **Pilot report**: the unit comes from the caller's pilot assignment (none
+  -> 404) and the parada from the unit's current reported stop
+  (`POST /fleet/units/my-unit/location`; none -> 409 "Reporte primero la
+  parada en la que se encuentra la unidad."). `bajaron` and `subieron` are
+  integers >= 0 (else 400; `0/0` is valid). First `bajaron` get off: more than
+  on board -> 409 "No pueden bajar N pasajeros: la unidad lleva M."; then
+  `subieron` get on: over `tbl_unidad.capacidad_pasajeros` -> 409 "La unidad
+  quedaría con N pasajeros y su capacidad es M.". Boarding more people than
+  the parada counts is accepted; the parada count stays at 0. Each report is
+  one `tbl_parada_unidad` row with the reporting pilot (`id_empleado`). A
+  rejected report stores nothing.
+- **Rule 15**: after the report, on board below 25% of the unit capacity ->
+  `minutosEsperaExtra: 5`, else 0.
+- **Concurrency**: each request locks its rows (unit, then parada, then
+  card) so two passes cannot both create the alert or overdraw a card, and
+  two reports of one unit cannot both read the same occupancy.
+- **Limits**: nothing empties the bus at the end of a route; the pilot
+  reports who gets off.
 
 ## Not in v1
 

@@ -7,11 +7,13 @@ import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { MiUnidadPage } from "../../features/fleet/components/mi-unidad/mi-unidad-page";
 import { useMiUnidad } from "../../features/fleet/hooks/use-mi-unidad";
+import { usePasajerosUnidad } from "../../features/fleet/hooks/use-pasajeros-unidad";
 import { useAuth } from "../../features/authentication/auth-context";
 import { EstadoUnidad, type LineaParadaStop, type Unidad } from "../../features/fleet/types/fleet.types";
 import type { User } from "../../features/authentication/auth-context";
 
 vi.mock("../../features/fleet/hooks/use-mi-unidad", () => ({ useMiUnidad: vi.fn() }));
+vi.mock("../../features/fleet/hooks/use-pasajeros-unidad", () => ({ usePasajerosUnidad: vi.fn() }));
 vi.mock("../../features/authentication/auth-context", async () => {
   const actual = await vi.importActual<typeof import("../../features/authentication/auth-context")>(
     "../../features/authentication/auth-context",
@@ -20,6 +22,7 @@ vi.mock("../../features/authentication/auth-context", async () => {
 });
 
 const mockedUseMiUnidad = useMiUnidad as unknown as Mock;
+const mockedUsePasajeros = usePasajerosUnidad as unknown as Mock;
 const mockedUseAuth = useAuth as unknown as Mock;
 
 const PILOT_PERMISSIONS = ["PERFIL_PROPIO_CONSULTAR", "UNIDAD_ASIGNADA_CONSULTAR", "METRICAS_UNIDAD_REPORTAR"];
@@ -95,6 +98,13 @@ beforeEach(() => {
     logout: vi.fn(),
   });
   mockedUseMiUnidad.mockReturnValue(hookState());
+  mockedUsePasajeros.mockReturnValue({
+    occupancy: { idUnidad: "7", numeroPlaca: "P-777AAA", capacidadPasajeros: 120, aBordo: 6, porcentaje: 5, ultimoReporte: null },
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    report: vi.fn(),
+  });
 });
 
 describe("MiUnidadPage", () => {
@@ -162,6 +172,62 @@ describe("MiUnidadPage", () => {
     expect(screen.getByText("Sin línea asignada")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("La unidad no tiene una línea asignada");
     expect(screen.queryByRole("button", { name: /^Reportar en / })).not.toBeInTheDocument();
+  });
+
+  // bus-passenger-report S8: the passengers panel sits with the stop buttons.
+  it("shows the passengers panel for a pilot whose unit has a line, enabled at a current stop", () => {
+    mockedUseMiUnidad.mockReturnValue(hookState({ unit: unit({ idLineaParadaActual: "102", nombreParadaActual: "Centro" }) }));
+    renderPage();
+
+    expect(screen.getByRole("region", { name: "Pasajeros en esta parada" })).toBeInTheDocument();
+    expect(screen.getByTestId("a-bordo")).toHaveTextContent("A bordo: 6 de 120");
+    expect(screen.getByRole("button", { name: "Registrar pasajeros" })).toBeEnabled();
+  });
+
+  it("reloads the stops (people waiting) after registering passengers", async () => {
+    const refreshStops = vi.fn();
+    const report = vi.fn().mockResolvedValue({
+      idParadaUnidad: "9", idParada: "p2", nombreParada: "Centro", bajaron: 0, subieron: 2,
+      aBordo: 8, porcentaje: 7, minutosEsperaExtra: 5, fecha: "2026-10-16T10:00:00.000Z",
+    });
+    mockedUseMiUnidad.mockReturnValue(
+      hookState({ unit: unit({ idLineaParadaActual: "102", nombreParadaActual: "Centro" }), refreshStops }),
+    );
+    mockedUsePasajeros.mockReturnValue({
+      occupancy: { idUnidad: "7", numeroPlaca: "P-777AAA", capacidadPasajeros: 120, aBordo: 6, porcentaje: 5, ultimoReporte: null },
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      report,
+    });
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText("Subieron"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar pasajeros" }));
+
+    await waitFor(() => expect(report).toHaveBeenCalledWith({ bajaron: 0, subieron: 2 }));
+    await waitFor(() => expect(refreshStops).toHaveBeenCalledTimes(1));
+  });
+
+  it("disables the passengers report when the unit has no current stop", () => {
+    mockedUseMiUnidad.mockReturnValue(hookState({ unit: unit({ idLineaParadaActual: null }) }));
+    renderPage();
+
+    expect(screen.getByRole("button", { name: "Registrar pasajeros" })).toBeDisabled();
+  });
+
+  it("hides the passengers panel without METRICAS_UNIDAD_REPORTAR", () => {
+    mockedUseAuth.mockReturnValue({
+      user: user(["UNIDAD_ASIGNADA_CONSULTAR"]),
+      token: "fake-jwt",
+      isAuthenticated: true,
+      loading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+    });
+    renderPage();
+
+    expect(screen.queryByRole("region", { name: "Pasajeros en esta parada" })).not.toBeInTheDocument();
   });
 
   it("hides the report action without METRICAS_UNIDAD_REPORTAR", () => {
