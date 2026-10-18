@@ -12,6 +12,7 @@ import { AuditLogModule } from "./audit-log/audit-log.module.js";
 import { ReportsModule } from "./reports/reports.module.js";
 import { OperationsModule } from "./operations/operations.module.js";
 import { CitizenModule } from "./citizen/citizen.module.js";
+import { CardsModule } from "./cards/cards.module.js";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { CitizenModule } from "./citizen/citizen.module.js";
     ReportsModule,
     OperationsModule,
     CitizenModule,
+    CardsModule,
     ...(process.env.NODE_ENV === "test" ? [] : [DatabaseModule]),
   ],
 })

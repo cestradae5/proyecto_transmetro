@@ -339,17 +339,18 @@ describe("AsignacionUnidadService", () => {
     it("maps the assigned line's stops (already ordered by LineaService) to the stop DTO", async () => {
       asignacionRepo.findOne.mockResolvedValue(makeAssignment({ idLinea: "10" }));
       lineaService.listParadas.mockResolvedValue([
-        { idLineaParada: "21", idParada: "5", orden: 1, parada: { idParada: 5, nombreParada: "Centro" } },
-        { idLineaParada: "22", idParada: "6", orden: 2, parada: { idParada: 6, nombreParada: "Trébol" } },
+        { idLineaParada: "21", idParada: "5", orden: 1, parada: { idParada: 5, nombreParada: "Centro", personasEnParada: 3 } },
+        { idLineaParada: "22", idParada: "6", orden: 2, parada: { idParada: 6, nombreParada: "Trébol", personasEnParada: 0 } },
       ]);
 
       const result = await service.listLineStops("1");
 
       expect(asignacionRepo.findOne).toHaveBeenCalledWith({ where: { idUnidad: "1" } });
       expect(lineaService.listParadas).toHaveBeenCalledWith("10");
+      // personasEnParada: people waiting at the parada, counted by the turnstile.
       expect(result).toEqual([
-        { idLineaParada: "21", idParada: "5", nombre: "Centro", orden: 1 },
-        { idLineaParada: "22", idParada: "6", nombre: "Trébol", orden: 2 },
+        { idLineaParada: "21", idParada: "5", nombre: "Centro", orden: 1, personasEnParada: 3 },
+        { idLineaParada: "22", idParada: "6", nombre: "Trébol", orden: 2, personasEnParada: 0 },
       ]);
     });
 

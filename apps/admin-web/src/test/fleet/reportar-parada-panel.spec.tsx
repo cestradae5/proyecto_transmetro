@@ -26,6 +26,23 @@ function renderPanel(overrides: Partial<Parameters<typeof ReportarParadaPanel>[0
 afterEach(() => vi.restoreAllMocks());
 
 describe("ReportarParadaPanel", () => {
+  // The pilot sees how many people the turnstile counts at each stop.
+  it("shows the people waiting at each stop", () => {
+    renderPanel({
+      stops: STOPS.map((stop, i) => ({ ...stop, personasEnParada: [0, 1, 12][i] })),
+    });
+
+    expect(screen.getByRole("button", { name: /Terminal/ })).toHaveTextContent("0 esperando");
+    expect(screen.getByRole("button", { name: /Centro/ })).toHaveTextContent("1 esperando");
+    expect(screen.getByRole("button", { name: /Plaza/ })).toHaveTextContent("12 esperando");
+  });
+
+  it("shows no count when the stop has none", () => {
+    renderPanel();
+
+    expect(screen.queryByText(/esperando/)).not.toBeInTheDocument();
+  });
+
   it("renders one large button per stop, in the given order", () => {
     renderPanel();
     const names = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"));

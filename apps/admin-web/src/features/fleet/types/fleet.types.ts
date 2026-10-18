@@ -46,6 +46,8 @@ export interface LineaParadaStop {
   idParada: string;
   nombre: string;
   orden: number;
+  /** People waiting at the parada (turnstile count and pilot reports). */
+  personasEnParada?: number;
 }
 
 export interface AsignacionPiloto {

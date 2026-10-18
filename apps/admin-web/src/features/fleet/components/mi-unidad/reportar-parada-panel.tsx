@@ -56,6 +56,9 @@ function StopButton({ stop, isCurrent, isNext, isSending, disabled, onSelect }: 
       </span>
       <span className="flex-1 min-w-0">
         <span className="block text-lg font-semibold leading-tight break-words">{stop.nombre}</span>
+        {stop.personasEnParada !== undefined && (
+          <span className="block text-sm font-semibold">{stop.personasEnParada} esperando</span>
+        )}
         {isCurrent && <span className="block text-sm font-medium opacity-90">Usted está aquí</span>}
         {isNext && !isSending && <span className="block text-sm font-semibold text-primary">Siguiente</span>}
         {isSending && <span className="block text-sm font-medium text-slate-500">Reportando...</span>}

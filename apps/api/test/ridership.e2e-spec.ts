@@ -646,8 +646,19 @@ describe("Ridership (e2e)", () => {
       expect(stored).toEqual({ idEmpleado: pilot1.id, idParada: stopE });
     });
 
-    it("drops passengers at the next parada before boarding (bus -> parada, parada -> bus)", async () => {
+    it("shows the pilot how many people wait at each stop of the line", async () => {
       await enter(stopF, 2);
+
+      const res = await api().get("/fleet/units/my-unit/stops").set("Authorization", `Bearer ${pilot1.token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((s: { idParada: string; personasEnParada: number }) => [s.idParada, s.personasEnParada])).toEqual([
+        [stopE, 0],
+        [stopF, 2],
+      ]);
+    });
+
+    it("drops passengers at the next parada before boarding (bus -> parada, parada -> bus)", async () => {
       await atStop(pilot1.token, stopF);
 
       const res = await report(pilot1.token, { bajaron: 2, subieron: 1 });

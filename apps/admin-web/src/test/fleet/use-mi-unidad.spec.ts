@@ -160,6 +160,28 @@ describe("useMiUnidad", () => {
     expect(renders.slice(afterFirstLoad).every((l) => l === false)).toBe(true);
   });
 
+  // The people waiting at each stop change with every turnstile pass: arriving
+  // at a stop reloads them without flashing the stop list.
+  it("reportLocation also reloads the stops silently, with the people waiting", async () => {
+    stubGet(UNIT);
+    const { result } = renderHook(() => useMiUnidad());
+    await waitFor(() => expect(result.current.stops).toHaveLength(2));
+    const updated = STOPS.map((s) => ({ ...s, personasEnParada: s.orden === 2 ? 7 : 0 }));
+    stubGet({ ...UNIT, idLineaParadaActual: "102" }, updated);
+    mockPost.mockResolvedValue({ id: "a1", idUnidad: "7", idLinea: "4" });
+    const loadingStates: boolean[] = [];
+
+    await act(async () => {
+      const pending = result.current.reportLocation("102");
+      loadingStates.push(result.current.stopsLoading);
+      await pending;
+    });
+
+    await waitFor(() => expect(result.current.stops.find((s) => s.orden === 2)?.personasEnParada).toBe(7));
+    expect(loadingStates).toEqual([false]);
+    expect(result.current.stopsLoading).toBe(false);
+  });
+
   it("reportLocation rejects with a translated message and skips refresh", async () => {
     stubGet(UNIT);
     const { result } = renderHook(() => useMiUnidad());

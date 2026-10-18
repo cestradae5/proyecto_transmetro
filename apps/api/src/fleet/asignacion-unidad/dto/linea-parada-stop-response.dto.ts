@@ -15,4 +15,7 @@ export class LineaParadaStopResponseDto {
 
   @ApiProperty({ description: "Posición de la parada en el recorrido de la línea" })
   orden!: number;
+
+  @ApiProperty({ description: "Personas esperando en la parada según la talanquera y los reportes de pilotos" })
+  personasEnParada!: number;
 }
