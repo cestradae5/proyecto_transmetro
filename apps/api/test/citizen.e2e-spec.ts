@@ -290,6 +290,19 @@ describe("Citizen (e2e)", () => {
       expect(await paymentRows()).toEqual(before);
     });
 
+    // qpaypro-checkout S8: QPP- referencias are generated for QPayPro payments.
+    it("rejects a referencia starting with QPP- with 400 and changes nothing", async () => {
+      const card = await createCard("qpp-ref", "5.00");
+      const before = await paymentRows();
+
+      const res = await recharge(card, { monto: 10, referencia: `QPP-${runTag}` });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toEqual(["referencia must not start with QPP- (reserved for QPayPro)"]);
+      expect(await saldoOf(card)).toBe("5.00");
+      expect(await paymentRows()).toEqual(before);
+    });
+
     // Verifier probe: the client cannot set the balance; unknown fields are
     // stripped by the global ValidationPipe whitelist.
     it("ignores a saldo sent in the body", async () => {

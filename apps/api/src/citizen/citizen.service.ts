@@ -10,11 +10,11 @@ import type {
   RechargeResponseDto,
 } from "./dto/citizen.dto.js";
 
-interface Queryable {
+export interface Queryable {
   query(sql: string, params?: unknown[]): Promise<unknown>;
 }
 
-interface CardRow {
+export interface CardRow {
   idTarjeta: string;
   numeroTarjeta: string;
   saldo: string;
@@ -43,6 +43,13 @@ interface RechargeRow {
   monto: string;
   fechaRecarga: Date | string;
   numeroComprobante: string;
+}
+
+export interface CreditedRecharge {
+  idRecarga: string;
+  fechaRecarga: Date | string;
+  numeroComprobante: string;
+  saldo: string;
 }
 
 const CARD_ACTIVE = "ACTIVA";
@@ -179,34 +186,44 @@ export class CitizenService {
          RETURNING id_transaccion_pago AS "id"`,
         [card.idTarjeta, dto.referencia, monto, PAYMENT_APPROVED],
       )) as { id: string }[];
-      const recarga = (await manager.query(
-        `INSERT INTO tbl_recarga (id_transaccion_pago, id_tarjeta_ciudadana, monto_recarga)
-         VALUES ($1, $2, $3)
-         RETURNING id_recarga AS "idRecarga", fecha_recarga AS "fechaRecarga"`,
-        [tx[0]!.id, card.idTarjeta, monto],
-      )) as { idRecarga: string; fechaRecarga: Date | string }[];
-      const idRecarga = String(recarga[0]!.idRecarga);
-      const numeroComprobante = `${RECEIPT_PREFIX}${idRecarga}`;
-      await manager.query(
-        `INSERT INTO tbl_comprobante (id_recarga, numero_comprobante) VALUES ($1, $2)`,
-        [idRecarga, numeroComprobante],
-      );
-      const updated = (await manager.query(
-        `UPDATE tbl_tarjeta_ciudadana SET saldo = saldo + $1
-          WHERE id_tarjeta_ciudadana = $2
-          RETURNING saldo`,
-        [monto, card.idTarjeta],
-      )) as [{ saldo: string }[], number] | { saldo: string }[];
+      const credited = await this.creditRecharge(manager, tx[0]!.id, card.idTarjeta, monto, RECEIPT_PREFIX);
 
-      return this.toDto(
-        { idRecarga, idTarjeta: card.idTarjeta, monto, fechaRecarga: recarga[0]!.fechaRecarga, numeroComprobante },
-        Number(firstRow(updated).saldo),
-        false,
-      );
+      return this.toDto({ ...credited, idTarjeta: card.idTarjeta, monto }, Number(credited.saldo), false);
     });
   }
 
-  private async findCard(runner: Queryable, numeroTarjeta: string, lock: boolean): Promise<CardRow> {
+  // The recharge of an approved payment: one tbl_recarga, its tbl_comprobante
+  // `<receiptPrefix><idRecarga>` and the amount added to the balance. Runs
+  // inside the caller's transaction (simulated recharge, qpaypro-checkout S4).
+  async creditRecharge(
+    manager: Queryable,
+    idTransaccion: string,
+    idTarjeta: string,
+    monto: string,
+    receiptPrefix: string,
+  ): Promise<CreditedRecharge> {
+    const recarga = (await manager.query(
+      `INSERT INTO tbl_recarga (id_transaccion_pago, id_tarjeta_ciudadana, monto_recarga)
+       VALUES ($1, $2, $3)
+       RETURNING id_recarga AS "idRecarga", fecha_recarga AS "fechaRecarga"`,
+      [idTransaccion, idTarjeta, monto],
+    )) as { idRecarga: string; fechaRecarga: Date | string }[];
+    const idRecarga = String(recarga[0]!.idRecarga);
+    const numeroComprobante = `${receiptPrefix}${idRecarga}`;
+    await manager.query(
+      `INSERT INTO tbl_comprobante (id_recarga, numero_comprobante) VALUES ($1, $2)`,
+      [idRecarga, numeroComprobante],
+    );
+    const updated = (await manager.query(
+      `UPDATE tbl_tarjeta_ciudadana SET saldo = saldo + $1
+        WHERE id_tarjeta_ciudadana = $2
+        RETURNING saldo`,
+      [monto, idTarjeta],
+    )) as [{ saldo: string }[], number] | { saldo: string }[];
+    return { idRecarga, fechaRecarga: recarga[0]!.fechaRecarga, numeroComprobante, saldo: firstRow(updated).saldo };
+  }
+
+  async findCard(runner: Queryable, numeroTarjeta: string, lock: boolean): Promise<CardRow> {
     const rows = (await runner.query(
       `SELECT id_tarjeta_ciudadana AS "idTarjeta", numero_tarjeta AS "numeroTarjeta",
               saldo, estado_tarjeta AS "estado"

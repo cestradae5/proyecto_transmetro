@@ -23,6 +23,7 @@ dates ISO 8601.
 - **recargas**: the card's payment transactions (`tbl_transaccion_pago`),
   newest first, max 100: `{ idTransaccion, referencia, monto, estadoPago,
   origen: "SIMULADA" | "QPAYPRO", numeroComprobante, fecha }`. `origen` is
-  `QPAYPRO` when the transaction has a QPayPro id; `numeroComprobante` is the
+  `QPAYPRO` when the referencia starts with `QPP-` (a started QPayPro
+  payment has no QPayPro id yet) or the transaction has a QPayPro id; `numeroComprobante` is the
   receipt of its recharge, `null` while the payment is not approved. Payments
   in any state are listed, so pending or rejected QPayPro payments show up.
