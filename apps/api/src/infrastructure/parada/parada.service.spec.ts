@@ -4,6 +4,8 @@
 
 import { jest } from "@jest/globals";
 import { NotFoundException } from "@nestjs/common";
+import { plainToInstance } from "class-transformer";
+import { validate } from "class-validator";
 import { In, type EntityManager, type Repository } from "typeorm";
 
 import { EstacionEntity } from "../estacion/estacion.entity.js";
@@ -57,6 +59,7 @@ function makeParada(overrides: Partial<ParadaEntity> = {}): ParadaEntity {
     latitud: 14.6349,
     longitud: -90.5069,
     estadoParada: EstadoParada.ACTIVA,
+    capacidadPasajeros: 100,
     ...overrides,
   };
 }
@@ -223,6 +226,25 @@ describe("ParadaService", () => {
       });
     });
 
+    // odd/tasks/parada-ridership.md S3: capacity lives on the parada.
+    it("updates capacidadPasajeros and returns it", async () => {
+      repository.findOne
+        .mockResolvedValueOnce(makeParada())
+        .mockResolvedValueOnce(makeParada({ capacidadPasajeros: 4 }));
+      repository.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.update("1", { capacidadPasajeros: 4 }, ACTOR);
+
+      expect(repository.update).toHaveBeenCalledWith({ idParada: 1 }, { capacidadPasajeros: 4 });
+      expect(result.capacidadPasajeros).toBe(4);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+        entityId: "1",
+        detalle: { changedFields: ["capacidadPasajeros"] },
+      });
+    });
+
     it("keeps reporting the estación after an update", async () => {
       const existing = makeParada();
       repository.findOne.mockResolvedValue(existing);
@@ -295,5 +317,23 @@ describe("ParadaService", () => {
       expect(repository.remove).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("CreateParadaDto capacidadPasajeros (parada-ridership S3)", () => {
+  const base = { nombreParada: "Parada Norte", latitud: 14.64, longitud: -90.51, estadoParada: EstadoParada.ACTIVA };
+
+  it("is optional (the database default applies)", async () => {
+    expect(await validate(plainToInstance(CreateParadaDto, base))).toHaveLength(0);
+  });
+
+  it("accepts a positive integer", async () => {
+    expect(await validate(plainToInstance(CreateParadaDto, { ...base, capacidadPasajeros: 40 }))).toHaveLength(0);
+  });
+
+  it.each([0, -3, 2.5, "40", null])("rejects %p", async (capacidadPasajeros) => {
+    const errors = await validate(plainToInstance(CreateParadaDto, { ...base, capacidadPasajeros }));
+
+    expect(errors.map((e) => e.property)).toEqual(["capacidadPasajeros"]);
   });
 });

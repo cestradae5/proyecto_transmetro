@@ -21,7 +21,7 @@ import { TurnstileKeyGuard } from "./turnstile-key.guard.js";
 import { TurnstilePassDto, UnitArrivalDto } from "./dto/ridership-request.dto.js";
 import type {
   CapacityAlertDto,
-  StationOccupancyDto,
+  ParadaOccupancyDto,
   TurnstilePassResponseDto,
   UnitOccupancyDto,
   UnitStopDto,
@@ -83,12 +83,12 @@ export class RidershipController {
     return this.ridershipService.depart(id);
   }
 
-  @Get("stations/:id")
+  @Get("stops/:id")
   @Permissions(ALERTAS_OPERATIVAS_GESTIONAR)
-  @ApiOperation({ summary: "Personas esperando en la estación y estado de la alerta de capacidad" })
-  @ApiResponse({ status: 404, description: "Estación inexistente" })
-  getStation(@Param("id") id: string): Promise<StationOccupancyDto> {
-    return this.ridershipService.getStation(id);
+  @ApiOperation({ summary: "Personas esperando en la parada (o estación) y estado de la alerta de capacidad" })
+  @ApiResponse({ status: 404, description: "Parada inexistente" })
+  getStop(@Param("id") id: string): Promise<ParadaOccupancyDto> {
+    return this.ridershipService.getParada(id);
   }
 
   @Get("units/:id")

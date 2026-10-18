@@ -5,7 +5,7 @@ import { DataSource, QueryFailedError } from "typeorm";
 import { CardCannotBeRecharged, CitizenCardNotFound, RechargeReferenceConflict } from "./citizen.errors.js";
 import type {
   CitizenCardDto,
-  CitizenStationDto,
+  CitizenLineDto,
   CreateRechargeDto,
   RechargeResponseDto,
 } from "./dto/citizen.dto.js";
@@ -21,6 +21,22 @@ interface CardRow {
   estado: string;
 }
 
+interface LineStopRow {
+  idLinea: string;
+  numeroLinea: string;
+  nombreLinea: string;
+  idParada: string;
+  nombreParada: string;
+  orden: number;
+  esEstacion: boolean;
+}
+
+interface LooseStopRow {
+  idParada: string;
+  nombreParada: string;
+  esEstacion: boolean;
+}
+
 interface RechargeRow {
   idRecarga: string;
   idTarjeta: string;
@@ -30,7 +46,8 @@ interface RechargeRow {
 }
 
 const CARD_ACTIVE = "ACTIVA";
-const STATION_ACTIVE = "ACTIVA";
+const ACTIVE = "ACTIVA";
+const NO_LINE_NAME = "Sin línea";
 const PAYMENT_APPROVED = "APROBADA";
 const RECEIPT_PREFIX = "SIM-";
 // Postgres' default name for UNIQUE (referencia_pago) in database/init.sql.
@@ -52,15 +69,66 @@ export class CitizenService {
     return { numeroTarjeta: card.numeroTarjeta, saldo: Number(card.saldo), estadoTarjeta: card.estado };
   }
 
-  // S4
-  async listStations(): Promise<CitizenStationDto[]> {
+  // parada-ridership S9: every ACTIVA parada, grouped by its ACTIVA lines in
+  // route order (a parada on two lines appears in both), then a last
+  // "Sin línea" group with the ACTIVA paradas on no ACTIVA line.
+  async listLines(): Promise<CitizenLineDto[]> {
     const rows = (await this.dataSource.query(
-      `SELECT id_estacion AS "idEstacion", nombre_estacion AS "nombreEstacion"
-         FROM tbl_estacion WHERE estado_estacion = $1
-        ORDER BY nombre_estacion ASC, id_estacion ASC`,
-      [STATION_ACTIVE],
-    )) as CitizenStationDto[];
-    return rows.map((row) => ({ idEstacion: String(row.idEstacion), nombreEstacion: row.nombreEstacion }));
+      `SELECT l.id_linea AS "idLinea", l.numero_linea AS "numeroLinea", l.nombre_linea AS "nombreLinea",
+              p.id_parada AS "idParada", p.nombre_parada AS "nombreParada", lp.orden AS "orden",
+              EXISTS (SELECT 1 FROM tbl_estacion e WHERE e.id_parada = p.id_parada) AS "esEstacion"
+         FROM tbl_linea l
+        INNER JOIN tbl_linea_parada lp ON lp.id_linea = l.id_linea
+        INNER JOIN tbl_parada p ON p.id_parada = lp.id_parada
+        WHERE l.estado_linea = $1 AND p.estado_parada = $1
+        ORDER BY l.id_linea, lp.orden`,
+      [ACTIVE],
+    )) as LineStopRow[];
+    const loose = (await this.dataSource.query(
+      `SELECT p.id_parada AS "idParada", p.nombre_parada AS "nombreParada",
+              EXISTS (SELECT 1 FROM tbl_estacion e WHERE e.id_parada = p.id_parada) AS "esEstacion"
+         FROM tbl_parada p
+        WHERE p.estado_parada = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM tbl_linea_parada lp
+             INNER JOIN tbl_linea l ON l.id_linea = lp.id_linea
+             WHERE lp.id_parada = p.id_parada AND l.estado_linea = $1)
+        ORDER BY p.nombre_parada ASC, p.id_parada ASC`,
+      [ACTIVE],
+    )) as LooseStopRow[];
+
+    const lines = new Map<string, CitizenLineDto>();
+    for (const row of rows) {
+      const key = String(row.idLinea);
+      let line = lines.get(key);
+      if (!line) {
+        line = { idLinea: key, numeroLinea: row.numeroLinea, nombreLinea: row.nombreLinea, paradas: [] };
+        lines.set(key, line);
+      }
+      line.paradas.push({
+        idParada: String(row.idParada),
+        nombreParada: row.nombreParada,
+        orden: Number(row.orden),
+        esEstacion: Boolean(row.esEstacion),
+      });
+    }
+    const sorted = [...lines.values()].sort((a, b) =>
+      String(a.numeroLinea).localeCompare(String(b.numeroLinea), "es", { numeric: true, sensitivity: "base" }),
+    );
+    if (loose.length > 0) {
+      sorted.push({
+        idLinea: null,
+        numeroLinea: null,
+        nombreLinea: NO_LINE_NAME,
+        paradas: loose.map((row) => ({
+          idParada: String(row.idParada),
+          nombreParada: row.nombreParada,
+          orden: null,
+          esEstacion: Boolean(row.esEstacion),
+        })),
+      });
+    }
+    return sorted;
   }
 
   // S5, S6: a simulated, always-approved payment. The same referencia for

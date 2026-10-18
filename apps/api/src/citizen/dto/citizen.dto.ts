@@ -24,9 +24,18 @@ export class CitizenCardDto {
   @ApiProperty({ enum: ["ACTIVA", "BLOQUEADA", "VENCIDA", "ANULADA"] }) estadoTarjeta!: string;
 }
 
-export class CitizenStationDto {
-  @ApiProperty() idEstacion!: string;
-  @ApiProperty() nombreEstacion!: string;
+export class CitizenLineStopDto {
+  @ApiProperty() idParada!: string;
+  @ApiProperty() nombreParada!: string;
+  @ApiProperty({ type: Number, nullable: true, description: "Orden en la ruta; null en 'Sin línea'" }) orden!: number | null;
+  @ApiProperty({ description: "La parada también es estación" }) esEstacion!: boolean;
+}
+
+export class CitizenLineDto {
+  @ApiProperty({ type: String, nullable: true, description: "null para el grupo 'Sin línea'" }) idLinea!: string | null;
+  @ApiProperty({ type: String, nullable: true }) numeroLinea!: string | null;
+  @ApiProperty() nombreLinea!: string;
+  @ApiProperty({ type: [CitizenLineStopDto] }) paradas!: CitizenLineStopDto[];
 }
 
 export class RechargeResponseDto {

@@ -214,9 +214,30 @@ describe("recharge (S9)", () => {
 });
 
 describe("turnstile simulator (S10)", () => {
-  const STATIONS = [
-    { idEstacion: "3", nombreEstacion: "Estación Centro" },
-    { idEstacion: "5", nombreEstacion: "Estación Norte" },
+  // parada-ridership S9: active lines with their paradas in route order; a
+  // parada can be on two lines; the last group holds paradas without line.
+  const LINES = [
+    {
+      idLinea: "6",
+      numeroLinea: "6",
+      nombreLinea: "Norte - Centro",
+      paradas: [
+        { idParada: "5", nombreParada: "Parada Norte", orden: 1, esEstacion: false },
+        { idParada: "3", nombreParada: "Parada Centro", orden: 2, esEstacion: true },
+      ],
+    },
+    {
+      idLinea: "12",
+      numeroLinea: "12",
+      nombreLinea: "Centro - Sur",
+      paradas: [{ idParada: "3", nombreParada: "Parada Centro", orden: 1, esEstacion: true }],
+    },
+    {
+      idLinea: null,
+      numeroLinea: null,
+      nombreLinea: "Sin línea",
+      paradas: [{ idParada: "9", nombreParada: "Parada Aislada", orden: null, esEstacion: false }],
+    },
   ];
   const passResult = (overrides: Record<string, unknown> = {}) => ({
     idEvento: "77",
@@ -224,7 +245,15 @@ describe("turnstile simulator (S10)", () => {
     numeroTarjeta: "TEST-0001",
     montoCobrado: 1,
     saldo: 11.5,
-    estacion: { idEstacion: "5", nombreEstacion: "Estación Norte", capacidadPasajeros: 4, personasEnEstacion: 3, porcentaje: 75, alertaActiva: false },
+    parada: {
+      idParada: "5",
+      nombreParada: "Parada Norte",
+      idEstacion: null,
+      capacidadPasajeros: 4,
+      personasEnParada: 3,
+      porcentaje: 75,
+      alertaActiva: false,
+    },
     alertaGenerada: false,
     idAlerta: null,
     repetido: false,
@@ -235,12 +264,33 @@ describe("turnstile simulator (S10)", () => {
     vi.stubEnv("VITE_TURNSTILE_SIMULATOR", "true");
     render(<App />);
     answers.push({ status: 200, body: CARD });
-    answers.push({ status: 200, body: STATIONS });
+    answers.push({ status: 200, body: LINES });
     fireEvent.change(screen.getByLabelText("Número de tarjeta"), { target: { value: "TEST-0001" } });
     fireEvent.click(screen.getByRole("button", { name: "Consultar" }));
-    await screen.findByRole("option", { name: "Estación Norte" });
-    fireEvent.change(screen.getByLabelText("Estación"), { target: { value: "5" } });
+    await screen.findByRole("option", { name: "Parada Norte" });
+    fireEvent.change(screen.getByLabelText("Parada"), { target: { value: "5" } });
   }
+
+  it("lists every parada grouped by line, marks stations and repeats shared paradas (parada-ridership S10)", async () => {
+    await openSimulator();
+
+    expect(call(1).url).toBe(`${API}/citizen/lines`);
+    const groups = screen.getAllByRole("group").map((group) => ({
+      label: group.getAttribute("label"),
+      options: [...group.querySelectorAll("option")].map((option) => [option.value, option.textContent]),
+    }));
+    expect(groups).toEqual([
+      {
+        label: "Línea 6 - Norte - Centro",
+        options: [
+          ["5", "Parada Norte"],
+          ["3", "Parada Centro (estación)"],
+        ],
+      },
+      { label: "Línea 12 - Centro - Sur", options: [["3", "Parada Centro (estación)"]] },
+      { label: "Sin línea", options: [["9", "Parada Aislada"]] },
+    ]);
+  });
 
   it("is not rendered when the flag is off", async () => {
     render(<App />);
@@ -252,21 +302,20 @@ describe("turnstile simulator (S10)", () => {
 
   it("sends the pass with the key header and a fresh idempotencyKey per click", async () => {
     await openSimulator();
-    expect(call(1).url).toBe(`${API}/citizen/stations`);
     answers.push({ status: 201, body: passResult() });
     answers.push({ status: 201, body: passResult({ tipo: "SALIDA", montoCobrado: 0 }) });
 
     fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
-    await screen.findByText("Personas en la estación: 3");
+    await screen.findByText("Personas en la parada: 3");
     fireEvent.click(screen.getByRole("button", { name: "Salir" }));
     await screen.findByText("Cobro: Q0.00");
 
     const entry = call(2);
     expect(entry).toMatchObject({ url: `${API}/operations/ridership/turnstile`, method: "POST" });
     expect(entry.headers.get("X-Turnstile-Key")).toBe("dev-key-123");
-    expect(entry.body).toEqual({ numeroTarjeta: "TEST-0001", idEstacion: 5, tipo: "ENTRADA", idempotencyKey: expect.any(String) });
+    expect(entry.body).toEqual({ numeroTarjeta: "TEST-0001", idParada: 5, tipo: "ENTRADA", idempotencyKey: expect.any(String) });
     expect(entry.body.idempotencyKey).toMatch(/^[A-Za-z0-9-]{8,64}$/);
-    expect(call(3).body).toMatchObject({ tipo: "SALIDA", idEstacion: 5 });
+    expect(call(3).body).toMatchObject({ tipo: "SALIDA", idParada: 5 });
     expect(call(3).body.idempotencyKey).not.toBe(entry.body.idempotencyKey);
     expect(Object.keys(entry.body)).not.toContain("saldo");
   });

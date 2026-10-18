@@ -7,7 +7,7 @@ import {
   CardNotFound,
   IdempotencyKeyConflict,
   InsufficientBalance,
-  StationNotFound,
+  ParadaNotFound,
   UnitAlreadyAtStop,
   UnitNotAtStop,
   UnitNotFound,
@@ -23,7 +23,7 @@ import {
 import { board, extraWaitMinutes, getOff, percentOf, reachesStationAlert } from "./ridership.rules.js";
 import type {
   CapacityAlertDto,
-  StationOccupancyDto,
+  ParadaOccupancyDto,
   TurnstilePassResponseDto,
   UnitOccupancyDto,
   UnitStopDto,
@@ -34,9 +34,11 @@ interface Queryable {
   query(sql: string, params?: unknown[]): Promise<unknown>;
 }
 
-interface StationRow {
-  idEstacion: string;
-  nombreEstacion: string;
+// A parada and, when it is also a station, its tbl_estacion id.
+interface ParadaRow {
+  idParada: string;
+  nombreParada: string;
+  idEstacion: string | null;
   capacidadPasajeros: number;
 }
 
@@ -54,7 +56,7 @@ interface CardRow {
 
 interface KeyedEventRow {
   idEvento: string;
-  idEstacion: string;
+  idParada: string;
   idTarjeta: string;
   tipo: string;
   montoCobrado: string;
@@ -62,8 +64,9 @@ interface KeyedEventRow {
 
 interface StopRow {
   idParadaUnidad: string;
-  idEstacion: string;
-  nombreEstacion: string;
+  idParada: string;
+  nombreParada: string;
+  idEstacion: string | null;
   fechaLlegada: Date | string;
   fechaSalida: Date | string | null;
   ocupacionLlegada: number;
@@ -78,8 +81,9 @@ interface CapacityAlertRow {
   estadoAlerta: string;
   fechaCreacion: Date | string;
   fechaActualizacion: Date | string;
+  idParada: string | null;
+  nombreParada: string | null;
   idEstacion: string | null;
-  nombreEstacion: string | null;
 }
 
 const NUMERIC_ID = /^\d+$/;
@@ -89,8 +93,9 @@ const IDEMPOTENCY_UNIQUE = "tbl_evento_talanquera_clave_idempotencia_key";
 
 const STOP_COLUMNS = `
        pu.id_parada_unidad AS "idParadaUnidad",
+       p.id_parada AS "idParada",
+       p.nombre_parada AS "nombreParada",
        e.id_estacion AS "idEstacion",
-       e.nombre_estacion AS "nombreEstacion",
        pu.fecha_llegada AS "fechaLlegada",
        pu.fecha_salida AS "fechaSalida",
        pu.ocupacion_llegada AS "ocupacionLlegada",
@@ -99,13 +104,19 @@ const STOP_COLUMNS = `
        pu.ocupacion_resultante AS "ocupacionResultante",
        pu.minutos_espera_extra AS "minutosEsperaExtra"`;
 
-// Passenger counting from turnstile events (odd/tasks/ridership-capacity.md).
-// The turnstile sees people entering and leaving a STATION; who rides a bus
-// is an estimate per stop. Raw SQL on the shared DataSource, like
-// AlertaService.
+const STOP_FROM = `
+         FROM tbl_parada_unidad pu
+        INNER JOIN tbl_parada p ON p.id_parada = pu.id_parada
+         LEFT JOIN tbl_estacion e ON e.id_parada = p.id_parada`;
+
+// Passenger counting from turnstile events (odd/tasks/ridership-capacity.md,
+// odd/tasks/parada-ridership.md). The turnstile sees people entering and
+// leaving a PARADA (a station is a parada with a tbl_estacion row and uses
+// its parada's count and capacity); who rides a bus is an estimate per stop.
+// Raw SQL on the shared DataSource, like AlertaService.
 //
 // Locks keep the counts consistent under concurrent requests, always taken
-// in the same order to avoid deadlocks: unit, then station, then card.
+// in the same order to avoid deadlocks: unit, then parada, then card.
 @Injectable()
 export class RidershipService {
   constructor(
@@ -132,12 +143,12 @@ export class RidershipService {
   private async registerPassOnce(dto: TurnstilePassDto): Promise<TurnstilePassResponseDto> {
     const key = dto.idempotencyKey ?? null;
     return this.dataSource.transaction(async (manager) => {
-      const station = await this.lockStation(manager, String(dto.idEstacion));
+      const parada = await this.lockParada(manager, String(dto.idParada));
       const card = await this.lockCard(manager, dto.numeroTarjeta);
 
       if (key !== null) {
         const previous = (await manager.query(
-          `SELECT id_evento_talanquera AS "idEvento", id_estacion AS "idEstacion",
+          `SELECT id_evento_talanquera AS "idEvento", id_parada AS "idParada",
                   id_tarjeta_ciudadana AS "idTarjeta", tipo_evento AS "tipo",
                   monto_cobrado AS "montoCobrado"
              FROM tbl_evento_talanquera WHERE clave_idempotencia = $1`,
@@ -147,21 +158,21 @@ export class RidershipService {
         if (original) {
           if (
             String(original.idTarjeta) !== card.idTarjeta ||
-            String(original.idEstacion) !== station.idEstacion ||
+            String(original.idParada) !== parada.idParada ||
             original.tipo !== dto.tipo
           ) {
             throw new IdempotencyKeyConflict();
           }
-          const people = await this.waitingAt(manager, station.idEstacion);
+          const people = await this.waitingAt(manager, parada.idParada);
           return {
             idEvento: String(original.idEvento),
             tipo: dto.tipo,
             numeroTarjeta: dto.numeroTarjeta,
             montoCobrado: Number(original.montoCobrado),
             saldo: Number(card.saldo),
-            estacion: {
-              ...this.toStationDto(station, people),
-              alertaActiva: await this.hasOpenAlert(manager, station.idEstacion),
+            parada: {
+              ...this.toParadaDto(parada, people),
+              alertaActiva: await this.hasOpenAlert(manager, parada.idParada),
             },
             alertaGenerada: false,
             idAlerta: null,
@@ -186,26 +197,27 @@ export class RidershipService {
       }
 
       const inserted = (await manager.query(
-        `INSERT INTO tbl_evento_talanquera (id_estacion, id_tarjeta_ciudadana, tipo_evento, monto_cobrado, clave_idempotencia)
+        `INSERT INTO tbl_evento_talanquera (id_parada, id_tarjeta_ciudadana, tipo_evento, monto_cobrado, clave_idempotencia)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id_evento_talanquera AS "idEvento"`,
-        [station.idEstacion, card.idTarjeta, dto.tipo, charged.toFixed(2), key],
+        [parada.idParada, card.idTarjeta, dto.tipo, charged.toFixed(2), key],
       )) as { idEvento: string }[];
 
-      const people = await this.waitingAt(manager, station.idEstacion);
+      const people = await this.waitingAt(manager, parada.idParada);
       let idAlerta: string | null = null;
-      // The station row lock serializes passes at this station, so two
+      // The parada row lock serializes passes at this parada, so two
       // concurrent entries cannot both create the alert.
       if (
         dto.tipo === "ENTRADA" &&
-        reachesStationAlert(people, station.capacidadPasajeros) &&
-        !(await this.hasOpenAlert(manager, station.idEstacion))
+        reachesStationAlert(people, parada.capacidadPasajeros) &&
+        !(await this.hasOpenAlert(manager, parada.idParada))
       ) {
         const alert = (await manager.query(
-          `INSERT INTO tbl_alerta (tipo_alerta, tipo_origen, tipo_destino, estado_alerta, id_estacion_origen)
-           VALUES ($1, $2, $3, 'PENDIENTE', $4)
+          `INSERT INTO tbl_alerta
+             (tipo_alerta, tipo_origen, tipo_destino, estado_alerta, id_parada_origen, id_estacion_origen)
+           VALUES ($1, $2, $3, 'PENDIENTE', $4, $5)
            RETURNING id_alerta AS "idAlerta"`,
-          [CAPACITY_ALERT_TYPE, CAPACITY_ALERT_ORIGIN, CAPACITY_ALERT_DESTINATION, station.idEstacion],
+          [CAPACITY_ALERT_TYPE, CAPACITY_ALERT_ORIGIN, CAPACITY_ALERT_DESTINATION, parada.idParada, parada.idEstacion],
         )) as { idAlerta: string }[];
         idAlerta = String(alert[0]!.idAlerta);
       }
@@ -216,9 +228,9 @@ export class RidershipService {
         numeroTarjeta: dto.numeroTarjeta,
         montoCobrado: charged,
         saldo,
-        estacion: {
-          ...this.toStationDto(station, people),
-          alertaActiva: idAlerta !== null || (await this.hasOpenAlert(manager, station.idEstacion)),
+        parada: {
+          ...this.toParadaDto(parada, people),
+          alertaActiva: idAlerta !== null || (await this.hasOpenAlert(manager, parada.idParada)),
         },
         alertaGenerada: idAlerta !== null,
         idAlerta,
@@ -227,11 +239,11 @@ export class RidershipService {
     });
   }
 
-  // S8, S2: the bus stops at a station and boards the waiting.
+  // S8, S2: the bus stops at a parada and boards the waiting.
   async arrive(idUnidad: string, dto: UnitArrivalDto): Promise<UnitStopDto> {
     const stopId = await this.dataSource.transaction(async (manager) => {
       const unit = await this.lockUnit(manager, idUnidad);
-      const station = await this.lockStation(manager, String(dto.idEstacion));
+      const parada = await this.lockParada(manager, String(dto.idParada));
       if (await this.findOpenStop(manager, unit.idUnidad)) {
         throw new UnitAlreadyAtStop(unit.idUnidad);
       }
@@ -241,17 +253,17 @@ export class RidershipService {
         await this.lastOccupancy(manager, unit.idUnidad),
         unit.capacidadPasajeros,
       );
-      const boarded = board(await this.waitingAt(manager, station.idEstacion), arrivedWith, unit.capacidadPasajeros);
+      const boarded = board(await this.waitingAt(manager, parada.idParada), arrivedWith, unit.capacidadPasajeros);
       const occupancy = arrivedWith + boarded;
 
       const inserted = (await manager.query(
         `INSERT INTO tbl_parada_unidad
-           (id_unidad, id_estacion, ocupacion_llegada, subieron, bajaron, ocupacion_resultante, minutos_espera_extra)
+           (id_unidad, id_parada, ocupacion_llegada, subieron, bajaron, ocupacion_resultante, minutos_espera_extra)
          VALUES ($1, $2, $3, $4, 0, $5, $6)
          RETURNING id_parada_unidad AS "id"`,
         [
           unit.idUnidad,
-          station.idEstacion,
+          parada.idParada,
           arrivedWith,
           boarded,
           occupancy,
@@ -270,20 +282,20 @@ export class RidershipService {
       const unit = await this.lockUnit(manager, idUnidad);
       const open = await this.findOpenStop(manager, unit.idUnidad);
       if (!open) throw new UnitNotAtStop(unit.idUnidad);
-      await this.lockStation(manager, open.idEstacion);
+      await this.lockParada(manager, open.idParada);
 
       const exits = Number(
         firstRow(
           (await manager.query(
             `SELECT COUNT(*) AS "n" FROM tbl_evento_talanquera
-              WHERE id_estacion = $1 AND tipo_evento = 'SALIDA' AND fecha_evento >= $2`,
-            [open.idEstacion, open.fechaLlegada],
+              WHERE id_parada = $1 AND tipo_evento = 'SALIDA' AND fecha_evento >= $2`,
+            [open.idParada, open.fechaLlegada],
           )) as { n: string }[],
         ).n,
       );
       const gotOff = getOff(exits, Number(open.ocupacionLlegada));
       const afterExits = Math.min(Number(open.ocupacionResultante) - gotOff, unit.capacidadPasajeros);
-      const boarded = board(await this.waitingAt(manager, open.idEstacion), afterExits, unit.capacidadPasajeros);
+      const boarded = board(await this.waitingAt(manager, open.idParada), afterExits, unit.capacidadPasajeros);
 
       await manager.query(
         `UPDATE tbl_parada_unidad
@@ -299,13 +311,13 @@ export class RidershipService {
     return this.findStop(stopId);
   }
 
-  // S9
-  async getStation(idEstacion: string): Promise<StationOccupancyDto> {
-    const station = await this.findStation(this.dataSource, idEstacion, false);
-    const people = await this.waitingAt(this.dataSource, station.idEstacion);
+  // S9 (parada-ridership S8)
+  async getParada(idParada: string): Promise<ParadaOccupancyDto> {
+    const parada = await this.findParada(this.dataSource, idParada, false);
+    const people = await this.waitingAt(this.dataSource, parada.idParada);
     return {
-      ...this.toStationDto(station, people),
-      alertaActiva: await this.hasOpenAlert(this.dataSource, station.idEstacion),
+      ...this.toParadaDto(parada, people),
+      alertaActiva: await this.hasOpenAlert(this.dataSource, parada.idParada),
     };
   }
 
@@ -326,17 +338,18 @@ export class RidershipService {
     };
   }
 
-  // S9: newest station capacity alerts.
+  // S9: newest capacity alerts, with their parada (and station, if any).
   async listCapacityAlerts(): Promise<CapacityAlertDto[]> {
     const rows = (await this.dataSource.query(
       `SELECT a.id_alerta AS "idAlerta",
               a.estado_alerta AS "estadoAlerta",
               a.fecha_creacion AS "fechaCreacion",
               a.fecha_actualizacion AS "fechaActualizacion",
-              e.id_estacion AS "idEstacion",
-              e.nombre_estacion AS "nombreEstacion"
+              p.id_parada AS "idParada",
+              p.nombre_parada AS "nombreParada",
+              a.id_estacion_origen AS "idEstacion"
          FROM tbl_alerta a
-         LEFT JOIN tbl_estacion e ON e.id_estacion = a.id_estacion_origen
+         LEFT JOIN tbl_parada p ON p.id_parada = a.id_parada_origen
         WHERE a.tipo_alerta = $1
         ORDER BY a.fecha_creacion DESC, a.id_alerta DESC
         LIMIT ${CAPACITY_ALERTS_LIMIT}`,
@@ -347,32 +360,36 @@ export class RidershipService {
       estadoAlerta: row.estadoAlerta,
       fechaCreacion: new Date(row.fechaCreacion).toISOString(),
       fechaActualizacion: new Date(row.fechaActualizacion).toISOString(),
-      estacion: { idEstacion: String(row.idEstacion ?? ""), nombreEstacion: row.nombreEstacion ?? "" },
+      parada: {
+        idParada: String(row.idParada ?? ""),
+        nombreParada: row.nombreParada ?? "",
+        idEstacion: nullableId(row.idEstacion),
+      },
     }));
   }
 
-  // S7: people who entered the station minus those who boarded a bus there.
+  // S7: people who entered the parada minus those who boarded a bus there.
   // Exits are passengers leaving buses, so they do not change the waiting.
-  private async waitingAt(runner: Queryable, idEstacion: string): Promise<number> {
+  private async waitingAt(runner: Queryable, idParada: string): Promise<number> {
     const row = firstRow(
       (await runner.query(
         `SELECT GREATEST(0,
                   (SELECT COUNT(*) FROM tbl_evento_talanquera
-                    WHERE id_estacion = $1 AND tipo_evento = 'ENTRADA')
+                    WHERE id_parada = $1 AND tipo_evento = 'ENTRADA')
                 - (SELECT COALESCE(SUM(subieron), 0) FROM tbl_parada_unidad
-                    WHERE id_estacion = $1))::int AS "people"`,
-        [idEstacion],
+                    WHERE id_parada = $1))::int AS "people"`,
+        [idParada],
       )) as { people: number }[],
     );
     return Number(row.people);
   }
 
-  private async hasOpenAlert(runner: Queryable, idEstacion: string): Promise<boolean> {
+  private async hasOpenAlert(runner: Queryable, idParada: string): Promise<boolean> {
     const rows = (await runner.query(
       `SELECT 1 FROM tbl_alerta
-        WHERE tipo_alerta = $1 AND id_estacion_origen = $2 AND estado_alerta <> 'RESUELTA'
+        WHERE tipo_alerta = $1 AND id_parada_origen = $2 AND estado_alerta <> 'RESUELTA'
         LIMIT 1`,
-      [CAPACITY_ALERT_TYPE, idEstacion],
+      [CAPACITY_ALERT_TYPE, idParada],
     )) as unknown[];
     return rows.length > 0;
   }
@@ -390,9 +407,7 @@ export class RidershipService {
 
   private async findOpenStop(runner: Queryable, idUnidad: string): Promise<StopRow | null> {
     const rows = (await runner.query(
-      `SELECT ${STOP_COLUMNS}
-         FROM tbl_parada_unidad pu
-        INNER JOIN tbl_estacion e ON e.id_estacion = pu.id_estacion
+      `SELECT ${STOP_COLUMNS} ${STOP_FROM}
         WHERE pu.id_unidad = $1 AND pu.fecha_salida IS NULL`,
       [idUnidad],
     )) as StopRow[];
@@ -405,8 +420,7 @@ export class RidershipService {
               u.id_unidad AS "idUnidad",
               u.numero_placa AS "numeroPlaca",
               u.capacidad_pasajeros AS "capacidadPasajeros"
-         FROM tbl_parada_unidad pu
-        INNER JOIN tbl_estacion e ON e.id_estacion = pu.id_estacion
+        ${STOP_FROM}
         INNER JOIN tbl_unidad u ON u.id_unidad = pu.id_unidad
         WHERE pu.id_parada_unidad = $1`,
       [idParadaUnidad],
@@ -415,25 +429,31 @@ export class RidershipService {
     return this.toStopDto(row, row);
   }
 
-  private lockStation(runner: Queryable, idEstacion: string): Promise<StationRow> {
-    return this.findStation(runner, idEstacion, true);
+  private lockParada(runner: Queryable, idParada: string): Promise<ParadaRow> {
+    return this.findParada(runner, idParada, true);
   }
 
-  private async findStation(runner: Queryable, idEstacion: string, lock: boolean): Promise<StationRow> {
-    if (!NUMERIC_ID.test(idEstacion)) throw new StationNotFound(idEstacion);
+  // FOR UPDATE OF p: Postgres cannot lock the nullable side of the outer join
+  // (the station), and the parada row is what serializes the counts.
+  private async findParada(runner: Queryable, idParada: string, lock: boolean): Promise<ParadaRow> {
+    if (!NUMERIC_ID.test(idParada)) throw new ParadaNotFound(idParada);
     const rows = (await runner.query(
-      `SELECT id_estacion AS "idEstacion",
-              nombre_estacion AS "nombreEstacion",
-              capacidad_pasajeros AS "capacidadPasajeros"
-         FROM tbl_estacion WHERE id_estacion = $1
-         ${lock ? "FOR UPDATE" : ""}`,
-      [idEstacion],
-    )) as StationRow[];
+      `SELECT p.id_parada AS "idParada",
+              p.nombre_parada AS "nombreParada",
+              p.capacidad_pasajeros AS "capacidadPasajeros",
+              e.id_estacion AS "idEstacion"
+         FROM tbl_parada p
+         LEFT JOIN tbl_estacion e ON e.id_parada = p.id_parada
+        WHERE p.id_parada = $1
+         ${lock ? "FOR UPDATE OF p" : ""}`,
+      [idParada],
+    )) as ParadaRow[];
     const row = rows[0];
-    if (!row) throw new StationNotFound(idEstacion);
+    if (!row) throw new ParadaNotFound(idParada);
     return {
-      idEstacion: String(row.idEstacion),
-      nombreEstacion: row.nombreEstacion,
+      idParada: String(row.idParada),
+      nombreParada: row.nombreParada,
+      idEstacion: nullableId(row.idEstacion),
       capacidadPasajeros: Number(row.capacidadPasajeros),
     };
   }
@@ -473,13 +493,14 @@ export class RidershipService {
     return { ...row, idTarjeta: String(row.idTarjeta) };
   }
 
-  private toStationDto(station: StationRow, people: number): Omit<StationOccupancyDto, "alertaActiva"> {
+  private toParadaDto(parada: ParadaRow, people: number): Omit<ParadaOccupancyDto, "alertaActiva"> {
     return {
-      idEstacion: station.idEstacion,
-      nombreEstacion: station.nombreEstacion,
-      capacidadPasajeros: station.capacidadPasajeros,
-      personasEnEstacion: people,
-      porcentaje: percentOf(people, station.capacidadPasajeros),
+      idParada: parada.idParada,
+      nombreParada: parada.nombreParada,
+      idEstacion: parada.idEstacion,
+      capacidadPasajeros: parada.capacidadPasajeros,
+      personasEnParada: people,
+      porcentaje: percentOf(people, parada.capacidadPasajeros),
     };
   }
 
@@ -491,8 +512,9 @@ export class RidershipService {
       idUnidad: String(unit.idUnidad),
       numeroPlaca: unit.numeroPlaca,
       capacidadPasajeros: capacity,
-      idEstacion: String(stop.idEstacion),
-      nombreEstacion: stop.nombreEstacion,
+      idParada: String(stop.idParada),
+      nombreParada: stop.nombreParada,
+      idEstacion: nullableId(stop.idEstacion),
       ocupacionLlegada: Number(stop.ocupacionLlegada),
       subieron: Number(stop.subieron),
       bajaron: Number(stop.bajaron),
@@ -503,6 +525,10 @@ export class RidershipService {
       fechaSalida: stop.fechaSalida === null ? null : new Date(stop.fechaSalida).toISOString(),
     };
   }
+}
+
+function nullableId(value: string | number | null | undefined): string | null {
+  return value === null || value === undefined ? null : String(value);
 }
 
 // TypeORM returns UPDATE ... RETURNING as [rows, affected] on Postgres and

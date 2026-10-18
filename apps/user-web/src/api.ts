@@ -7,9 +7,19 @@ export interface Card {
   estadoTarjeta: string;
 }
 
-export interface Station {
-  idEstacion: string;
-  nombreEstacion: string;
+export interface LineStop {
+  idParada: string;
+  nombreParada: string;
+  orden: number | null;
+  esEstacion: boolean;
+}
+
+/** An active line with its paradas in route order; idLinea null = "Sin línea". */
+export interface Line {
+  idLinea: string | null;
+  numeroLinea: string | null;
+  nombreLinea: string;
+  paradas: LineStop[];
 }
 
 export interface Recharge {
@@ -28,7 +38,7 @@ export interface TurnstilePass {
   tipo: TurnstileType;
   montoCobrado: number;
   saldo: number;
-  estacion: { nombreEstacion: string; personasEnEstacion: number; capacidadPasajeros: number };
+  parada: { nombreParada: string; personasEnParada: number; capacidadPasajeros: number };
   alertaGenerada: boolean;
   repetido: boolean;
 }
@@ -79,7 +89,7 @@ const cardPath = (numeroTarjeta: string) => `/citizen/cards/${encodeURIComponent
 
 export const getCard = (numeroTarjeta: string) => request<Card>(cardPath(numeroTarjeta));
 
-export const listStations = () => request<Station[]>("/citizen/stations");
+export const listLines = () => request<Line[]>("/citizen/lines");
 
 export const rechargeCard = (numeroTarjeta: string, monto: number, referencia: string) =>
   request<Recharge>(`${cardPath(numeroTarjeta)}/recharges`, jsonPost({ monto, referencia }));
@@ -87,14 +97,14 @@ export const rechargeCard = (numeroTarjeta: string, monto: number, referencia: s
 // The balance is never sent: the API reads and charges it.
 export const passTurnstile = (
   numeroTarjeta: string,
-  idEstacion: number,
+  idParada: number,
   tipo: TurnstileType,
   idempotencyKey: string,
 ) =>
   request<TurnstilePass>(
     "/operations/ridership/turnstile",
     jsonPost(
-      { numeroTarjeta, idEstacion, tipo, idempotencyKey },
+      { numeroTarjeta, idParada, tipo, idempotencyKey },
       { "X-Turnstile-Key": import.meta.env.VITE_TURNSTILE_API_KEY ?? "" },
     ),
   );

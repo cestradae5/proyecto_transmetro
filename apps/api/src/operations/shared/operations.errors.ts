@@ -38,10 +38,10 @@ export class InvalidAlertTransition extends ConflictError {
 // Ridership (odd/tasks/ridership-capacity.md). Every rejection is thrown
 // inside the transaction, so nothing is stored or charged.
 
-export class StationNotFound extends NotFoundError {
+export class ParadaNotFound extends NotFoundError {
   constructor(id: string) {
-    super(`Estación con ID ${id} no existe.`);
-    this.name = "StationNotFound";
+    super(`Parada con ID ${id} no existe.`);
+    this.name = "ParadaNotFound";
   }
 }
 

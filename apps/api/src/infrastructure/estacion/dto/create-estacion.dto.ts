@@ -5,10 +5,8 @@ import {
   Min,
   Max,
   IsEnum,
-  IsInt,
-  ValidateIf,
 } from "class-validator";
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty } from "@nestjs/swagger";
 
 export enum EstadoEstacion {
   ACTIVA = "ACTIVA",
@@ -45,18 +43,6 @@ export class CreateEstacionDto {
   })
   @IsEnum(EstadoEstacion)
   estadoEstacion!: EstadoEstacion;
-
-  // Waiting-passenger capacity; the ridership alert fires at 150% of it.
-  @ApiPropertyOptional({
-    description: "Capacidad de pasajeros esperando en la estación",
-    minimum: 1,
-    default: 100,
-  })
-  // Absent -> DB default; null is rejected (the column is NOT NULL).
-  @ValidateIf((o: { capacidadPasajeros?: unknown }) => o.capacidadPasajeros !== undefined)
-  @IsInt()
-  @Min(1)
-  capacidadPasajeros?: number;
 
   // Required: an estación is a 1:1 extension of an existing parada.
   @ApiProperty({ description: "ID de la parada que la estación extiende" })

@@ -7,7 +7,7 @@ import { CitizenService } from "./citizen.service.js";
 import {
   CreateRechargeDto,
   type CitizenCardDto,
-  type CitizenStationDto,
+  type CitizenLineDto,
   type RechargeResponseDto,
 } from "./dto/citizen.dto.js";
 import { RechargeSimulatorGuard } from "./recharge-simulator.guard.js";
@@ -20,10 +20,10 @@ import { RechargeSimulatorGuard } from "./recharge-simulator.guard.js";
 export class CitizenController {
   constructor(private readonly citizenService: CitizenService) {}
 
-  @Get("stations")
-  @ApiOperation({ summary: "Estaciones activas, por nombre" })
-  listStations(): Promise<CitizenStationDto[]> {
-    return this.citizenService.listStations();
+  @Get("lines")
+  @ApiOperation({ summary: "Líneas activas con sus paradas en orden de ruta; al final, las paradas sin línea" })
+  listLines(): Promise<CitizenLineDto[]> {
+    return this.citizenService.listLines();
   }
 
   @Get("cards/:numeroTarjeta")

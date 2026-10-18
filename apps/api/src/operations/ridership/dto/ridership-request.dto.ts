@@ -11,10 +11,10 @@ export class TurnstilePassDto {
   @MaxLength(50)
   numeroTarjeta!: string;
 
-  @ApiProperty({ description: "Estación de la talanquera", minimum: 1 })
+  @ApiProperty({ description: "Parada de la talanquera (sea o no estación)", minimum: 1 })
   @IsInt()
   @Min(1)
-  idEstacion!: number;
+  idParada!: number;
 
   @ApiProperty({ enum: TURNSTILE_EVENT_TYPES })
   @IsIn(TURNSTILE_EVENT_TYPES)
@@ -31,10 +31,10 @@ export class TurnstilePassDto {
   idempotencyKey?: string;
 }
 
-// S8: the station where the bus stops.
+// S8: the parada where the bus stops.
 export class UnitArrivalDto {
-  @ApiProperty({ description: "Estación donde se detiene la unidad", minimum: 1 })
+  @ApiProperty({ description: "Parada donde se detiene la unidad", minimum: 1 })
   @IsInt()
   @Min(1)
-  idEstacion!: number;
+  idParada!: number;
 }
