@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useCardActivity, useCards, type CardActivity } from "./hooks/use-card-activity";
+import {
+  getVerifyErrorMessage,
+  useCardActivity,
+  useCards,
+  verifyPayment,
+  type CardActivity,
+  type CardPayment,
+} from "./hooks/use-card-activity";
 
 // odd/tasks/card-activity.md S5: staff view of each card's turnstile passes and
-// recharges. Read-only.
+// recharges. The only action is qpaypro-checkout S11: asking QPayPro about a
+// pending or expired QPayPro payment.
 
 const SEARCH_DEBOUNCE_MS = 300;
 const CONTROL =
@@ -27,12 +35,41 @@ const PAYMENT_STATE: Record<string, string> = {
   EXPIRADA: "Expirada",
 };
 
+// S11: QPayPro can still confirm these (a late approval credits).
+const VERIFIABLE = ["INICIADA", "EXPIRADA"];
+const canVerify = (recarga: CardPayment) => recarga.origen === "QPAYPRO" && VERIFIABLE.includes(recarga.estadoPago);
+
 const money = (amount: number) => `Q${amount.toFixed(2)}`;
 const dateTime = (iso: string) =>
   new Intl.DateTimeFormat("es-GT", { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
 
 function ActivityDetail({ activity }: { activity: CardActivity }) {
-  const { tarjeta, pasadas, recargas } = activity;
+  // A verify answer updates the shown row and balance in place.
+  const [current, setCurrent] = useState(activity);
+  const [sending, setSending] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const { tarjeta, pasadas, recargas } = current;
+
+  const verify = (recarga: CardPayment) => {
+    if (sending !== null) return;
+    setSending(recarga.idTransaccion);
+    setVerifyError(null);
+    verifyPayment(tarjeta.numeroTarjeta, recarga.referencia)
+      .then((answer) =>
+        setCurrent((prev) => ({
+          ...prev,
+          tarjeta: { ...prev.tarjeta, saldo: answer.saldo },
+          recargas: prev.recargas.map((item) =>
+            item.idTransaccion === recarga.idTransaccion
+              ? { ...item, estadoPago: answer.estadoPago, numeroComprobante: answer.numeroComprobante }
+              : item,
+          ),
+        })),
+      )
+      .catch((err: unknown) => setVerifyError(getVerifyErrorMessage(err)))
+      .finally(() => setSending(null));
+  };
+
   return (
     <section aria-label={`Actividad de ${tarjeta.numeroTarjeta}`} className="space-y-6">
       <div className="rounded-2xl bg-primary text-white p-5">
@@ -73,6 +110,11 @@ function ActivityDetail({ activity }: { activity: CardActivity }) {
 
       <div>
         <h2 className="font-display font-bold text-lg text-slate-900 mb-2">Recargas</h2>
+        {verifyError && (
+          <div role="alert" className="mb-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            {verifyError}
+          </div>
+        )}
         {recargas.length === 0 ? (
           <p className="text-sm text-slate-500">Sin recargas registradas.</p>
         ) : (
@@ -84,6 +126,7 @@ function ActivityDetail({ activity }: { activity: CardActivity }) {
                 <th className={TH}>Estado</th>
                 <th className={TH}>Origen</th>
                 <th className={TH}>Comprobante</th>
+                <th className={TH}>Acción</th>
               </tr>
             </thead>
             <tbody>
@@ -94,6 +137,18 @@ function ActivityDetail({ activity }: { activity: CardActivity }) {
                   <td className={TD}>{PAYMENT_STATE[recarga.estadoPago] ?? recarga.estadoPago}</td>
                   <td className={TD}>{recarga.origen === "QPAYPRO" ? "QPayPro" : "Simulada"}</td>
                   <td className={TD}>{recarga.numeroComprobante ?? "—"}</td>
+                  <td className={TD}>
+                    {canVerify(recarga) && (
+                      <button
+                        type="button"
+                        disabled={sending !== null}
+                        onClick={() => verify(recarga)}
+                        className="px-3 py-1 rounded-lg border border-primary/40 text-primary text-xs font-semibold hover:bg-primary/5 disabled:opacity-40"
+                      >
+                        Verificar con QPayPro
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -208,7 +263,9 @@ export function CardActivityPage() {
             </div>
           )}
           {selected !== null && activity.loading && <p className="text-sm text-slate-500">Cargando actividad...</p>}
-          {selected !== null && !activity.loading && activity.data && <ActivityDetail activity={activity.data} />}
+          {selected !== null && !activity.loading && activity.data && (
+            <ActivityDetail key={activity.data.tarjeta.numeroTarjeta} activity={activity.data} />
+          )}
         </div>
       </main>
     </div>
