@@ -210,6 +210,7 @@ export class EstacionService {
       latitud: estacion.latitud,
       longitud: estacion.longitud,
       estadoEstacion: estacion.estadoEstacion as any,
+      capacidadPasajeros: estacion.capacidadPasajeros,
       idParada: estacion.idParada,
     };
   }

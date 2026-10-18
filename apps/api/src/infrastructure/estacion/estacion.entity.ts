@@ -30,6 +30,11 @@ export class EstacionEntity {
   @Column({ name: "estado_estacion", type: "varchar", length: 30 })
   estadoEstacion!: string;
 
+  // People the station can hold while waiting (ridership R14). The DB
+  // default (100) applies when a create omits it.
+  @Column({ name: "capacidad_pasajeros", type: "int", default: 100 })
+  capacidadPasajeros!: number;
+
   // 1:1 extension of a parada: tbl_estacion.id_parada is NOT NULL UNIQUE.
   @Column({ name: "id_parada", type: "bigint", unique: true })
   idParada!: number;

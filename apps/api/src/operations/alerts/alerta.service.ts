@@ -71,8 +71,9 @@ interface AlertRow {
   numeroPlaca: string | null;
   idEstacion: string | null;
   nombreEstacion: string | null;
-  idEmpleado: string;
-  nombreEmpleado: string;
+  // Null for system alerts (ridership station capacity).
+  idEmpleado: string | null;
+  nombreEmpleado: string | null;
   idLinea: string | null;
   numeroLinea: string | null;
   nombreLinea: string | null;
@@ -131,7 +132,7 @@ const ALERT_FROM = `
     LEFT JOIN tbl_unidad u ON u.id_unidad = a.id_unidad
     LEFT JOIN tbl_estacion e ON e.id_estacion = a.id_estacion_destino
     LEFT JOIN tbl_linea l ON l.id_linea = a.id_linea
-   INNER JOIN tbl_empleado emp ON emp.id_emple = a.id_empleado`;
+    LEFT JOIN tbl_empleado emp ON emp.id_emple = a.id_empleado`;
 
 // The alert was sent from a line that is ACTIVA on its destination station.
 // Uses $2 for the ACTIVA state.
@@ -572,7 +573,10 @@ export class AlertaService {
         idEstacion: String(row.idEstacion ?? ""),
         nombreEstacion: row.nombreEstacion ?? "",
       },
-      autor: { idEmpleado: String(row.idEmpleado), nombre: row.nombreEmpleado },
+      autor:
+        row.idEmpleado === null || row.idEmpleado === undefined
+          ? null
+          : { idEmpleado: String(row.idEmpleado), nombre: String(row.nombreEmpleado) },
       linea:
         row.idLinea === null || row.idLinea === undefined
           ? null

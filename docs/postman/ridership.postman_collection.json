@@ -1,0 +1,904 @@
+{
+  "info": {
+    "name": "Transmetro - Conteo de pasajeros (ridership)",
+    "description": "Talanquera, alerta de capacidad de estación (150%) y regla del bus bajo 25%. Guía: docs/postman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Estación",
+      "item": [
+        {
+          "name": "1. Fijar capacidad de la estación (4)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/infrastructure/estaciones/{{idEstacion}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "infrastructure",
+                "estaciones",
+                "{{idEstacion}}"
+              ]
+            },
+            "description": "Con capacidad 4, la alerta salta al llegar a 6 personas (150%).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capacidadPasajeros\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 y capacidad 4\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().capacidadPasajeros).to.eql(4);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Leer ocupación de la estación",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/stations/{{idEstacion}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "stations",
+                "{{idEstacion}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"alertaActiva coherente con el 150%\", () => {",
+                  "  if (body.personasEnEstacion >= body.capacidadPasajeros * 1.5) pm.expect(body.alertaActiva).to.eql(true);",
+                  "});",
+                  "pm.collectionVariables.set(\"personasAntes\", body.personasEnEstacion);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Talanquera",
+      "item": [
+        {
+          "name": "Entrada (cobra Q1.00)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Turnstile-Key",
+                "value": "{{turnstileKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "Mandala varias veces: con capacidad 4, la 6.ª persona genera la alerta (alertaGenerada: true).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const before = Number(pm.collectionVariables.get(\"personasAntes\"));",
+                  "pm.test(\"201 y cobra Q1.00\", () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(body.montoCobrado).to.eql(1);",
+                  "});",
+                  "pm.test(\"suma una persona a la estación\", () => {",
+                  "  if (!Number.isNaN(before)) pm.expect(body.estacion.personasEnEstacion).to.eql(before + 1);",
+                  "});",
+                  "pm.test(\"al 150% hay alerta activa\", () => {",
+                  "  const limit = body.estacion.capacidadPasajeros * 1.5;",
+                  "  if (body.estacion.personasEnEstacion >= limit) pm.expect(body.estacion.alertaActiva).to.eql(true);",
+                  "  else pm.expect(body.alertaGenerada).to.eql(false);",
+                  "});",
+                  "pm.collectionVariables.set(\"personasAntes\", body.estacion.personasEnEstacion);",
+                  "pm.collectionVariables.set(\"saldo\", body.saldo);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Salida (no cobra)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Turnstile-Key",
+                "value": "{{turnstileKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"SALIDA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"201 sin cobro\", () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(body.montoCobrado).to.eql(0);",
+                  "});",
+                  "pm.test(\"no cambia las personas esperando\", () => {",
+                  "  const before = Number(pm.collectionVariables.get(\"personasAntes\"));",
+                  "  if (!Number.isNaN(before)) pm.expect(body.estacion.personasEnEstacion).to.eql(before);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: sin clave de talanquera (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: tarjeta bloqueada (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Turnstile-Key",
+                "value": "{{turnstileKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjetaBloqueada}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: saldo insuficiente (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Turnstile-Key",
+                "value": "{{turnstileKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjetaSinSaldo}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: tarjeta inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Turnstile-Key",
+                "value": "{{turnstileKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"NO-EXISTE-0000\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ENTRADA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: tipo inválido (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Turnstile-Key",
+                "value": "{{turnstileKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/turnstile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "turnstile"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroTarjeta\": \"{{tarjeta}}\",\n  \"idEstacion\": {{idEstacion}},\n  \"tipo\": \"ADENTRO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Alertas de capacidad",
+      "item": [
+        {
+          "name": "Listar alertas de capacidad",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/alerts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "alerts"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const list = pm.response.json();",
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));",
+                  "const open = list.find((a) => a.estacion.idEstacion === String(pm.collectionVariables.get(\"idEstacion\")) && a.estadoAlerta !== \"RESUELTA\");",
+                  "if (open) pm.collectionVariables.set(\"idAlerta\", open.idAlerta);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resolver alerta (central)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/alerts/central/{{idAlerta}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "alerts",
+                "central",
+                "{{idAlerta}}",
+                "status"
+              ]
+            },
+            "description": "Después de resolverla, la siguiente entrada por encima del 150% genera una alerta nueva.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"RESUELTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 sin autor (alerta del sistema)\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().autor).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Bus",
+      "item": [
+        {
+          "name": "Llegada del bus (regla del 25%)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/arrival",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "units",
+                "{{idUnidad}}",
+                "arrival"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idEstacion\": {{idEstacion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"5 minutos extra solo bajo el 25%\", () => {",
+                  "  const expected = body.ocupacionEstimada < body.capacidadPasajeros * 0.25 ? 5 : 0;",
+                  "  pm.expect(body.minutosEsperaExtra).to.eql(expected);",
+                  "});",
+                  "pm.test(\"nunca supera la capacidad\", () => pm.expect(body.ocupacionEstimada).to.be.at.most(body.capacidadPasajeros));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: llegada con parada abierta (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/arrival",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "units",
+                "{{idUnidad}}",
+                "arrival"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idEstacion\": {{idEstacion}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Leer ocupación del bus",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "units",
+                "{{idUnidad}}"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Salida del bus",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/departure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "units",
+                "{{idUnidad}}",
+                "departure"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"200 y parada cerrada\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.fechaSalida).to.not.eql(null);",
+                  "  pm.expect(body.bajaron).to.be.at.most(body.ocupacionLlegada);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: salida sin parada abierta (409)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/operations/ridership/units/{{idUnidad}}/departure",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operations",
+                "ridership",
+                "units",
+                "{{idUnidad}}",
+                "departure"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "turnstileKey",
+      "value": "change-me"
+    },
+    {
+      "key": "idEstacion",
+      "value": "1"
+    },
+    {
+      "key": "idUnidad",
+      "value": "1"
+    },
+    {
+      "key": "tarjeta",
+      "value": "TEST-RID-0001"
+    },
+    {
+      "key": "tarjetaBloqueada",
+      "value": "TEST-RID-BLOCKED"
+    },
+    {
+      "key": "tarjetaSinSaldo",
+      "value": "TEST-RID-POOR"
+    },
+    {
+      "key": "personasAntes",
+      "value": ""
+    },
+    {
+      "key": "saldo",
+      "value": ""
+    },
+    {
+      "key": "idAlerta",
+      "value": ""
+    }
+  ]
+}
