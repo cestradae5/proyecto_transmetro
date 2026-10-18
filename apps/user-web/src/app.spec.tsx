@@ -1,4 +1,4 @@
-// odd/tasks/user-web.md S8-S10. fetch is mocked: each test queues the API
+// odd/tasks/user-web.md S8-S10 and odd/tasks/qpaypro-checkout.md S9-S10. fetch is mocked: each test queues the API
 // answers it expects, in order, and asserts the requests the app sent.
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,12 +27,14 @@ beforeEach(() => {
   });
   vi.stubGlobal("fetch", fetchMock);
   vi.stubEnv("VITE_TURNSTILE_SIMULATOR", "false");
+  vi.stubEnv("VITE_RECHARGE_SIMULATOR", "false");
   vi.stubEnv("VITE_TURNSTILE_API_KEY", "dev-key-123");
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  window.history.replaceState(null, "", "/");
 });
 
 const call = (index: number) => {
@@ -95,7 +97,9 @@ describe("card screen (S8)", () => {
   });
 });
 
-describe("recharge (S9)", () => {
+describe("simulated recharge (user-web S9, behind VITE_RECHARGE_SIMULATOR)", () => {
+  beforeEach(() => vi.stubEnv("VITE_RECHARGE_SIMULATOR", "true"));
+
   const recharge = async (amount: string) => {
     fireEvent.change(screen.getByLabelText("Monto a recargar (Q)"), { target: { value: amount } });
     fireEvent.click(screen.getByRole("button", { name: "Recargar" }));
@@ -210,6 +214,239 @@ describe("recharge (S9)", () => {
 
     expect(screen.getByText("Ingrese un monto entre Q1.00 y Q500.00 con hasta 2 decimales.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("QPayPro recharge (qpaypro-checkout S9)", () => {
+  const CHECKOUT = { referencia: "QPP-1234", checkoutUrl: "https://sandboxpayments.qpaypro.com/checkout/woocommerce?token=abc" };
+  const payButton = () => screen.getByRole("button", { name: "Pagar con QPayPro" });
+  const typeEmail = (email: string) => fireEvent.change(screen.getByLabelText("Correo electrónico"), { target: { value: email } });
+
+  async function openPayment(navigate = vi.fn()) {
+    render(<App navigate={navigate} />);
+    await openCard();
+    return navigate;
+  }
+
+  it("shows the four amounts, one selected at a time", async () => {
+    await openPayment();
+
+    for (const name of ["Q10", "Q25", "Q50", "Q100"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Q25" }));
+    expect(screen.getByRole("button", { name: "Q25" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Q100" }));
+    expect(screen.getByRole("button", { name: "Q100" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Q25" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps 'Pagar con QPayPro' disabled until an amount and a valid email are chosen", async () => {
+    await openPayment();
+
+    expect(payButton()).toBeDisabled();
+    typeEmail("ana@example.com");
+    expect(payButton()).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Q50" }));
+    expect(payButton()).toBeEnabled();
+    for (const invalid of ["ana", "ana@", "ana@example", "a b@example.com", `${"a".repeat(95)}@x.com`, ""]) {
+      typeEmail(invalid);
+      expect(payButton()).toBeDisabled();
+    }
+    fireEvent.click(payButton());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts amount and email, then sends the browser to checkoutUrl", async () => {
+    const navigate = await openPayment();
+    answers.push({ status: 201, body: CHECKOUT });
+
+    fireEvent.click(screen.getByRole("button", { name: "Q25" }));
+    typeEmail("  ana@example.com ");
+    fireEvent.click(payButton());
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(CHECKOUT.checkoutUrl));
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const sent = call(1);
+    expect(sent).toMatchObject({ url: `${API}/citizen/cards/TEST-0001/payments`, method: "POST" });
+    expect(sent.headers.get("Content-Type")).toBe("application/json");
+    expect(sent.body).toEqual({ monto: 25, email: "ana@example.com" });
+  });
+
+  it("disables the button while sending", async () => {
+    const navigate = await openPayment();
+    let release: (r: Response) => void = () => {};
+    answers.push(new Promise<never>((resolve) => (release = resolve as never)));
+
+    fireEvent.click(screen.getByRole("button", { name: "Q10" }));
+    typeEmail("ana@example.com");
+    fireEvent.click(payButton());
+
+    expect(payButton()).toBeDisabled();
+    await act(async () => release(json(201, CHECKOUT)));
+    expect(navigate).toHaveBeenCalledWith(CHECKOUT.checkoutUrl);
+  });
+
+  it.each([
+    [400, "email must be an email"],
+    [404, "La tarjeta no existe."],
+    [409, "La tarjeta está BLOQUEADA y no puede recargarse."],
+    [502, "No se pudo iniciar el pago con QPayPro."],
+    [503, "Los pagos con QPayPro no están disponibles."],
+  ])("shows the API message on %i and stays on the page", async (status, message) => {
+    const navigate = await openPayment();
+    answers.push({ status, body: { message } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Q10" }));
+    typeEmail("ana@example.com");
+    fireEvent.click(payButton());
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(payButton()).toBeEnabled();
+  });
+
+  it("shows the connection message on a network error", async () => {
+    const navigate = await openPayment();
+    answers.push("network-error");
+
+    fireEvent.click(screen.getByRole("button", { name: "Q10" }));
+    typeEmail("ana@example.com");
+    fireEvent.click(payButton());
+
+    expect(await screen.findByText("No se pudo conectar con el servidor.")).toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("hides the simulated recharge without the flag", async () => {
+    await openPayment();
+
+    expect(screen.queryByLabelText("Monto a recargar (Q)")).not.toBeInTheDocument();
+    expect(screen.queryByText(/recarga simulada/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Recargar" })).not.toBeInTheDocument();
+  });
+
+  it("offers both recharges with the flag", async () => {
+    vi.stubEnv("VITE_RECHARGE_SIMULATOR", "true");
+    await openPayment();
+
+    expect(payButton()).toBeInTheDocument();
+    expect(screen.getByLabelText("Monto a recargar (Q)")).toBeInTheDocument();
+  });
+});
+
+describe("QPayPro result (qpaypro-checkout S10)", () => {
+  const payment = (overrides: Record<string, unknown> = {}) => ({
+    referencia: "QPP-1234",
+    numeroTarjeta: "TEST-0001",
+    monto: 25,
+    estadoPago: "APROBADA",
+    numeroComprobante: "QPP-REC-77",
+    saldo: 37.5,
+    ...overrides,
+  });
+
+  function returnFrom(referencia: string) {
+    window.history.replaceState(null, "", `/?pago=${referencia}`);
+    render(<App />);
+  }
+
+  it("asks the API for the payment and shows an approved recharge", async () => {
+    answers.push({ status: 200, body: payment() });
+    returnFrom("QPP-1234");
+
+    expect(await screen.findByText("Recarga exitosa")).toBeInTheDocument();
+    expect(call(0)).toMatchObject({ url: `${API}/citizen/payments/QPP-1234`, method: "GET" });
+    expect(screen.getByText("QPP-REC-77")).toBeInTheDocument();
+    expect(screen.getByText("Monto: Q25.00")).toBeInTheDocument();
+    expect(screen.getByText("Nuevo saldo: Q37.50")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Número de tarjeta")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["RECHAZADA", "El pago fue rechazado."],
+    ["EXPIRADA", "Pago cancelado o expirado."],
+    ["ERROR", "No se pudo completar el pago."],
+  ])("shows %s as %s", async (estadoPago, message) => {
+    answers.push({ status: 200, body: payment({ estadoPago, numeroComprobante: null, saldo: 12.5 }) });
+    returnFrom("QPP-1234");
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByText("Recarga exitosa")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Verificar de nuevo" })).not.toBeInTheDocument();
+  });
+
+  it("shows a pending payment and checks it again with 'Verificar de nuevo'", async () => {
+    answers.push({ status: 200, body: payment({ estadoPago: "INICIADA", numeroComprobante: null, saldo: 12.5 }) });
+    returnFrom("QPP-1234");
+
+    expect(await screen.findByText("Estamos confirmando tu pago...")).toBeInTheDocument();
+    answers.push({ status: 200, body: payment() });
+    fireEvent.click(screen.getByRole("button", { name: "Verificar de nuevo" }));
+
+    expect(await screen.findByText("Recarga exitosa")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(call(1)).toMatchObject({ url: `${API}/citizen/payments/QPP-1234`, method: "GET" });
+    expect(screen.queryByText("Estamos confirmando tu pago...")).not.toBeInTheDocument();
+  });
+
+  it("disables 'Verificar de nuevo' while checking", async () => {
+    answers.push({ status: 200, body: payment({ estadoPago: "INICIADA", numeroComprobante: null }) });
+    returnFrom("QPP-1234");
+    await screen.findByText("Estamos confirmando tu pago...");
+    let release: (r: Response) => void = () => {};
+    answers.push(new Promise<never>((resolve) => (release = resolve as never)));
+
+    fireEvent.click(screen.getByRole("button", { name: "Verificar de nuevo" }));
+
+    expect(screen.getByRole("button", { name: "Verificar de nuevo" })).toBeDisabled();
+    await act(async () => release(json(200, payment({ estadoPago: "RECHAZADA", numeroComprobante: null }))));
+    expect(await screen.findByText("El pago fue rechazado.")).toBeInTheDocument();
+  });
+
+  it("shows 'No encontramos el pago.' for ?pago=desconocido without asking the API", async () => {
+    returnFrom("desconocido");
+
+    expect(await screen.findByText("No encontramos el pago.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows 'No encontramos el pago.' when the API answers 404", async () => {
+    answers.push({ status: 404, body: { message: "El pago no existe." } });
+    returnFrom("QPP-nope");
+
+    expect(await screen.findByText("No encontramos el pago.")).toBeInTheDocument();
+  });
+
+  it("shows the connection message and lets the user retry on a network error", async () => {
+    answers.push("network-error");
+    returnFrom("QPP-1234");
+
+    expect(await screen.findByText("No se pudo conectar con el servidor.")).toBeInTheDocument();
+    answers.push({ status: 200, body: payment() });
+    fireEvent.click(screen.getByRole("button", { name: "Verificar de nuevo" }));
+    expect(await screen.findByText("Recarga exitosa")).toBeInTheDocument();
+  });
+
+  it("clears the query string and returns to the card lookup with 'Volver'", async () => {
+    answers.push({ status: 200, body: payment() });
+    returnFrom("QPP-1234");
+    await screen.findByText("Recarga exitosa");
+
+    fireEvent.click(screen.getByRole("button", { name: "Volver" }));
+
+    expect(window.location.search).toBe("");
+    expect(window.location.pathname).toBe("/");
+    expect(screen.getByLabelText("Número de tarjeta")).toBeInTheDocument();
+    expect(screen.queryByText("Recarga exitosa")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the card lookup without ?pago and does not ask for a payment", () => {
+    render(<App />);
+
+    expect(screen.getByLabelText("Número de tarjeta")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

@@ -2,18 +2,38 @@ import { useState } from "react";
 
 import { formatMoney, type Card } from "./api";
 import { CardLookup } from "./components/card-lookup";
+import { PaymentForm } from "./components/payment-form";
+import { PaymentResult } from "./components/payment-result";
 import { RechargeForm } from "./components/recharge-form";
 import { TurnstileSimulator } from "./components/turnstile-simulator";
 
-// Read at render time so tests (and a rebuilt bundle) can switch it.
+// Read at render time so tests (and a rebuilt bundle) can switch them.
 const simulatorEnabled = () => import.meta.env.VITE_TURNSTILE_SIMULATOR === "true";
+const rechargeSimulatorEnabled = () => import.meta.env.VITE_RECHARGE_SIMULATOR === "true";
+
+const assignLocation = (url: string) => window.location.assign(url);
+
+// The API sends the browser back from QPayPro to /?pago=<referencia>.
+const paymentReference = () => new URLSearchParams(window.location.search).get("pago");
+
+interface AppProps {
+  /** Leaves the SPA for the QPayPro checkout; injectable for tests. */
+  navigate?: (url: string) => void;
+}
 
 // One screen: look up a card, then see its balance, recharge it and, in
-// development, simulate turnstile passes (odd/tasks/user-web.md S8-S10).
-export function App() {
+// development, simulate turnstile passes (odd/tasks/user-web.md S8-S10); or
+// the result of a QPayPro payment (odd/tasks/qpaypro-checkout.md S9-S10).
+export function App({ navigate = assignLocation }: AppProps) {
   const [card, setCard] = useState<Card | null>(null);
+  const [pago, setPago] = useState(paymentReference);
 
   const setBalance = (saldo: number) => setCard((current) => (current ? { ...current, saldo } : current));
+
+  const leaveResult = () => {
+    window.history.replaceState(null, "", window.location.pathname);
+    setPago(null);
+  };
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 py-8">
@@ -22,7 +42,9 @@ export function App() {
         <h1 className="font-display text-2xl font-extrabold text-primary">Mi tarjeta Transmetro</h1>
       </header>
 
-      {card === null ? (
+      {pago !== null ? (
+        <PaymentResult referencia={pago} onBack={leaveResult} />
+      ) : card === null ? (
         <CardLookup onFound={setCard} />
       ) : (
         <>
@@ -38,7 +60,9 @@ export function App() {
             </div>
           </section>
 
-          <RechargeForm numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />
+          <PaymentForm numeroTarjeta={card.numeroTarjeta} navigate={navigate} />
+
+          {rechargeSimulatorEnabled() && <RechargeForm numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />}
 
           {simulatorEnabled() && <TurnstileSimulator numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />}
 
