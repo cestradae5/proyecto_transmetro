@@ -1,5 +1,5 @@
 // ============================================================================
-// E2E for odd/tasks/qpaypro-checkout.md (S2-S6), against real Postgres: the
+// E2E for odd/tasks/qpaypro-checkout.md (S2-S7), against real Postgres: the
 // QPayPro hosted checkout of card recharges. The QPayPro client is replaced
 // by a fake (QPAYPRO_CLIENT), so no test reaches the sandbox; relays are
 // signed here with the test private key, independently of the API code.
@@ -28,23 +28,63 @@ import { createHash } from "node:crypto";
 import { ValidationPipe } from "@nestjs/common";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import jwt from "jsonwebtoken";
 import request from "supertest";
 import { DataSource } from "typeorm";
 
 import { AppModule } from "../src/app.module.js";
-import { QPAYPRO_CLIENT, QpayproClientError, type QpayproClient } from "../src/citizen/qpaypro/qpaypro.client.js";
+import {
+  QPAYPRO_CLIENT,
+  QpayproClientError,
+  type QpayproClient,
+  type QpayproTransactionDetail,
+  type QpayproTransactionQuery,
+} from "../src/citizen/qpaypro/qpaypro.client.js";
 
 type Fields = Record<string, string>;
+
+const JWT_SECRET = process.env.JWT_SECRET || "default-secret-change-in-production";
+const NOT_FOUND: QpayproTransactionDetail = { found: false };
 
 class FakeQpayproClient implements QpayproClient {
   calls: Fields[] = [];
   answer: (fields: Fields) => Promise<{ token: string }> = async () => ({ token: `tok-${this.calls.length}` });
+  queries: QpayproTransactionQuery[] = [];
+  detail: (query: QpayproTransactionQuery) => Promise<QpayproTransactionDetail> = async () => NOT_FOUND;
 
   registerTransaction(fields: Fields): Promise<{ token: string }> {
     this.calls.push({ ...fields });
     return this.answer(fields);
   }
+
+  getTransactionDetail(query: QpayproTransactionQuery): Promise<QpayproTransactionDetail> {
+    this.queries.push({ ...query });
+    return this.detail(query);
+  }
 }
+
+// QPayPro's date format (L10), microseconds included.
+const qppDate = (date: Date) => date.toISOString().replace(/\.(\d{3})Z$/, ".$1000Z");
+
+// A get_transaction_detail answer with one transaction (L7 shape, parsed),
+// dated now unless `extra` says otherwise.
+const detailOf = (
+  idTransaction: string,
+  status: string,
+  amount: string,
+  extra: { authorizationNumber?: string | null; responseCode?: string | null; dateTransaction?: string | null } = {},
+) =>
+  async (): Promise<QpayproTransactionDetail> => ({
+    found: true,
+    transactions: [
+      { idTransaction, status, amount, authorizationNumber: "831000", responseCode: "100", dateTransaction: qppDate(new Date()), ...extra },
+    ],
+  });
+
+// Independent of src/ (L10): the first 64 bits of sha256(referencia), mapped
+// into [1000000000, 9999999999].
+const fpSequenceOf = (referencia: string) =>
+  String((BigInt(`0x${createHash("sha256").update(referencia).digest("hex").slice(0, 16)}`) % 9000000000n) + 1000000000n);
 
 // Independent of src/: sha256(order_id|x_trans_id|x_amount|x_response_status|private_key).
 const sign = (orderId: string, transId: string, amount: string, status: string, key = QPP_ENV.QPAYPRO_PRIVATE_KEY) =>
@@ -57,6 +97,7 @@ interface PaymentRow {
   moneda: string;
   qpaypro: string | null;
   codigo: string | null;
+  autorizacion: string | null;
   mensaje: string | null;
   confirmada: Date | null;
 }
@@ -67,7 +108,7 @@ describe("QPayPro checkout (e2e)", () => {
   const fake = new FakeQpayproClient();
 
   const runTag = `E2E-QPP-${Date.now()}`;
-  const ids = { tarjetas: [] as string[] };
+  const ids = { tarjetas: [] as string[], employees: [] as string[] };
   let transSeq = 0;
   const nextTransId = () => `${Date.now()}${++transSeq}`;
 
@@ -99,7 +140,7 @@ describe("QPayPro checkout (e2e)", () => {
     one<PaymentRow>(
       `SELECT id_transaccion_pago AS "id", estado_pago AS "estado", monto_pago AS "monto", moneda,
               id_transaccion_qpaypro AS "qpaypro", codigo_respuesta AS "codigo",
-              mensaje_respuesta AS "mensaje", fecha_confirmacion AS "confirmada"
+              numero_autorizacion AS "autorizacion", mensaje_respuesta AS "mensaje", fecha_confirmacion AS "confirmada"
          FROM tbl_transaccion_pago WHERE referencia_pago = $1`,
       [referencia],
     );
@@ -149,6 +190,8 @@ describe("QPayPro checkout (e2e)", () => {
   beforeEach(() => {
     fake.calls = [];
     fake.answer = async () => ({ token: `tok-${fake.calls.length}` });
+    fake.queries = [];
+    fake.detail = async () => NOT_FOUND;
   });
 
   afterAll(async () => {
@@ -160,6 +203,9 @@ describe("QPayPro checkout (e2e)", () => {
       await q(`DELETE FROM tbl_recarga WHERE id_tarjeta_ciudadana = ANY($1::bigint[])`);
       await q(`DELETE FROM tbl_transaccion_pago WHERE id_tarjeta_ciudadana = ANY($1::bigint[])`);
       await q(`DELETE FROM tbl_tarjeta_ciudadana WHERE id_tarjeta_ciudadana = ANY($1::bigint[])`);
+    }
+    if (dataSource && ids.employees.length) {
+      await dataSource.query(`DELETE FROM tbl_empleado WHERE id_emple = ANY($1::bigint[])`, [ids.employees]);
     }
     if (app) await app.close();
   });
@@ -194,7 +240,7 @@ describe("QPayPro checkout (e2e)", () => {
         store_type: "woocommerce",
         custom_fields: JSON.stringify({ order_id: referencia }),
         x_invoice_num: referencia,
-        x_fp_sequence: String(row.id),
+        x_fp_sequence: fpSequenceOf(referencia),
         x_description: `Recarga Transmetro ${referencia}`,
         x_amount: "25.00",
         x_currency_code: "GTQ",
@@ -615,6 +661,417 @@ describe("QPayPro checkout (e2e)", () => {
       const before = await snapshot();
 
       expect((await status(referencia)).body.estadoPago).toBe("RECHAZADA");
+      expect(await snapshot()).toEqual(before);
+    });
+  });
+
+  const backdateBy = (referencia: string, minutes: number) =>
+    dataSource.query(
+      `UPDATE tbl_transaccion_pago SET fecha_transaccion = CURRENT_TIMESTAMP - make_interval(mins => $2)
+        WHERE referencia_pago = $1`,
+      [referencia, minutes],
+    );
+
+  // A stale (11 min) INICIADA payment, ready for the S6 reconciliation.
+  async function stale(suffix: string, saldo = "3.00", monto = 25) {
+    const payment = await started(suffix, saldo, monto);
+    await backdateBy(payment.referencia, 11);
+    return payment;
+  }
+
+  // The row must be untouched apart from estado_pago.
+  const unsettled = { qpaypro: null, codigo: null, autorizacion: null, confirmada: null };
+
+  describe("reconciliation in status (S6, S7)", () => {
+    it("credits a stale payment QPayPro reports Aprobada, querying by x_fp_sequence", async () => {
+      const { card, referencia } = await stale("rec-ok");
+      fake.detail = detailOf("900001", "Aprobada", "25.00");
+
+      const res = await status(referencia);
+
+      expect(fake.queries).toEqual([{ fpSequence: fpSequenceOf(referencia) }]);
+      expect(res.status).toBe(200);
+      const recargas = await rechargesOf(referencia);
+      expect(recargas).toHaveLength(1);
+      expect(recargas[0]).toMatchObject({ monto: "25.00", comprobante: `QPP-REC-${recargas[0]!.idRecarga}` });
+      expect(res.body).toEqual({
+        referencia,
+        numeroTarjeta: card,
+        monto: 25,
+        estadoPago: "APROBADA",
+        numeroComprobante: `QPP-REC-${recargas[0]!.idRecarga}`,
+        saldo: 28,
+      });
+      const row = await paymentOf(referencia);
+      expect(row).toMatchObject({ estado: "APROBADA", qpaypro: "900001", codigo: "100", autorizacion: "831000" });
+      expect(row.confirmada).not.toBeNull();
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("queries by idTrans when the payment already has a QPayPro id", async () => {
+      const { card, referencia } = await stale("rec-idtrans");
+      const transId = nextTransId();
+      await dataSource.query(`UPDATE tbl_transaccion_pago SET id_transaccion_qpaypro = $2 WHERE referencia_pago = $1`, [
+        referencia,
+        transId,
+      ]);
+      fake.detail = detailOf(transId, "Aprobada", "25.00");
+
+      const res = await status(referencia);
+
+      expect(fake.queries).toEqual([{ idTrans: transId }]);
+      expect(res.body.estadoPago).toBe("APROBADA");
+      expect((await paymentOf(referencia)).qpaypro).toBe(transId);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("marks RECHAZADA a payment QPayPro reports with another final status, without a recharge", async () => {
+      const { card, referencia } = await stale("rec-rejected");
+      fake.detail = detailOf("900002", "Rechazada", "25.00", { authorizationNumber: null, responseCode: "05" });
+
+      const res = await status(referencia);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ estadoPago: "RECHAZADA", numeroComprobante: null, saldo: 3 });
+      const row = await paymentOf(referencia);
+      expect(row).toMatchObject({ estado: "RECHAZADA", qpaypro: "900002", codigo: "05", autorizacion: null });
+      expect(row.confirmada).not.toBeNull();
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    const unknowns: [string, () => Promise<QpayproTransactionDetail>][] = [
+      ["an approval of another amount", detailOf("900003", "Aprobada", "26.00")],
+      ["an approval for another QPayPro id", detailOf("900008", "Aprobada", "25.00")],
+      ["not found", async () => NOT_FOUND],
+      [
+        "an error",
+        async () => {
+          throw new QpayproClientError("QPayPro did not answer within 15 s");
+        },
+      ],
+    ];
+    let unknownSeq = 0;
+    it.each(unknowns)("expires the payment and changes nothing else for %s", async (label, answer) => {
+      const { card, referencia } = await stale(`rec-unknown-${++unknownSeq}`);
+      if (label === "an approval for another QPayPro id") {
+        // Queried by idTrans: an answer about another transaction is ignored.
+        await dataSource.query(`UPDATE tbl_transaccion_pago SET id_transaccion_qpaypro = $2 WHERE referencia_pago = $1`, [
+          referencia,
+          nextTransId(),
+        ]);
+      }
+      const before = await paymentOf(referencia);
+      fake.detail = answer;
+
+      const res = await status(referencia);
+
+      expect(fake.queries).toHaveLength(1);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ estadoPago: "EXPIRADA", numeroComprobante: null, saldo: 3 });
+      expect(await paymentOf(referencia)).toEqual({ ...before, estado: "EXPIRADA" });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("does not query QPayPro without QPAYPRO_API_SECRET and only expires", async () => {
+      const { card, referencia } = await stale("rec-nosecret");
+      fake.detail = detailOf("900004", "Aprobada", "25.00");
+
+      await withEnv({ QPAYPRO_API_SECRET: undefined }, async () => {
+        expect((await status(referencia)).body.estadoPago).toBe("EXPIRADA");
+      });
+
+      expect(fake.queries).toEqual([]);
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "EXPIRADA", ...unsettled });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("treats as unknown an approval whose QPayPro id already belongs to another payment", async () => {
+      const other = await started("rec-owner");
+      const ownerParams = relayParams(other.referencia, "25.00", "1");
+      await relay(ownerParams);
+      const { card, referencia } = await stale("rec-dup-id");
+      const ownerBefore = await paymentOf(other.referencia);
+      fake.detail = detailOf(ownerParams.x_trans_id, "Aprobada", "25.00");
+
+      const res = await status(referencia);
+
+      expect(res.status).toBe(200);
+      expect(res.body.estadoPago).toBe("EXPIRADA");
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "EXPIRADA", ...unsettled });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+      expect(await paymentOf(other.referencia)).toEqual(ownerBefore);
+      expect(await rechargesOf(other.referencia)).toHaveLength(1);
+    });
+
+    it("credits the approved transaction when the x_fp_sequence also matches a rejected attempt", async () => {
+      const { card, referencia } = await stale("rec-retry");
+      fake.detail = async () => ({
+        found: true,
+        transactions: [
+          { idTransaction: "900005", status: "Rechazada", amount: "25.00", authorizationNumber: null, responseCode: "05", dateTransaction: qppDate(new Date()) },
+          { idTransaction: "900006", status: "Aprobada", amount: "25.00", authorizationNumber: "831001", responseCode: "100", dateTransaction: qppDate(new Date()) },
+        ],
+      });
+
+      expect((await status(referencia)).body.estadoPago).toBe("APROBADA");
+
+      expect(await paymentOf(referencia)).toMatchObject({ qpaypro: "900006", autorizacion: "831001" });
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    // L10: the shared sandbox login may hold another merchant's older
+    // transaction under the same fp sequence or id.
+    const fechaOf = async (referencia: string) =>
+      (await one<{ fecha: Date }>(`SELECT fecha_transaccion AS "fecha" FROM tbl_transaccion_pago WHERE referencia_pago = $1`, [referencia]))
+        .fecha;
+    const minutesFrom = (date: Date, minutes: number) => new Date(date.getTime() + minutes * 60_000);
+
+    it.each([
+      ["dated 6 minutes before the payment", "fpSequence", (fecha: Date) => qppDate(minutesFrom(fecha, -6))],
+      ["dated 6 minutes before the payment, queried by idTrans", "idTrans", (fecha: Date) => qppDate(minutesFrom(fecha, -6))],
+      ["with an unparseable date", "fpSequence", () => "28/07/2021 20:13"],
+      ["without a date", "fpSequence", () => null],
+    ])("ignores an approval %s: EXPIRADA, nothing else changes", async (_label, by, dateOf) => {
+      const { card, referencia } = await stale(`rec-old-${by}-${++unknownSeq}`);
+      const transId = nextTransId();
+      if (by === "idTrans") {
+        await dataSource.query(`UPDATE tbl_transaccion_pago SET id_transaccion_qpaypro = $2 WHERE referencia_pago = $1`, [
+          referencia,
+          transId,
+        ]);
+      }
+      const before = await paymentOf(referencia);
+      fake.detail = detailOf(transId, "Aprobada", "25.00", { dateTransaction: dateOf(await fechaOf(referencia)) });
+
+      const res = await status(referencia);
+
+      expect(fake.queries).toEqual([by === "idTrans" ? { idTrans: transId } : { fpSequence: fpSequenceOf(referencia) }]);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ estadoPago: "EXPIRADA", numeroComprobante: null, saldo: 3 });
+      expect(await paymentOf(referencia)).toEqual({ ...before, estado: "EXPIRADA" });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("ignores a rejection dated before the window too", async () => {
+      const { card, referencia } = await stale("rec-old-rejected");
+      fake.detail = detailOf("900009", "Rechazada", "25.00", { dateTransaction: qppDate(minutesFrom(await fechaOf(referencia), -6)) });
+
+      expect((await status(referencia)).body.estadoPago).toBe("EXPIRADA");
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "EXPIRADA", ...unsettled });
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("credits an approval dated 4 minutes before the payment (clock skew)", async () => {
+      const { card, referencia } = await stale("rec-skew");
+      fake.detail = detailOf("900010", "Aprobada", "25.00", { dateTransaction: qppDate(minutesFrom(await fechaOf(referencia), -4)) });
+
+      expect((await status(referencia)).body.estadoPago).toBe("APROBADA");
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "APROBADA", qpaypro: "900010" });
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("credits the in-window approval when an older one shares the fp sequence", async () => {
+      const { card, referencia } = await stale("rec-mixed");
+      const fecha = await fechaOf(referencia);
+      fake.detail = async () => ({
+        found: true,
+        transactions: [
+          { idTransaction: "900011", status: "Aprobada", amount: "25.00", authorizationNumber: "1", responseCode: "100", dateTransaction: qppDate(minutesFrom(fecha, -60)) },
+          { idTransaction: "900012", status: "Rechazada", amount: "25.00", authorizationNumber: null, responseCode: "05", dateTransaction: qppDate(minutesFrom(fecha, 1)) },
+        ],
+      });
+
+      expect((await status(referencia)).body.estadoPago).toBe("RECHAZADA");
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "RECHAZADA", qpaypro: "900012" });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("does not query QPayPro for a fresh INICIADA payment", async () => {
+      const { referencia } = await started("rec-fresh");
+      fake.detail = detailOf("900007", "Aprobada", "25.00");
+
+      expect((await status(referencia)).body.estadoPago).toBe("INICIADA");
+      expect(fake.queries).toEqual([]);
+    });
+  });
+
+  describe("staff verify (S7)", () => {
+    let centralToken = "";
+    let pilotToken = "";
+
+    async function createEmployee(roleCode: string, suffix: string): Promise<string> {
+      const role = await one<{ idRol: string }>(`SELECT id_rol AS "idRol" FROM tbl_rol WHERE codigo = $1`, [roleCode]);
+      const email = `${runTag.toLowerCase()}-${suffix}@transmetro.gt`;
+      const emp = await one<{ id: string }>(
+        `INSERT INTO tbl_empleado (nombre_emple, estado_emple, correo_emple, id_rol)
+         VALUES ($1, 'ACTIVO', $2, $3) RETURNING id_emple AS "id"`,
+        [`${runTag} ${suffix}`, email, role.idRol],
+      );
+      ids.employees.push(String(emp.id));
+      const permissions = (
+        (await dataSource.query(
+          `SELECT p.codigo_permiso AS "codigo" FROM tbl_rol r
+           JOIN tbl_rol_permiso rp ON rp.id_rol = r.id_rol
+           JOIN tbl_permiso p ON p.id_permiso = rp.id_permiso WHERE r.codigo = $1`,
+          [roleCode],
+        )) as { codigo: string }[]
+      ).map((r) => r.codigo);
+      return jwt.sign(
+        { employeeId: String(emp.id), email, roles: [roleCode], permissions, scope: { role: roleCode, modules: [] } },
+        JWT_SECRET,
+        { expiresIn: "12h" },
+      );
+    }
+
+    beforeAll(async () => {
+      centralToken = await createEmployee("OPERADOR_CENTRAL", "central");
+      pilotToken = await createEmployee("PILOTO", "pilot");
+    });
+
+    const verify = (card: string, referencia: string, token: string | null = centralToken) => {
+      const req = api().post(`/cards/${encodeURIComponent(card)}/payments/${encodeURIComponent(referencia)}/verify`);
+      return token === null ? req : req.set("Authorization", `Bearer ${token}`);
+    };
+
+    it("credits a fresh INICIADA payment QPayPro reports Aprobada and answers the S6 body", async () => {
+      const { card, referencia } = await started("verify-ok");
+      fake.detail = detailOf("910001", "Aprobada", "25.00");
+
+      const res = await verify(card, referencia);
+
+      expect(fake.queries).toEqual([{ fpSequence: fpSequenceOf(referencia) }]);
+      expect(res.status).toBe(200);
+      const recargas = await rechargesOf(referencia);
+      expect(recargas).toHaveLength(1);
+      expect(res.body).toEqual({
+        referencia,
+        numeroTarjeta: card,
+        monto: 25,
+        estadoPago: "APROBADA",
+        numeroComprobante: `QPP-REC-${recargas[0]!.idRecarga}`,
+        saldo: 28,
+      });
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "APROBADA", qpaypro: "910001", codigo: "100", autorizacion: "831000" });
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("credits an EXPIRADA payment once, even when verified again", async () => {
+      const { card, referencia } = await started("verify-expired");
+      await cancel({ referencia });
+      fake.detail = detailOf("910002", "Aprobada", "25.00");
+
+      const first = await verify(card, referencia);
+      const before = await snapshot();
+      const second = await verify(card, referencia);
+
+      expect(first.status).toBe(200);
+      expect(first.body.estadoPago).toBe("APROBADA");
+      expect(second.status).toBe(200);
+      expect(second.body).toEqual(first.body);
+      expect(fake.queries).toHaveLength(1);
+      expect(await snapshot()).toEqual(before);
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("credits once when verified concurrently", async () => {
+      const { card, referencia } = await started("verify-race");
+      fake.detail = detailOf("910003", "Aprobada", "25.00");
+
+      const answers = await Promise.all(Array.from({ length: 5 }, () => verify(card, referencia)));
+
+      expect(answers.map((res) => res.status)).toEqual([200, 200, 200, 200, 200]);
+      expect(answers.map((res) => res.body.estadoPago)).toEqual(Array(5).fill("APROBADA"));
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("marks RECHAZADA a payment QPayPro reports Rechazada", async () => {
+      const { card, referencia } = await started("verify-rejected");
+      fake.detail = detailOf("910004", "Rechazada", "25.00", { authorizationNumber: null, responseCode: "05" });
+
+      const res = await verify(card, referencia);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ estadoPago: "RECHAZADA", numeroComprobante: null, saldo: 3 });
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "RECHAZADA", qpaypro: "910004", codigo: "05" });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("leaves an unconfirmed INICIADA payment INICIADA, even when stale (no expiry here)", async () => {
+      const { card, referencia } = await stale("verify-unknown");
+      const before = await snapshot();
+
+      const res = await verify(card, referencia);
+
+      expect(fake.queries).toHaveLength(1);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ estadoPago: "INICIADA", numeroComprobante: null, saldo: 3 });
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it("only answers the S6 body for a payment that is not INICIADA or EXPIRADA", async () => {
+      const { card, referencia } = await started("verify-settled");
+      await relay(relayParams(referencia, "25.00", "2"));
+      fake.detail = detailOf("910005", "Aprobada", "25.00");
+      const before = await snapshot();
+
+      const res = await verify(card, referencia);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ referencia, numeroTarjeta: card, monto: 25, estadoPago: "RECHAZADA", numeroComprobante: null, saldo: 3 });
+      expect(fake.queries).toEqual([]);
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it("answers 401 without a valid token and 403 without RECARGAS_REPORTES_CONSULTAR, changing nothing", async () => {
+      const { card, referencia } = await started("verify-auth");
+      fake.detail = detailOf("910006", "Aprobada", "25.00");
+      const before = await snapshot();
+
+      expect((await verify(card, referencia, null)).status).toBe(401);
+      expect((await verify(card, referencia, "not-a-jwt")).status).toBe(401);
+      expect((await verify(card, referencia, pilotToken)).status).toBe(403);
+
+      expect(fake.queries).toEqual([]);
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it("answers 404 for an unknown card, an unknown referencia, another card's payment or a simulated one", async () => {
+      const { card, referencia } = await started("verify-404");
+      const otherCard = await createCard("verify-404-other", "1.00");
+      const simulated = `${runTag}-verify-sim`;
+      await dataSource.query(
+        `INSERT INTO tbl_transaccion_pago (id_tarjeta_ciudadana, referencia_pago, monto_pago, estado_pago)
+         SELECT id_tarjeta_ciudadana, $2, 25, 'INICIADA' FROM tbl_tarjeta_ciudadana WHERE numero_tarjeta = $1`,
+        [card, simulated],
+      );
+      fake.detail = detailOf("910007", "Aprobada", "25.00");
+      const before = await snapshot();
+
+      const missingCard = await verify(`${runTag}-none`, referencia);
+      expect(missingCard.status).toBe(404);
+      expect(missingCard.body.message).toBe("La tarjeta no existe.");
+      for (const [numero, ref] of [
+        [card, "QPP-00000000-0000-4000-8000-000000000000"],
+        [otherCard, referencia],
+        [card, simulated],
+      ] as const) {
+        const res = await verify(numero, ref);
+        expect(res.status).toBe(404);
+        expect(res.body.message).toBe("El pago no existe.");
+      }
+
+      expect(fake.queries).toEqual([]);
       expect(await snapshot()).toEqual(before);
     });
   });

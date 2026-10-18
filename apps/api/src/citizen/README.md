@@ -42,12 +42,17 @@ logged: QPayPro messages are scrubbed of them.
    400). Unknown card -> 404, card not `ACTIVA` -> 409. Stores one
    `tbl_transaccion_pago` `INICIADA` with `referencia_pago = QPP-<uuid>`,
    then POSTs multipart to `{QPAYPRO_BASE_URL}/checkout/register_transaction_store`
-   with `x_fp_sequence = id_transaccion_pago`, `x_relay_url` and
+   with `x_fp_sequence` = the payment's fp sequence, `x_relay_url` and
    `x_url_cancel` (15 s timeout). On a token -> 201 with
    `checkoutUrl = {QPAYPRO_BASE_URL}/checkout/woocommerce?token=<token>`.
    Otherwise the row becomes `ERROR` with QPayPro's message in
    `mensaje_respuesta` and the API answers 502 "No se pudo iniciar el pago
    con QPayPro.". The email goes to QPayPro only and is never stored.
+   The fp sequence (`fpSequenceFor`, L10) is a 10-digit number, first digit
+   1-9: the first 64 bits of `sha256(referencia)` mapped into
+   `[1000000000, 9999999999]`. It is recomputed from the referencia, never
+   stored; a small row id could match another merchant's transaction on the
+   shared sandbox login.
 2. **Relay** (`GET .../relay?order_id&x_trans_id&x_amount&x_response_status&order_hash`):
    `order_hash` must be `sha256(order_id|x_trans_id|x_amount|x_response_status|QPAYPRO_PRIVATE_KEY)`
    (raw `x_amount`, constant-time compare) and `x_amount` must equal
@@ -61,8 +66,34 @@ logged: QPayPro messages are scrubbed of them.
 3. **Cancel**: an `INICIADA` payment becomes `EXPIRADA`; other states are
    unchanged. 302 like the relay.
 4. **Status**: only `QPP-` referencias. An `INICIADA` payment older than 10
-   minutes is first reconciled with QPayPro (seam `reconcile`, "unknown"
-   until T4 adds the query) and then marked `EXPIRADA`.
+   minutes is first reconciled with QPayPro (5) and, if that cannot
+   confirm it, marked `EXPIRADA`.
+5. **Reconciliation** (S7, `reconcile`): POSTs multipart to
+   `{QPAYPRO_BASE_URL}/checkout/get_transaction_detail` with `x_login`,
+   `x_private_key`, `x_api_secret` (`QPAYPRO_API_SECRET`) and `idTrans` =
+   `id_transaccion_qpaypro` when known, else `x_fp_sequence` = the fp
+   sequence. Only transactions whose `dateTransaction` (ISO 8601, e.g.
+   `2021-07-28T20:13:06.000000Z`) is not earlier than `fecha_transaccion`
+   minus 5 minutes (clock skew) count; older, missing or unparseable dates
+   are ignored, for both kinds of query. The query runs outside any DB
+   transaction; then, with the payment row locked and only from `INICIADA`
+   or `EXPIRADA`:
+   - a transaction with status `Aprobada` and `amount` equal to
+     `monto_pago` (to the cent) -> the same credit as the relay, with
+     `id_transaccion_qpaypro`, `numero_autorizacion` and `codigo_respuesta`
+     from QPayPro (when `x_fp_sequence` lists several attempts, the
+     approved one wins);
+   - another status -> `RECHAZADA`, no recharge;
+   - `result: 0` (not found), no transaction inside the date window, a
+   network error, timeout or unexpected body,
+   an approval of another amount, a QPayPro id already stored on another
+   payment (UNIQUE `id_transaccion_qpaypro`), a query by `idTrans` that
+   answers another id, or no `QPAYPRO_API_SECRET` -> unknown, nothing
+   changes.
+   Also used by the staff route `POST /cards/:numeroTarjeta/payments/:referencia/verify`
+   (`apps/api/src/cards/README.md`). If QPayPro does not keep
+   `x_fp_sequence` from the hosted checkout, a payment whose relay never
+   arrived stays unknown and only expiry applies.
 
 ## Simulated recharge
 

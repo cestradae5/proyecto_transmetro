@@ -125,3 +125,154 @@ describe("HttpQpayproClient.registerTransaction (qpaypro-checkout S3)", () => {
     expect(message).toBe("bad *** *** *** ***");
   });
 });
+
+describe("HttpQpayproClient.getTransactionDetail (qpaypro-checkout S7, L7)", () => {
+  const saved = { ...process.env };
+  const realFetch = globalThis.fetch;
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    Object.assign(process.env, SECRETS, { QPAYPRO_BASE_URL: "https://qpp.example" });
+    fetchMock = jest.fn() as FetchMock;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    process.env = { ...saved };
+    globalThis.fetch = realFetch;
+  });
+
+  const L7_TX = {
+    idTransaction: 418203,
+    status: "Aprobada",
+    auditNumber: 1191,
+    authorizationNumber: "831000",
+    currency: "GTQ",
+    amount: "1.00",
+    responseCode: 100,
+    responseText: "Transacción exitosa",
+    dateTransaction: "2021-07-28T20:13:06.000000Z",
+  };
+
+  async function failure(query: Parameters<HttpQpayproClient["getTransactionDetail"]>[0], timeoutMs?: number) {
+    const error = await new HttpQpayproClient(timeoutMs).getTransactionDetail(query).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(QpayproClientError);
+    return error as QpayproClientError;
+  }
+
+  it("POSTs the query credentials and idTrans as multipart to get_transaction_detail and returns the transactions", async () => {
+    fetchMock.mockResolvedValue(json({ result: 1, response: [L7_TX] }));
+
+    await expect(new HttpQpayproClient().getTransactionDetail({ idTrans: "418203" })).resolves.toEqual({
+      found: true,
+      transactions: [
+        {
+          idTransaction: "418203",
+          status: "Aprobada",
+          amount: "1.00",
+          authorizationNumber: "831000",
+          responseCode: "100",
+          dateTransaction: "2021-07-28T20:13:06.000000Z",
+        },
+      ],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://qpp.example/checkout/get_transaction_detail");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect(Object.fromEntries((init!.body as FormData).entries())).toEqual({
+      x_login: SECRETS.QPAYPRO_LOGIN,
+      x_private_key: SECRETS.QPAYPRO_PRIVATE_KEY,
+      x_api_secret: SECRETS.QPAYPRO_API_SECRET,
+      idTrans: "418203",
+    });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("queries by x_fp_sequence", async () => {
+    fetchMock.mockResolvedValue(
+      json({ result: 1, response: [{ ...L7_TX, authorizationNumber: null, responseCode: "05", dateTransaction: undefined }] }),
+    );
+
+    await expect(new HttpQpayproClient().getTransactionDetail({ fpSequence: "77" })).resolves.toEqual({
+      found: true,
+      transactions: [
+        { idTransaction: "418203", status: "Aprobada", amount: "1.00", authorizationNumber: null, responseCode: "05", dateTransaction: null },
+      ],
+    });
+
+    expect(Object.fromEntries((fetchMock.mock.calls[0]![1]!.body as FormData).entries())).toEqual({
+      x_login: SECRETS.QPAYPRO_LOGIN,
+      x_private_key: SECRETS.QPAYPRO_PRIVATE_KEY,
+      x_api_secret: SECRETS.QPAYPRO_API_SECRET,
+      x_fp_sequence: "77",
+    });
+  });
+
+  it("answers not found for result 0", async () => {
+    fetchMock.mockResolvedValue(json({ result: 0, responseText: "Transacción no encontrada" }));
+
+    await expect(new HttpQpayproClient().getTransactionDetail({ fpSequence: "77" })).resolves.toEqual({ found: false });
+  });
+
+  it.each([
+    ["no result", { response: [L7_TX] }],
+    ["an empty response list", { result: 1, response: [] }],
+    ["a response that is not a list", { result: 1, response: L7_TX }],
+    ["a transaction without status", { result: 1, response: [{ ...L7_TX, status: undefined }] }],
+    ["a transaction without id", { result: 1, response: [{ ...L7_TX, idTransaction: undefined }] }],
+    ["a transaction with a bad amount", { result: 1, response: [{ ...L7_TX, amount: "abc" }] }],
+    ["a result of 2", { result: 2 }],
+  ])("maps a malformed body with %s", async (_label, body) => {
+    fetchMock.mockResolvedValue(json(body));
+
+    expect((await failure({ idTrans: "1" })).message).toBe("QPayPro answered an unexpected transaction detail");
+  });
+
+  it("maps a body that is not JSON", async () => {
+    fetchMock.mockResolvedValue(new Response("<html>500</html>", { status: 200 }));
+
+    expect((await failure({ idTrans: "1" })).message).toBe("QPayPro answered an unexpected transaction detail");
+  });
+
+  it("maps a non-200 answer", async () => {
+    fetchMock.mockResolvedValue(json({ message: "Server error" }, 500));
+
+    expect((await failure({ idTrans: "1" })).message).toBe("QPayPro answered HTTP 500: Server error");
+  });
+
+  it("maps a network error", async () => {
+    fetchMock.mockRejectedValue(new TypeError("fetch failed"));
+
+    expect((await failure({ idTrans: "1" })).message).toBe("QPayPro request failed: fetch failed");
+  });
+
+  it("maps a timeout", async () => {
+    fetchMock.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason));
+        }),
+    );
+
+    expect((await failure({ idTrans: "1" }, 20)).message).toBe("QPayPro did not answer within 0.02 s");
+  });
+
+  it("fails without calling QPayPro when a query credential is missing", async () => {
+    delete process.env.QPAYPRO_API_SECRET;
+
+    expect((await failure({ idTrans: "1" })).message).toBe("QPayPro query credentials are not configured");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("never puts a credential in the error message", async () => {
+    fetchMock.mockResolvedValue(json({ message: `bad ${SECRETS.QPAYPRO_PRIVATE_KEY} ${SECRETS.QPAYPRO_API_SECRET}` }, 401));
+
+    expect((await failure({ idTrans: "1" })).message).toBe("QPayPro answered HTTP 401: bad *** ***");
+  });
+});
