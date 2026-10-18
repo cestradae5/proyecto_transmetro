@@ -184,6 +184,31 @@ describe("MiUnidadPage", () => {
     expect(screen.getByRole("button", { name: "Registrar pasajeros" })).toBeEnabled();
   });
 
+  it("reloads the stops (people waiting) after registering passengers", async () => {
+    const refreshStops = vi.fn();
+    const report = vi.fn().mockResolvedValue({
+      idParadaUnidad: "9", idParada: "p2", nombreParada: "Centro", bajaron: 0, subieron: 2,
+      aBordo: 8, porcentaje: 7, minutosEsperaExtra: 5, fecha: "2026-10-16T10:00:00.000Z",
+    });
+    mockedUseMiUnidad.mockReturnValue(
+      hookState({ unit: unit({ idLineaParadaActual: "102", nombreParadaActual: "Centro" }), refreshStops }),
+    );
+    mockedUsePasajeros.mockReturnValue({
+      occupancy: { idUnidad: "7", numeroPlaca: "P-777AAA", capacidadPasajeros: 120, aBordo: 6, porcentaje: 5, ultimoReporte: null },
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      report,
+    });
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText("Subieron"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar pasajeros" }));
+
+    await waitFor(() => expect(report).toHaveBeenCalledWith({ bajaron: 0, subieron: 2 }));
+    await waitFor(() => expect(refreshStops).toHaveBeenCalledTimes(1));
+  });
+
   it("disables the passengers report when the unit has no current stop", () => {
     mockedUseMiUnidad.mockReturnValue(hookState({ unit: unit({ idLineaParadaActual: null }) }));
     renderPage();

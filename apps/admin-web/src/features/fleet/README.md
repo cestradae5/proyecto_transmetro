@@ -24,7 +24,7 @@ Admin UI for the fleet backend (`/fleet/*`). Module `fleet`.
 
 Pilot view (`/fleet/my-unit`) — identity from the token, no unit id:
 - `GET /fleet/units/my-unit` (`UNIDAD_ASIGNADA_CONSULTAR`; 404 `PilotHasNoUnitAssigned` is an empty state, not an error; includes `nombreLinea`)
-- `GET /fleet/units/my-unit/stops` (ordered stops of the assigned line; 409 `UnitHasNoLineAssignment` yields an empty list)
+- `GET /fleet/units/my-unit/stops` (ordered stops of the assigned line, each with `personasEnParada`, the people waiting there by the turnstile count and pilot reports; each stop button shows "N esperando"; the list reloads silently after a location report and after registering passengers; 409 `UnitHasNoLineAssignment` yields an empty list)
 - `POST /fleet/units/my-unit/location` `{idLineaParada}` (`METRICAS_UNIDAD_REPORTAR`; repeating it overwrites, so the pilot dialog offers no correction action)
 - `GET /operations/ridership/my-unit` and `POST /operations/ridership/my-unit/stop-report` `{ bajaron, subieron }` (`odd/tasks/bus-passenger-report.md`): the "Pasajeros en esta parada" panel (`PasajerosPanel`, only with `METRICAS_UNIDAD_REPORTAR`) shows "A bordo: N de M", the last report ("Bajaron X · Subieron Y") and "Espere 5 minutos adicionales en esta parada" when the unit is below 25%; the pilot registers who got off and on at the current stop (disabled until a stop is marked). Integers >= 0 are checked before sending; API errors (409 on board/capacity) show their message
 

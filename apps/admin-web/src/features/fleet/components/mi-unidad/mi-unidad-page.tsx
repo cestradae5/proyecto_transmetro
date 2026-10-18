@@ -121,7 +121,12 @@ export function MiUnidadPage() {
                 loading={pasajeros.loading}
                 error={pasajeros.error}
                 hasCurrentStop={Boolean(unit.idLineaParadaActual)}
-                onReport={pasajeros.report}
+                onReport={async (input) => {
+                  const result = await pasajeros.report(input);
+                  // Boarding and drop-offs change the people waiting at this stop.
+                  void refreshStops();
+                  return result;
+                }}
               />
             )}
           </div>

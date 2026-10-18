@@ -34,4 +34,9 @@ export class ParadaEntity {
   // (100) applies when a create omits it.
   @Column({ name: "capacidad_pasajeros", type: "int", default: 100 })
   capacidadPasajeros!: number;
+
+  // People waiting now. Read-only here: only the ridership module changes it
+  // (turnstile passes and pilot reports, under the parada row lock).
+  @Column({ name: "personas_en_parada", type: "int", default: 0, insert: false, update: false })
+  personasEnParada!: number;
 }
