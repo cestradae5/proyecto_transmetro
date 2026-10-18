@@ -20,6 +20,8 @@ export class TurnstilePassResponseDto {
   @ApiProperty({ type: StationOccupancyDto }) estacion!: StationOccupancyDto;
   @ApiProperty({ description: "Esta pasada generó la alerta de capacidad" }) alertaGenerada!: boolean;
   @ApiProperty({ type: String, nullable: true }) idAlerta!: string | null;
+  @ApiProperty({ description: "La pasada ya se había registrado con la misma idempotencyKey" })
+  repetido!: boolean;
 }
 
 export class UnitStopDto {

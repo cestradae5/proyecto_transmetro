@@ -459,6 +459,7 @@ CREATE TABLE IF NOT EXISTS tbl_evento_talanquera (
     id_tarjeta_ciudadana BIGINT NOT NULL,
     tipo_evento VARCHAR(10) NOT NULL CHECK (tipo_evento IN ('ENTRADA', 'SALIDA')),
     monto_cobrado NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (monto_cobrado >= 0),
+    clave_idempotencia VARCHAR(64) UNIQUE,
     fecha_evento TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_estacion) REFERENCES tbl_estacion (id_estacion),
     FOREIGN KEY (id_tarjeta_ciudadana) REFERENCES tbl_tarjeta_ciudadana (id_tarjeta_ciudadana)
@@ -580,5 +581,11 @@ ALTER TABLE tbl_estacion ADD COLUMN IF NOT EXISTS capacidad_pasajeros INTEGER NO
 -- ejemplo, capacidad de estación al pasar una talanquera) no tienen autor.
 
 ALTER TABLE tbl_alerta ALTER COLUMN id_empleado DROP NOT NULL;
+
+-- tbl_evento_talanquera.clave_idempotencia — nullable, UNIQUE. Clave que
+-- envía la talanquera para que un reintento de la misma pasada no cobre ni
+-- registre dos veces. Las pasadas sin clave no se deduplican.
+
+ALTER TABLE tbl_evento_talanquera ADD COLUMN IF NOT EXISTS clave_idempotencia VARCHAR(64) UNIQUE;
 
 COMMIT;

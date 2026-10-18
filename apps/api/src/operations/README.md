@@ -89,7 +89,7 @@ Who rides a bus is an estimate per stop, never an exact count.
 
 | Method | Path | Access | Result |
 |---|---|---|---|
-| POST | `ridership/turnstile` | `X-Turnstile-Key` (no login) | `{ numeroTarjeta, idEstacion, tipo: "ENTRADA" \| "SALIDA" }` -> 201 `{ idEvento, tipo, numeroTarjeta, montoCobrado, saldo, estacion, alertaGenerada, idAlerta }` |
+| POST | `ridership/turnstile` | `X-Turnstile-Key` (no login) | `{ numeroTarjeta, idEstacion, tipo: "ENTRADA" \| "SALIDA", idempotencyKey? }` -> 201 `{ idEvento, tipo, numeroTarjeta, montoCobrado, saldo, estacion, alertaGenerada, idAlerta, repetido }` |
 | POST | `ridership/units/:id/arrival` | `FLOTA_GESTIONAR` | `{ idEstacion }` -> 201 stop |
 | POST | `ridership/units/:id/departure` | `FLOTA_GESTIONAR` | 200 stop |
 | GET | `ridership/stations/:id` | `ALERTAS_OPERATIVAS_GESTIONAR` | `{ idEstacion, nombreEstacion, capacidadPasajeros, personasEnEstacion, porcentaje, alertaActiva }` |
@@ -110,6 +110,12 @@ ocupacionEstimada, porcentaje, minutosEsperaExtra, fechaLlegada, fechaSalida }`.
   pass stores no event and charges nothing.
 - **Events**: every accepted pass is one `tbl_evento_talanquera` row; there
   is no stored counter.
+- **Retries**: optional `idempotencyKey` (8-64 chars `[A-Za-z0-9-]`, else
+  400). The same key with the same card, station and type returns the
+  original pass with `repetido: true` (stored charge, current balance and
+  station, `alertaGenerada: false`) and stores or charges nothing; the same
+  key with another card, station or type -> 409. Without a key every pass is
+  new (`repetido: false`).
 - **People in a station**: `ENTRADA` events minus passengers who boarded a bus
   there (`tbl_parada_unidad.subieron`), never below 0. Exits are passengers
   leaving buses, so they do not change it.

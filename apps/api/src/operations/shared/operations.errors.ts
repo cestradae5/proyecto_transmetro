@@ -86,3 +86,10 @@ export class UnitNotAtStop extends ConflictError {
     this.name = "UnitNotAtStop";
   }
 }
+
+export class IdempotencyKeyConflict extends ConflictError {
+  constructor() {
+    super("La clave de idempotencia ya se usó para otra operación.");
+    this.name = "IdempotencyKeyConflict";
+  }
+}

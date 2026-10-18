@@ -1,10 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { InjectDataSource } from "@nestjs/typeorm";
-import { DataSource } from "typeorm";
+import { DataSource, QueryFailedError } from "typeorm";
 
 import {
   CardNotActive,
   CardNotFound,
+  IdempotencyKeyConflict,
   InsufficientBalance,
   StationNotFound,
   UnitAlreadyAtStop,
@@ -51,6 +52,14 @@ interface CardRow {
   estado: string;
 }
 
+interface KeyedEventRow {
+  idEvento: string;
+  idEstacion: string;
+  idTarjeta: string;
+  tipo: string;
+  montoCobrado: string;
+}
+
 interface StopRow {
   idParadaUnidad: string;
   idEstacion: string;
@@ -74,6 +83,9 @@ interface CapacityAlertRow {
 }
 
 const NUMERIC_ID = /^\d+$/;
+
+// Postgres' default name for UNIQUE (clave_idempotencia) in database/init.sql.
+const IDEMPOTENCY_UNIQUE = "tbl_evento_talanquera_clave_idempotencia_key";
 
 const STOP_COLUMNS = `
        pu.id_parada_unidad AS "idParadaUnidad",
@@ -101,11 +113,62 @@ export class RidershipService {
     private readonly dataSource: DataSource,
   ) {}
 
-  // S4, S5, S1, S7: one turnstile pass.
+  // S4, S5, S1, S7: one turnstile pass. With an idempotencyKey a retry
+  // returns the original pass (user-web S7).
   async registerPass(dto: TurnstilePassDto): Promise<TurnstilePassResponseDto> {
+    try {
+      return await this.registerPassOnce(dto);
+    } catch (error) {
+      // Two different cards racing with the same key: the UNIQUE column
+      // rejects the second insert. Any other UNIQUE is rethrown as is.
+      const driver = error instanceof QueryFailedError ? (error.driverError as { code?: string; constraint?: string }) : undefined;
+      if (driver?.code === "23505" && driver.constraint === IDEMPOTENCY_UNIQUE) {
+        throw new IdempotencyKeyConflict();
+      }
+      throw error;
+    }
+  }
+
+  private async registerPassOnce(dto: TurnstilePassDto): Promise<TurnstilePassResponseDto> {
+    const key = dto.idempotencyKey ?? null;
     return this.dataSource.transaction(async (manager) => {
       const station = await this.lockStation(manager, String(dto.idEstacion));
       const card = await this.lockCard(manager, dto.numeroTarjeta);
+
+      if (key !== null) {
+        const previous = (await manager.query(
+          `SELECT id_evento_talanquera AS "idEvento", id_estacion AS "idEstacion",
+                  id_tarjeta_ciudadana AS "idTarjeta", tipo_evento AS "tipo",
+                  monto_cobrado AS "montoCobrado"
+             FROM tbl_evento_talanquera WHERE clave_idempotencia = $1`,
+          [key],
+        )) as KeyedEventRow[];
+        const original = previous[0];
+        if (original) {
+          if (
+            String(original.idTarjeta) !== card.idTarjeta ||
+            String(original.idEstacion) !== station.idEstacion ||
+            original.tipo !== dto.tipo
+          ) {
+            throw new IdempotencyKeyConflict();
+          }
+          const people = await this.waitingAt(manager, station.idEstacion);
+          return {
+            idEvento: String(original.idEvento),
+            tipo: dto.tipo,
+            numeroTarjeta: dto.numeroTarjeta,
+            montoCobrado: Number(original.montoCobrado),
+            saldo: Number(card.saldo),
+            estacion: {
+              ...this.toStationDto(station, people),
+              alertaActiva: await this.hasOpenAlert(manager, station.idEstacion),
+            },
+            alertaGenerada: false,
+            idAlerta: null,
+            repetido: true,
+          };
+        }
+      }
 
       let charged = 0;
       let saldo = Number(card.saldo);
@@ -123,10 +186,10 @@ export class RidershipService {
       }
 
       const inserted = (await manager.query(
-        `INSERT INTO tbl_evento_talanquera (id_estacion, id_tarjeta_ciudadana, tipo_evento, monto_cobrado)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO tbl_evento_talanquera (id_estacion, id_tarjeta_ciudadana, tipo_evento, monto_cobrado, clave_idempotencia)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING id_evento_talanquera AS "idEvento"`,
-        [station.idEstacion, card.idTarjeta, dto.tipo, charged.toFixed(2)],
+        [station.idEstacion, card.idTarjeta, dto.tipo, charged.toFixed(2), key],
       )) as { idEvento: string }[];
 
       const people = await this.waitingAt(manager, station.idEstacion);
@@ -159,6 +222,7 @@ export class RidershipService {
         },
         alertaGenerada: idAlerta !== null,
         idAlerta,
+        repetido: false,
       };
     });
   }
