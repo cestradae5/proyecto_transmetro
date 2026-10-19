@@ -500,6 +500,95 @@ describe("QPayPro checkout (e2e)", () => {
       expect(await saldoOf(card)).toBe("28.00");
     });
 
+    it("credits a signed approval that arrives after a declined attempt RECHAZADA (L12)", async () => {
+      const { card, referencia } = await started("retry-after-reject");
+      await relay(relayParams(referencia, "25.00", "2"));
+      expect((await paymentOf(referencia)).estado).toBe("RECHAZADA");
+      const params = relayParams(referencia, "25.00", "1");
+
+      const res = await relay(params);
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(landing(referencia));
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "APROBADA", qpaypro: params.x_trans_id, codigo: "1" });
+      const recargas = await rechargesOf(referencia);
+      expect(recargas).toHaveLength(1);
+      expect(recargas[0]).toMatchObject({ monto: "25.00", comprobante: `QPP-REC-${recargas[0]!.idRecarga}` });
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("never overwrites APROBADA with a signed rejection", async () => {
+      const { card, referencia } = await started("approved-then-reject");
+      await relay(relayParams(referencia, "25.00", "1"));
+      const before = await snapshot();
+
+      const res = await relay(relayParams(referencia, "25.00", "2"));
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(landing(referencia));
+      expect(await snapshot()).toEqual(before);
+      expect((await paymentOf(referencia)).estado).toBe("APROBADA");
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("accepts an upper-case order_hash and credits once", async () => {
+      const { card, referencia } = await started("upper-hash");
+      const params = relayParams(referencia, "25.00", "1");
+      const upper = { ...params, order_hash: params.order_hash.toUpperCase() };
+
+      const res = await relay(upper);
+      await relay(upper);
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(landing(referencia));
+      expect((await paymentOf(referencia)).estado).toBe("APROBADA");
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("verifies the signature over x_amount exactly as sent (\"25\")", async () => {
+      const { card, referencia } = await started("raw-amount");
+
+      const res = await relay(relayParams(referencia, "25", "1"));
+
+      expect(res.status).toBe(302);
+      expect((await paymentOf(referencia)).estado).toBe("APROBADA");
+      expect(await rechargesOf(referencia)).toHaveLength(1);
+      expect(await saldoOf(card)).toBe("28.00");
+    });
+
+    it("redirects to ?pago=desconocido for a repeated order_id, changing nothing", async () => {
+      const { referencia } = await started("repeated-order");
+      const params = relayParams(referencia, "25.00", "1");
+      const before = await snapshot();
+      const query = new URLSearchParams([["order_id", referencia], ...Object.entries(params)]).toString();
+
+      const res = await api().get(`/citizen/payments/qpaypro/relay?${query}`);
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(landing("desconocido"));
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it("changes nothing for a signed relay whose x_trans_id belongs to another approved payment", async () => {
+      const owner = await started("relay-owner");
+      const ownerParams = relayParams(owner.referencia, "25.00", "1");
+      await relay(ownerParams);
+      const { card, referencia } = await started("relay-dup-id");
+      const before = await snapshot();
+
+      const res = await relay(relayParams(referencia, "25.00", "1", ownerParams.x_trans_id));
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(landing(referencia));
+      expect(await snapshot()).toEqual(before);
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "INICIADA", qpaypro: null, codigo: null, confirmada: null });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+      expect(await rechargesOf(owner.referencia)).toHaveLength(1);
+    });
+
     it("changes nothing for a transaction in ERROR", async () => {
       const card = await createCard("relay-error", "3.00");
       fake.answer = async () => {
@@ -725,7 +814,7 @@ describe("QPayPro checkout (e2e)", () => {
       expect(await saldoOf(card)).toBe("28.00");
     });
 
-    it("marks RECHAZADA a payment QPayPro reports with another final status, without a recharge", async () => {
+    it("marks RECHAZADA a payment QPayPro reports Rechazada, without a recharge", async () => {
       const { card, referencia } = await stale("rec-rejected");
       fake.detail = detailOf("900002", "Rechazada", "25.00", { authorizationNumber: null, responseCode: "05" });
 
@@ -736,6 +825,38 @@ describe("QPayPro checkout (e2e)", () => {
       const row = await paymentOf(referencia);
       expect(row).toMatchObject({ estado: "RECHAZADA", qpaypro: "900002", codigo: "05", autorizacion: null });
       expect(row.confirmada).not.toBeNull();
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("ends RECHAZADA, not EXPIRADA, for a stale payment QPayPro reports Rechazada", async () => {
+      const { referencia } = await stale("rec-stale-rejected");
+      fake.detail = detailOf("900013", "Rechazada", "25.00", { authorizationNumber: null, responseCode: "05" });
+
+      expect((await status(referencia)).body.estadoPago).toBe("RECHAZADA");
+      expect((await paymentOf(referencia)).estado).toBe("RECHAZADA");
+    });
+
+    it("marks RECHAZADA a payment QPayPro reports Denegada", async () => {
+      const { card, referencia } = await stale("rec-denied");
+      fake.detail = detailOf("900014", "Denegada", "25.00", { authorizationNumber: null, responseCode: "05" });
+
+      expect((await status(referencia)).body.estadoPago).toBe("RECHAZADA");
+      expect(await paymentOf(referencia)).toMatchObject({ estado: "RECHAZADA", qpaypro: "900014", codigo: "05" });
+      expect(await rechargesOf(referencia)).toEqual([]);
+      expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("treats a Pendiente status as unknown: a stale payment only expires (L12)", async () => {
+      const { card, referencia } = await stale("rec-pending");
+      const before = await paymentOf(referencia);
+      fake.detail = detailOf("900015", "Pendiente", "25.00", { authorizationNumber: null, responseCode: null });
+
+      const res = await status(referencia);
+
+      expect(fake.queries).toHaveLength(1);
+      expect(res.body).toMatchObject({ estadoPago: "EXPIRADA", numeroComprobante: null, saldo: 3 });
+      expect(await paymentOf(referencia)).toEqual({ ...before, estado: "EXPIRADA" });
       expect(await rechargesOf(referencia)).toEqual([]);
       expect(await saldoOf(card)).toBe("3.00");
     });
@@ -1005,6 +1126,19 @@ describe("QPayPro checkout (e2e)", () => {
       expect(await paymentOf(referencia)).toMatchObject({ estado: "RECHAZADA", qpaypro: "910004", codigo: "05" });
       expect(await rechargesOf(referencia)).toEqual([]);
       expect(await saldoOf(card)).toBe("3.00");
+    });
+
+    it("leaves a fresh payment QPayPro reports Pendiente unchanged (L12)", async () => {
+      const { card, referencia } = await started("verify-pending");
+      fake.detail = detailOf("910008", "Pendiente", "25.00", { authorizationNumber: null, responseCode: null });
+      const before = await snapshot();
+
+      const res = await verify(card, referencia);
+
+      expect(fake.queries).toHaveLength(1);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ estadoPago: "INICIADA", numeroComprobante: null, saldo: 3 });
+      expect(await snapshot()).toEqual(before);
     });
 
     it("leaves an unconfirmed INICIADA payment INICIADA, even when stale (no expiry here)", async () => {

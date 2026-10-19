@@ -29,7 +29,7 @@ Notas:
   quien navega (un `fetch` no puede seguir una redirección a otra página).
 - QPayPro no envía una notificación de servidor a servidor: el resultado llega
   solo por la redirección del navegador (paso 7). Si el navegador se cierra
-  antes, el pago se resuelve con la conciliación (sección 6).
+  antes, el pago normalmente solo expira (sección 6).
 
 ## 2. Variables de entorno del API
 
@@ -51,6 +51,13 @@ compartido por todos los que prueban el sandbox.
 | `QPAYPRO_BASE_URL` | `https://sandboxpayments.qpaypro.com` (valor por defecto) | Base de los servicios de QPayPro |
 | `API_PUBLIC_URL` | URL pública del API, sin `/` al final | Base del relay y de la cancelación |
 | `USER_WEB_URL` | URL de user-web, sin `/` al final | Adonde vuelve el navegador después de pagar o cancelar |
+
+> **Advertencia de seguridad.** Con estas credenciales públicas la private key
+> (`QPAYPRO_PRIVATE_KEY`) está publicada, así que cualquier persona puede
+> firmar un `order_hash` de aprobación para un pago que ella misma inició y
+> obtener saldo sin pagar. Esto es aceptable solo para el sandbox de este
+> proyecto académico. Nunca use esta configuración con credenciales reales
+> de un comercio ni en un despliegue de producción abierto al público.
 
 Si falta el login, la api key, la private key, `API_PUBLIC_URL` o
 `USER_WEB_URL`, iniciar un pago responde 503 "Los pagos con QPayPro no están
@@ -143,8 +150,17 @@ Los mismos endpoints se pueden probar sin navegador con la colección
 ## 6. Conciliación y expiración
 
 Si el relay no llega (el navegador se cerró, la firma no coincidió), el pago
-queda `INICIADA`. Se resuelve consultando a QPayPro
-(`/checkout/get_transaction_detail`):
+queda `INICIADA`. Se intenta resolver consultando a QPayPro
+(`/checkout/get_transaction_detail`).
+
+Límite comprobado con un pago real del sandbox: el checkout alojado **no
+conserva `x_fp_sequence`** (la consulta por ese valor responde "Transacción no
+encontrada"). Por eso un pago cuyo relay nunca llega no se puede encontrar en
+QPayPro y solo expira. La consulta (incluido **Verificar con QPayPro**)
+funciona cuando el pago ya tiene el id de transacción de QPayPro
+(`id_transaccion_qpaypro`), por ejemplo porque llegó un relay.
+
+Dónde se consulta:
 
 - **user-web**: el botón **Verificar de nuevo** vuelve a pedir el estado.
 - **admin-web**: en la tabla de recargas del detalle de la tarjeta, cada fila
@@ -154,26 +170,35 @@ queda `INICIADA`. Se resuelve consultando a QPayPro
   10 minutos, el API primero consulta a QPayPro y, si no puede confirmarlo, lo
   marca `EXPIRADA`. Una aprobación firmada que llega después todavía acredita
   (el banco ya cobró).
+- **Intento rechazado y aprobación posterior**: un pago `RECHAZADA` todavía
+  se acredita si después llega una aprobación firmada (por ejemplo, el
+  pagador reintentó en la página de QPayPro). Un pago `APROBADA` nunca cambia
+  y tiene una sola recarga.
+- **Estados de la consulta**: solo "Aprobada" acredita y solo un rechazo
+  explícito (un estado que contenga "rechaz", "deneg" o "declin") marca
+  `RECHAZADA`. Cualquier otro estado (por ejemplo "Pendiente") se toma como
+  desconocido: no cambia nada, y la expiración a los 10 minutos se aplica
+  igual.
 
 ## 7. Puntos a confirmar en el primer pago real del sandbox
 
-Esto no se pudo probar sin un pago con navegador; revíselo en el primer pago
-de la sección 5 y anote el resultado en `odd/tasks/qpaypro-checkout.md`.
+Resultados del primer pago real (anotados en `odd/tasks/qpaypro-checkout.md`,
+L13):
 
-1. **Qué clave firma `order_hash`.** El registro aceptó `99999999999` y
-   `88888888888` como api key, así que no se sabe cuál usa QPayPro para firmar
-   el relay. Si el pago queda `INICIADA` y el log del API dice
-   `QPayPro relay for QPP-... ignored: bad order_hash`, cambie
-   `QPAYPRO_PRIVATE_KEY` al otro valor público (`99999999999`), reinicie el API
-   y repita el pago.
-2. **Si QPayPro conserva `x_fp_sequence`** del checkout alojado. Pruebe un pago
-   y cierre la pestaña antes de que vuelva el relay; luego use
-   **Verificar con QPayPro**. Si nunca lo encuentra ("Transacción no
-   encontrada"), un pago sin relay solo puede expirar.
-3. **Estados no finales.** Hoy cualquier estado distinto de "Aprobada" en la
-   consulta se toma como `RECHAZADA`. Si QPayPro devuelve un estado intermedio
-   (por ejemplo pendiente), habría que tratarlo como desconocido.
-4. **Significado de `x_type AUTH_ONLY`.** El registro se envía como
+1. **Qué clave firma `order_hash`.** Comprobado: el relay llegó al API y la
+   `QPAYPRO_PRIVATE_KEY` de la sección 2 verificó la firma; el formato de
+   `x_amount` coincide con el monto del pago. Si el log del API dice
+   `QPayPro relay for QPP-... ignored: bad order_hash`, revise que
+   `QPAYPRO_PRIVATE_KEY` tenga el valor de la sección 2.
+2. **Si QPayPro conserva `x_fp_sequence`.** Comprobado que no: ver la sección
+   6. La consulta por `idTrans` sí funciona.
+
+Pendiente de confirmar:
+
+1. **Estados no finales.** Hoy un estado distinto de "Aprobada" que no sea un
+   rechazo explícito se toma como desconocido (sección 6). Si QPayPro usa otra
+   palabra para un rechazo definitivo, el pago solo expira.
+2. **Significado de `x_type AUTH_ONLY`.** El registro se envía como
    `AUTH_ONLY` (igual que el plugin oficial). Confirme en el panel del sandbox
    si eso deja el cobro solo autorizado o si se liquida; si queda solo
    autorizado, falta definir la captura.

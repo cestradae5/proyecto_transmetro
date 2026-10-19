@@ -58,9 +58,13 @@ logged: QPayPro messages are scrubbed of them.
    (raw `x_amount`, constant-time compare) and `x_amount` must equal
    `monto_pago`; otherwise nothing changes. Status `1` -> `APROBADA`, one
    `tbl_recarga`, a `tbl_comprobante` `QPP-REC-<idRecarga>` and the amount
-   added to the balance; any other status -> `RECHAZADA`. Only `INICIADA` or
-   `EXPIRADA` payments are settled (a late signed approval still credits);
-   the payment row is locked, so repeated or concurrent relays credit once.
+   added to the balance; any other status -> `RECHAZADA`. A signed
+   approval settles an `INICIADA`, `EXPIRADA` or `RECHAZADA` payment (a late
+   approval, or one after a declined attempt, still credits: the bank
+   charged; L12); a signed rejection settles only `INICIADA` or `EXPIRADA`;
+   `APROBADA` never changes. An `x_trans_id` already stored on another
+   payment changes nothing. The payment row is locked, so repeated or
+   concurrent relays credit once: exactly one recharge per payment.
    Always 302 to `{USER_WEB_URL}/?pago=<order_id>`, or `?pago=desconocido`
    when `order_id` is not a QPayPro payment.
 3. **Cancel**: an `INICIADA` payment becomes `EXPIRADA`; other states are
@@ -76,24 +80,33 @@ logged: QPayPro messages are scrubbed of them.
    `2021-07-28T20:13:06.000000Z`) is not earlier than `fecha_transaccion`
    minus 5 minutes (clock skew) count; older, missing or unparseable dates
    are ignored, for both kinds of query. The query runs outside any DB
-   transaction; then, with the payment row locked and only from `INICIADA`
-   or `EXPIRADA`:
+   transaction; then, with the payment row locked (same states as the
+   relay: approval from `INICIADA`, `EXPIRADA` or `RECHAZADA`, rejection
+   from `INICIADA` or `EXPIRADA`):
    - a transaction with status `Aprobada` and `amount` equal to
      `monto_pago` (to the cent) -> the same credit as the relay, with
      `id_transaccion_qpaypro`, `numero_autorizacion` and `codigo_respuesta`
      from QPayPro (when `x_fp_sequence` lists several attempts, the
-     approved one wins);
-   - another status -> `RECHAZADA`, no recharge;
-   - `result: 0` (not found), no transaction inside the date window, a
-   network error, timeout or unexpected body,
+     approved one wins, else the last one decides);
+   - an explicit rejection (status matching `/rechaz|deneg|declin/i`, e.g.
+     `Rechazada`, `Denegada`) -> `RECHAZADA`, no recharge;
+   - any other status (e.g. `Pendiente`), `result: 0` (not found), no
+   transaction inside the date window, a network error, timeout or
+   unexpected body,
    an approval of another amount, a QPayPro id already stored on another
    payment (UNIQUE `id_transaccion_qpaypro`), a query by `idTrans` that
    answers another id, or no `QPAYPRO_API_SECRET` -> unknown, nothing
    changes.
    Also used by the staff route `POST /cards/:numeroTarjeta/payments/:referencia/verify`
-   (`apps/api/src/cards/README.md`). If QPayPro does not keep
-   `x_fp_sequence` from the hosted checkout, a payment whose relay never
-   arrived stays unknown and only expiry applies.
+   (`apps/api/src/cards/README.md`), which only queries `INICIADA` or
+   `EXPIRADA` payments. A real sandbox payment (L13) showed that the hosted
+   checkout does not keep `x_fp_sequence` (querying it answers "Transacción
+   no encontrada"), so a payment whose relay never arrived stays unknown and
+   only expires; the query works once `id_transaccion_qpaypro` is known.
+   With the public sandbox credentials `QPAYPRO_PRIVATE_KEY` is published,
+   so anyone can sign an approval for a payment they started: acceptable
+   only for the academic sandbox, never with real credentials or a public
+   deploy (`docs/qpaypro-sandbox.md`).
 
 ## Simulated recharge
 

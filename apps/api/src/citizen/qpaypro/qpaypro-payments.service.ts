@@ -28,12 +28,18 @@ const PAYMENT_ERROR = "ERROR";
 const PAYMENT_APPROVED = "APROBADA";
 const PAYMENT_REJECTED = "RECHAZADA";
 const PAYMENT_EXPIRED = "EXPIRADA";
-// S4: a relay can settle only these; a signed approval after expiry still
-// credits, because the bank charged.
+// S4, S7: a rejection settles only these; S7 staff verify and S11 only
+// query these.
 const SETTLEABLE = [PAYMENT_STARTED, PAYMENT_EXPIRED];
+// S4, S7 (L12): a signed approval after expiry or after a declined attempt
+// still credits, because the bank charged. APROBADA never changes.
+const APPROVABLE = [PAYMENT_STARTED, PAYMENT_EXPIRED, PAYMENT_REJECTED];
 const RELAY_APPROVED = "1";
 // S7: get_transaction_detail status of an approved payment (L7).
 const DETAIL_APPROVED = "Aprobada";
+// S7 (L12): only an explicit rejection is final; any other status (pending
+// or unknown wording) is unknown.
+const DETAIL_REJECTED = /rechaz|deneg|declin/i;
 // Postgres' default name for UNIQUE (id_transaccion_qpaypro) in database/init.sql.
 const QPAYPRO_ID_UNIQUE = "tbl_transaccion_pago_id_transaccion_qpaypro_key";
 const RECEIPT_PREFIX = "QPP-REC-";
@@ -199,10 +205,15 @@ export class QpayproPaymentsService {
         this.logger.warn(`QPayPro relay for ${referencia} ignored: x_amount does not match monto_pago`);
         return true;
       }
-      if (!SETTLEABLE.includes(tx.estado)) return true;
+      const approved = status === RELAY_APPROVED;
+      if (!(approved ? APPROVABLE : SETTLEABLE).includes(tx.estado)) return true;
+      if (await this.ownedByAnother(manager, transId, tx.id)) {
+        this.logger.warn(`QPayPro relay for ${referencia} ignored: x_trans_id belongs to another payment`);
+        return true;
+      }
 
       await this.settle(manager, tx, {
-        approved: status === RELAY_APPROVED,
+        approved,
         idQpaypro: transId,
         codigoRespuesta: status,
         numeroAutorizacion: null,
@@ -211,8 +222,18 @@ export class QpayproPaymentsService {
     });
   }
 
+  // A QPayPro id already stored on another payment (UNIQUE column).
+  private async ownedByAnother(manager: Queryable, idQpaypro: string, id: string): Promise<boolean> {
+    const owners = (await manager.query(
+      `SELECT 1 FROM tbl_transaccion_pago WHERE id_transaccion_qpaypro = $1 AND id_transaccion_pago <> $2`,
+      [idQpaypro, id],
+    )) as unknown[];
+    return owners.length > 0;
+  }
+
   // S4, S7: inside the caller's transaction, with the payment row locked and
-  // SETTLEABLE. Approved -> APROBADA plus the recharge; else RECHAZADA.
+  // APPROVABLE (approval) or SETTLEABLE (rejection). Approved -> APROBADA plus
+  // the one recharge of the payment; else RECHAZADA.
   private async settle(manager: Queryable, tx: PaymentLockRow, settlement: Settlement): Promise<void> {
     await manager.query(
       `UPDATE tbl_transaccion_pago
@@ -287,8 +308,9 @@ export class QpayproPaymentsService {
   // S7: asks QPayPro outside any DB transaction (no lock held during the
   // network round trip), then settles a confirmed answer like the relay.
   // Whatever QPayPro cannot confirm -- not found, an error, another amount, a
-  // QPayPro id that already belongs to another payment, no
-  // QPAYPRO_API_SECRET -- is "unknown" and changes nothing.
+  // status that is neither "Aprobada" nor an explicit rejection, a QPayPro id
+  // that already belongs to another payment, no QPAYPRO_API_SECRET -- is
+  // "unknown" and changes nothing.
   protected async reconcile(payment: ReconcilablePayment): Promise<ReconcileOutcome> {
     const env = readQpayproEnv();
     if (!env.login || !env.privateKey || !env.apiSecret) return "unknown";
@@ -319,21 +341,18 @@ export class QpayproPaymentsService {
     const confirmed = transactions.find((tx) => tx.status === DETAIL_APPROVED) ?? transactions[transactions.length - 1];
     if (!confirmed) return "unknown";
     const approved = confirmed.status === DETAIL_APPROVED;
+    if (!approved && !DETAIL_REJECTED.test(confirmed.status)) return "unknown";
 
     try {
       return await this.dataSource.transaction(async (manager): Promise<ReconcileOutcome> => {
         // The row lock makes concurrent relays and queries settle once.
         const tx = await this.lockPayment(manager, payment.referencia);
-        if (!tx || !SETTLEABLE.includes(tx.estado)) return "unknown";
+        if (!tx || !(approved ? APPROVABLE : SETTLEABLE).includes(tx.estado)) return "unknown";
         if (approved && !sameAmount(confirmed.amount, tx.monto)) {
           this.logger.warn(`QPayPro query for ${payment.referencia} ignored: amount does not match monto_pago`);
           return "unknown";
         }
-        const owners = (await manager.query(
-          `SELECT 1 FROM tbl_transaccion_pago WHERE id_transaccion_qpaypro = $1 AND id_transaccion_pago <> $2`,
-          [confirmed.idTransaction, tx.id],
-        )) as unknown[];
-        if (owners.length > 0) {
+        if (await this.ownedByAnother(manager, confirmed.idTransaction, tx.id)) {
           this.logger.warn(`QPayPro query for ${payment.referencia} ignored: its QPayPro id belongs to another payment`);
           return "unknown";
         }
