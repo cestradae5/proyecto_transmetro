@@ -9,11 +9,12 @@ const SAMPLE_CARDS = [
   { numero: "TEST-RID-BLOCKED", uso: "Tarjeta bloqueada: la talanquera rechaza la entrada." },
 ];
 
-const QPAYPRO_TEST_CARD = [
-  { campo: "Número", valor: "4111 1111 1111 1111", copia: "4111111111111111", nombre: "número de tarjeta QPayPro" },
-  { campo: "Vencimiento", valor: "Cualquier fecha futura, por ejemplo 01/30", copia: "01/30", nombre: "vencimiento" },
-  { campo: "CVV", valor: "Cualquiera de 3 dígitos, por ejemplo 123", copia: "123", nombre: "CVV" },
-  { campo: "Correo", valor: "prueba@ejemplo.com", copia: "prueba@ejemplo.com", nombre: "correo" },
+// Only the card number gets a copy button (copied without spaces).
+const QPAYPRO_TEST_CARD: { campo: string; valor: string; copia?: { valor: string; nombre: string } }[] = [
+  { campo: "Número", valor: "4111 1111 1111 1111", copia: { valor: "4111111111111111", nombre: "número de tarjeta QPayPro" } },
+  { campo: "Vencimiento", valor: "Cualquier fecha futura, por ejemplo 01/30" },
+  { campo: "CVV", valor: "Cualquiera de 3 dígitos, por ejemplo 123" },
+  { campo: "Correo", valor: "prueba@ejemplo.com" },
 ];
 
 type CopyState = "idle" | "copied" | "failed";
@@ -94,7 +95,7 @@ export function DemoCredentials() {
                 <dt className="text-xs text-gray-600">{item.campo}</dt>
                 <dd className="select-all font-mono">{item.valor}</dd>
               </div>
-              <CopyButton value={item.copia} name={item.nombre} />
+              {item.copia && <CopyButton value={item.copia.valor} name={item.copia.nombre} />}
             </div>
           ))}
         </dl>

@@ -85,8 +85,9 @@ deploy. The API already allows any origin (CORS `*`) and the
   `TEST-RID-POOR`, `TEST-RID-BLOCKED`) and the public QPayPro sandbox test
   card (`4111 1111 1111 1111`, any future expiry, any 3-digit CVV) with a
   sample email. Those cards must exist in the deployed database (load the
-  SQL file). Each value has a "Copiar" button (clipboard API; the card
-  number is copied without spaces) that shows "Copiado" or "No se pudo
+  SQL file). Each Transmetro card and the QPayPro card number have a
+  "Copiar" button (clipboard API; the QPayPro number is copied without
+  spaces; expiry, CVV and email have none) that shows "Copiado" or "No se pudo
   copiar" for 2 seconds. QPayPro merchant keys are never shown.
 - **QPayPro recharge**: pick one of Q10, Q25, Q50 or Q100 and enter an
   email; "Pagar con QPayPro" stays disabled until both are valid (email up
