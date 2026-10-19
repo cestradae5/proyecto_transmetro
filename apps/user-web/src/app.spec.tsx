@@ -665,9 +665,6 @@ describe("demo credentials panel", () => {
       ["Copiar TEST-RID-POOR", "TEST-RID-POOR"],
       ["Copiar TEST-RID-BLOCKED", "TEST-RID-BLOCKED"],
       ["Copiar número de tarjeta QPayPro", "4111111111111111"],
-      ["Copiar vencimiento", "01/30"],
-      ["Copiar CVV", "123"],
-      ["Copiar correo", "prueba@ejemplo.com"],
     ])("%s copies %s", async (label, value) => {
       render(<App />);
       fireEvent.click(screen.getByRole("button", { name: label }));
@@ -675,9 +672,17 @@ describe("demo credentials panel", () => {
       expect(writeText).toHaveBeenCalledTimes(1);
     });
 
+    it("has no copy button for the QPayPro expiry, CVV or email", () => {
+      render(<App />);
+      expect(screen.getAllByRole("button", { name: /^Copiar / })).toHaveLength(4);
+      for (const label of ["Copiar vencimiento", "Copiar CVV", "Copiar correo"]) {
+        expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+      }
+    });
+
     it("shows Copiado on the pressed button only", async () => {
       render(<App />);
-      fireEvent.click(screen.getByRole("button", { name: "Copiar CVV" }));
+      fireEvent.click(screen.getByRole("button", { name: "Copiar número de tarjeta QPayPro" }));
       expect(await screen.findByText("Copiado")).toBeInTheDocument();
       expect(screen.getAllByText("Copiado")).toHaveLength(1);
     });
@@ -685,7 +690,7 @@ describe("demo credentials panel", () => {
     it("shows No se pudo copiar when the clipboard is unavailable", async () => {
       writeText.mockRejectedValueOnce(new Error("denied"));
       render(<App />);
-      fireEvent.click(screen.getByRole("button", { name: "Copiar correo" }));
+      fireEvent.click(screen.getByRole("button", { name: "Copiar TEST-RID-0001" }));
       expect(await screen.findByText("No se pudo copiar")).toBeInTheDocument();
     });
   });
