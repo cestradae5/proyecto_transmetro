@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
 import { API_BASE_URL } from "../../platform/configuration/environment";
+import { userFromToken } from "./token-user";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -22,20 +23,9 @@ export function LoginPage() {
       window.history.replaceState({}, "", "/login");
     } else if (tokenParam) {
       // Token received from Google OAuth callback
-      // Decode JWT to extract user info (JWT payload is base64-encoded JSON)
+      // Decode JWT to extract user info (JWT payload is base64url-encoded JSON)
       try {
-        const parts = tokenParam.split(".");
-        if (parts.length !== 3 || !parts[1]) {
-          throw new Error("Invalid JWT format");
-        }
-        const payload = JSON.parse(atob(parts[1]));
-        login(tokenParam, {
-          email: payload.email,
-          employeeId: payload.employeeId,
-          roles: payload.roles,
-          permissions: payload.permissions,
-          scope: payload.scope ?? { role: "PUBLIC", modules: [] },
-        });
+        login(tokenParam, userFromToken(tokenParam));
         navigate("/landing");
       } catch {
         setError("Token inválido. Intenta nuevamente.");

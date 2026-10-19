@@ -10,6 +10,8 @@ export interface User {
   roles: string[];
   permissions: string[];
   scope: { role: string; modules: string[] };
+  // Set only while an allowlisted reviewer acts as a demo persona.
+  demoActor?: { employeeId: string; email: string };
 }
 
 interface AuthContextType {
