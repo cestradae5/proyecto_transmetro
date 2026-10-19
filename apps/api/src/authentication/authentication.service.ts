@@ -11,7 +11,7 @@ import { AuditLogEntity, AUDIT_RESULTS } from "./entities/audit-log.entity.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
 import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE, type GoogleCredentialVerifier } from "./infrastructure/google-credential-verifier.port.js";
-import { InvalidCredentials, EmployeeNotEligible, LoginInput, LoginResult, MeResult, LogoutResult } from "./authentication.contracts.js";
+import { InvalidCredentials, EmployeeNotEligible, LoginInput, LoginResult, MeResult, LogoutResult, type DemoActor } from "./authentication.contracts.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // PERMISSION_TO_MODULE — maps DB permission codes to the 8 canonical dashboard
@@ -79,6 +79,31 @@ export function deriveModulesFromPermissions(permissions: string[]): string[] {
 const JWT_EXPIRY = "12h"; // expiración del token JWT
 const JWT_SECRET = process.env.JWT_SECRET || "default-secret-change-in-production"; // IMPORTANTE: cambiar en producción
 
+// Firma el JWT de un empleado elegible (rol + permisos cargados).
+// `demoActor` solo se incluye cuando un revisor autorizado suplanta a una
+// persona de demo (DemoRoleSwitchService); un login normal nunca lo lleva.
+export function issueEmployeeToken(
+  employee: EmployeeEntity,
+  demoActor?: DemoActor,
+): LoginResult {
+  const roleName = employee.role?.name ?? "NONE";
+  const permissions = employee.role?.permissions?.map((p) => p.code) ?? [];
+  const modules = deriveModulesFromPermissions(permissions);
+  const claims = {
+    employeeId: employee.id,
+    email: employee.email,
+    roles: [roleName],
+    permissions,
+    scope: { role: roleName, modules },
+    ...(demoActor ? { demoActor } : {}),
+  };
+
+  const token = jwt.sign(claims, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+  const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12h
+
+  return { token, expiresAt, usuario: claims };
+}
+
 export class AuthenticationService {
   constructor(
     @Inject(DATASOURCE)
@@ -118,22 +143,8 @@ export class AuthenticationService {
         return null;
       }
 
-      const roleName = employee.role?.name ?? "NONE";
-      const permissions = employee.role?.permissions?.map((p) => p.code) ?? [];
-      const modules = deriveModulesFromPermissions(permissions);
-
       // Genera JWT con payload completo
-      const token = jwt.sign(
-        {
-          employeeId: employee.id,
-          email: employee.email,
-          roles: [roleName],
-          permissions,
-          scope: { role: roleName, modules },
-        },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRY }
-      );
+      const issued = issueEmployeeToken(employee);
 
       // Auditoría de éxito
       await this.auditRepo.create(manager, {
@@ -145,19 +156,7 @@ export class AuthenticationService {
         result: AUDIT_RESULTS.SUCCESS,
       });
 
-      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12h
-
-      return {
-        token,
-        expiresAt,
-        usuario: {
-          employeeId: employee.id,
-          email: employee.email,
-          roles: [roleName],
-          permissions,
-          scope: { role: roleName, modules },
-        },
-      };
+      return issued;
     });
 
     if (!result) {
@@ -186,6 +185,7 @@ export class AuthenticationService {
         roles: string[];
         permissions: string[];
         scope: { role: string; modules: string[] };
+        demoActor?: DemoActor;
       };
 
       return {
@@ -197,6 +197,9 @@ export class AuthenticationService {
           role: payload.scope.role,
           modules: deriveModulesFromPermissions(payload.permissions),
         },
+        ...(payload.demoActor
+          ? { demoActor: { employeeId: payload.demoActor.employeeId, email: payload.demoActor.email } }
+          : {}),
       };
     } catch {
       throw new InvalidCredentials();

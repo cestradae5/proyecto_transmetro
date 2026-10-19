@@ -7,6 +7,12 @@ export interface LoginInput {
   credential: string;
 }
 
+// Real person behind an impersonated demo session (demo role switch).
+export interface DemoActor {
+  employeeId: string;
+  email: string;
+}
+
 export interface LoginResult {
   // JWT token (12h expiry)
   token: string;
@@ -19,6 +25,7 @@ export interface LoginResult {
     roles: string[];
     permissions: string[];
     scope: { role: string; modules: string[] };
+    demoActor?: DemoActor;
   };
 }
 
@@ -33,6 +40,22 @@ export interface MeResult {
     role: string;
     modules: string[];
   };
+  // Present only while an allowlisted reviewer impersonates a demo persona.
+  demoActor?: DemoActor;
+}
+
+export interface DemoPersona {
+  roleCode: string;
+  roleName: string;
+  employeeId: string;
+  employeeName: string;
+}
+
+export interface DemoPersonasResult {
+  actorEmail: string;
+  impersonating: boolean;
+  activeEmployeeId: string;
+  personas: DemoPersona[];
 }
 
 export interface LogoutResult {
@@ -66,6 +89,27 @@ export class EmployeeNotEligible extends Error {
   constructor() {
     super("Empleado no elegible.");
     this.name = "EmployeeNotEligible";
+  }
+}
+
+export class DemoRoleSwitchDisabled extends Error {
+  constructor() {
+    super("Demo role switch is disabled.");
+    this.name = "DemoRoleSwitchDisabled";
+  }
+}
+
+export class DemoRoleSwitchForbidden extends Error {
+  constructor() {
+    super("Demo role switch is not allowed for this account.");
+    this.name = "DemoRoleSwitchForbidden";
+  }
+}
+
+export class DemoPersonaNotFound extends Error {
+  constructor() {
+    super("No eligible demo persona for this role.");
+    this.name = "DemoPersonaNotFound";
   }
 }
 
