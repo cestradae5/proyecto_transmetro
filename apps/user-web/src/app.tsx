@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { formatMoney, type Card } from "./api";
 import { CardLookup } from "./components/card-lookup";
+import { DemoCredentials } from "./components/demo-credentials";
 import { PaymentForm } from "./components/payment-form";
 import { PaymentResult } from "./components/payment-result";
 import { RechargeForm } from "./components/recharge-form";
@@ -36,45 +37,51 @@ export function App({ navigate = assignLocation }: AppProps) {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 py-8">
-      <header className="flex items-center gap-3">
-        <img src="/transmetro-logo.png" alt="" className="h-10 w-10" />
-        <h1 className="font-display text-2xl font-extrabold text-primary">Mi tarjeta Transmetro</h1>
-      </header>
+    <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8 lg:flex-row lg:items-start">
+      <main className="mx-auto flex w-full max-w-md flex-col gap-6">
+        <header className="flex items-center gap-3">
+          <img src="/transmetro-logo.png" alt="" className="h-10 w-10" />
+          <h1 className="font-display text-2xl font-extrabold text-primary">Mi tarjeta Transmetro</h1>
+        </header>
 
-      {pago !== null ? (
-        <PaymentResult referencia={pago} onBack={leaveResult} />
-      ) : card === null ? (
-        <CardLookup onFound={setCard} />
-      ) : (
-        <>
-          <section className="space-y-3 rounded-2xl bg-primary p-6 text-white shadow">
-            <p className="text-sm opacity-80">Tarjeta</p>
-            <p className="font-mono text-lg">{card.numeroTarjeta}</p>
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-sm opacity-80">Saldo</p>
-                <p className="font-display text-3xl font-bold">{formatMoney(card.saldo)}</p>
+        {pago !== null ? (
+          <PaymentResult referencia={pago} onBack={leaveResult} />
+        ) : card === null ? (
+          <CardLookup onFound={setCard} />
+        ) : (
+          <>
+            <section className="space-y-3 rounded-2xl bg-primary p-6 text-white shadow">
+              <p className="text-sm opacity-80">Tarjeta</p>
+              <p className="font-mono text-lg">{card.numeroTarjeta}</p>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-sm opacity-80">Saldo</p>
+                  <p className="font-display text-3xl font-bold">{formatMoney(card.saldo)}</p>
+                </div>
+                <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{card.estadoTarjeta}</span>
               </div>
-              <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">{card.estadoTarjeta}</span>
-            </div>
-          </section>
+            </section>
 
-          <PaymentForm numeroTarjeta={card.numeroTarjeta} navigate={navigate} />
+            <PaymentForm numeroTarjeta={card.numeroTarjeta} navigate={navigate} />
 
-          {rechargeSimulatorEnabled() && <RechargeForm numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />}
+            {rechargeSimulatorEnabled() && <RechargeForm numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />}
 
-          {simulatorEnabled() && <TurnstileSimulator numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />}
+            {simulatorEnabled() && <TurnstileSimulator numeroTarjeta={card.numeroTarjeta} onBalance={setBalance} />}
 
-          <button
-            type="button"
-            onClick={() => setCard(null)}
-            className="rounded-lg px-4 py-2 font-semibold text-primary ring-1 ring-outline"
-          >
-            Consultar otra tarjeta
-          </button>
-        </>
-      )}
+            <button
+              type="button"
+              onClick={() => setCard(null)}
+              className="rounded-lg px-4 py-2 font-semibold text-primary ring-1 ring-outline"
+            >
+              Consultar otra tarjeta
+            </button>
+          </>
+        )}
+      </main>
+
+      <div className="mx-auto w-full max-w-md lg:w-80 lg:shrink-0">
+        <DemoCredentials />
+      </div>
     </div>
   );
 }

@@ -618,3 +618,37 @@ describe("turnstile simulator (S10)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Entrar" })).toBeEnabled());
   });
 });
+
+describe("demo credentials panel", () => {
+  const panel = () => screen.getByRole("complementary", { name: "Datos de prueba" });
+
+  it("lists the sample Transmetro cards and the QPayPro sandbox test card on the card lookup", () => {
+    render(<App />);
+    const aside = panel();
+    expect(aside).toHaveTextContent("Este es un proyecto académico: use solo estos datos de ejemplo, nunca una tarjeta real.");
+    expect(aside).toHaveTextContent("TEST-RID-0001");
+    expect(aside).toHaveTextContent("TEST-RID-POOR");
+    expect(aside).toHaveTextContent("TEST-RID-BLOCKED");
+    expect(aside).toHaveTextContent("4111 1111 1111 1111");
+    expect(aside).toHaveTextContent("Cualquier fecha futura, por ejemplo 01/30");
+    expect(aside).toHaveTextContent("Cualquiera de 3 dígitos, por ejemplo 123");
+    expect(aside).toHaveTextContent("prueba@ejemplo.com");
+  });
+
+  it("never shows QPayPro merchant credentials", () => {
+    render(<App />);
+    expect(panel()).not.toHaveTextContent(/visanetgt|88888888888|99999999999/);
+  });
+
+  it("stays visible on the card screen", async () => {
+    render(<App />);
+    await openCard();
+    expect(panel()).toBeInTheDocument();
+  });
+
+  it("stays visible on a payment result", () => {
+    window.history.replaceState(null, "", "/?pago=desconocido");
+    render(<App />);
+    expect(panel()).toBeInTheDocument();
+  });
+});
