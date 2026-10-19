@@ -79,7 +79,8 @@ export function App({ navigate = assignLocation }: AppProps) {
         )}
       </main>
 
-      <div className="mx-auto w-full max-w-md lg:w-80 lg:shrink-0">
+      {/* Left on wide screens (order-first); below the main content on mobile. */}
+      <div className="mx-auto w-full max-w-md lg:order-first lg:w-80 lg:shrink-0">
         <DemoCredentials />
       </div>
     </div>

@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 // Sample data so visitors can try the app without real cards. The Transmetro
 // cards come from docs/postman/ridership-test-data.sql; the bank card is the
 // public QPayPro sandbox test card. QPayPro merchant keys never belong here.
@@ -8,11 +10,49 @@ const SAMPLE_CARDS = [
 ];
 
 const QPAYPRO_TEST_CARD = [
-  { campo: "Número", valor: "4111 1111 1111 1111" },
-  { campo: "Vencimiento", valor: "Cualquier fecha futura, por ejemplo 01/30" },
-  { campo: "CVV", valor: "Cualquiera de 3 dígitos, por ejemplo 123" },
-  { campo: "Correo", valor: "prueba@ejemplo.com" },
+  { campo: "Número", valor: "4111 1111 1111 1111", copia: "4111111111111111", nombre: "número de tarjeta QPayPro" },
+  { campo: "Vencimiento", valor: "Cualquier fecha futura, por ejemplo 01/30", copia: "01/30", nombre: "vencimiento" },
+  { campo: "CVV", valor: "Cualquiera de 3 dígitos, por ejemplo 123", copia: "123", nombre: "CVV" },
+  { campo: "Correo", valor: "prueba@ejemplo.com", copia: "prueba@ejemplo.com", nombre: "correo" },
 ];
+
+type CopyState = "idle" | "copied" | "failed";
+
+const COPY_TEXT: Record<CopyState, string> = {
+  idle: "Copiar",
+  copied: "Copiado",
+  failed: "No se pudo copiar",
+};
+
+function CopyButton({ value, name }: { value: string; name: string }) {
+  const [state, setState] = useState<CopyState>("idle");
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const timer = window.setTimeout(() => setState("idle"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={`Copiar ${name}`}
+      className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-primary ring-1 ring-outline hover:bg-gray-100"
+    >
+      <span aria-live="polite">{COPY_TEXT[state]}</span>
+    </button>
+  );
+}
 
 export function DemoCredentials() {
   return (
@@ -34,7 +74,10 @@ export function DemoCredentials() {
         <ul className="space-y-2">
           {SAMPLE_CARDS.map((card) => (
             <li key={card.numero} className="rounded-lg bg-gray-50 p-3">
-              <p className="select-all font-mono text-sm font-semibold">{card.numero}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="select-all font-mono text-sm font-semibold">{card.numero}</p>
+                <CopyButton value={card.numero} name={card.numero} />
+              </div>
               <p className="text-xs text-gray-600">{card.uso}</p>
             </li>
           ))}
@@ -44,11 +87,14 @@ export function DemoCredentials() {
       <section className="space-y-2">
         <h3 className="text-sm font-semibold">Tarjeta de prueba QPayPro (sandbox)</h3>
         <p className="text-xs text-gray-600">Úsela en la página de pago de QPayPro. No genera cobros reales.</p>
-        <dl className="space-y-1 rounded-lg bg-gray-50 p-3 text-sm">
+        <dl className="space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
           {QPAYPRO_TEST_CARD.map((item) => (
-            <div key={item.campo} className="flex flex-col">
-              <dt className="text-xs text-gray-600">{item.campo}</dt>
-              <dd className="select-all font-mono">{item.valor}</dd>
+            <div key={item.campo} className="flex items-center justify-between gap-2">
+              <div className="flex flex-col">
+                <dt className="text-xs text-gray-600">{item.campo}</dt>
+                <dd className="select-all font-mono">{item.valor}</dd>
+              </div>
+              <CopyButton value={item.copia} name={item.nombre} />
             </div>
           ))}
         </dl>

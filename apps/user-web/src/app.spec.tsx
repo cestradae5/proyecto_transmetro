@@ -651,4 +651,42 @@ describe("demo credentials panel", () => {
     render(<App />);
     expect(panel()).toBeInTheDocument();
   });
+
+  describe("copy buttons", () => {
+    let writeText: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      writeText = vi.fn(async () => undefined);
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    });
+
+    it.each([
+      ["Copiar TEST-RID-0001", "TEST-RID-0001"],
+      ["Copiar TEST-RID-POOR", "TEST-RID-POOR"],
+      ["Copiar TEST-RID-BLOCKED", "TEST-RID-BLOCKED"],
+      ["Copiar número de tarjeta QPayPro", "4111111111111111"],
+      ["Copiar vencimiento", "01/30"],
+      ["Copiar CVV", "123"],
+      ["Copiar correo", "prueba@ejemplo.com"],
+    ])("%s copies %s", async (label, value) => {
+      render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(value));
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows Copiado on the pressed button only", async () => {
+      render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "Copiar CVV" }));
+      expect(await screen.findByText("Copiado")).toBeInTheDocument();
+      expect(screen.getAllByText("Copiado")).toHaveLength(1);
+    });
+
+    it("shows No se pudo copiar when the clipboard is unavailable", async () => {
+      writeText.mockRejectedValueOnce(new Error("denied"));
+      render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "Copiar correo" }));
+      expect(await screen.findByText("No se pudo copiar")).toBeInTheDocument();
+    });
+  });
 });
