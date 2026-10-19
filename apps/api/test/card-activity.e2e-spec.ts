@@ -10,6 +10,8 @@
 process.env.ADMIN_WEB_ORIGINS ??= "https://admin.transmetro.gt";
 process.env.GOOGLE_WEB_CLIENT_ID ??= "test-client-id";
 
+import { randomUUID } from "node:crypto";
+
 import { ValidationPipe } from "@nestjs/common";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -291,6 +293,27 @@ describe("Card activity (e2e)", () => {
         pasadas: [],
         recargas: [],
       });
+    });
+
+    // qpaypro-checkout S8: a started QPayPro payment has no QPayPro id yet.
+    it("marks a QPP- payment without a QPayPro id as QPAYPRO", async () => {
+      const c = await createCard("qpp", "0.00");
+      const referencia = `QPP-${randomUUID()}`;
+      await payment(c.id, referencia, "25.00", "INICIADA", 5);
+
+      const res = await get(`/cards/${encodeURIComponent(c.numero)}/activity`);
+
+      expect(res.body.recargas).toEqual([
+        {
+          idTransaccion: expect.any(String),
+          referencia,
+          monto: 25,
+          estadoPago: "INICIADA",
+          origen: "QPAYPRO",
+          numeroComprobante: null,
+          fecha: "2026-10-01T10:05:00.000Z",
+        },
+      ]);
     });
 
     it("keeps only the newest 100 passes", async () => {

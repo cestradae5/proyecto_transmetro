@@ -23,6 +23,7 @@ vi.mock("../../lib/api-client", () => ({
 import { apiClient, ApiError } from "../../lib/api-client";
 
 const mockGet = vi.mocked(apiClient.get);
+const mockPost = vi.mocked(apiClient.post);
 
 const page = (items: { numeroTarjeta: string; saldo: number; estadoTarjeta: string }[], total = items.length, pageNumber = 1) => ({
   total,
@@ -231,6 +232,135 @@ describe("CardActivityPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de TEST-0001" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("La tarjeta no existe.");
+  });
+
+  describe("Verificar con QPayPro (qpaypro-checkout S11)", () => {
+    const qpp = (idTransaccion: string, estadoPago: string, origen = "QPAYPRO", referencia = `QPP-${idTransaccion}`) => ({
+      idTransaccion,
+      referencia,
+      monto: 25,
+      estadoPago,
+      origen,
+      numeroComprobante: null,
+      fecha: "2026-10-01T16:05:00.000Z",
+    });
+    const QPP_ACTIVITY = {
+      tarjeta: CARD_A,
+      pasadas: [],
+      recargas: [
+        qpp("21", "INICIADA", "QPAYPRO", "QPP-a/b"),
+        qpp("22", "EXPIRADA"),
+        qpp("23", "APROBADA"),
+        qpp("24", "RECHAZADA"),
+        qpp("25", "ERROR"),
+        qpp("26", "PENDIENTE_AUTENTICACION"),
+        qpp("27", "INICIADA", "SIMULADA", "sim-27"),
+        qpp("28", "EXPIRADA", "SIMULADA", "sim-28"),
+      ],
+    };
+    const VERIFY = "Verificar con QPayPro";
+
+    async function openCard() {
+      routeGet(page([CARD_A]), QPP_ACTIVITY);
+      renderPage();
+      fireEvent.click(await screen.findByRole("button", { name: "Ver actividad de TEST-0001" }));
+      const detail = await screen.findByRole("region", { name: "Actividad de TEST-0001" });
+      const rows = within(within(detail).getByRole("table", { name: "Recargas" })).getAllByRole("row").slice(1);
+      return { detail, rows };
+    }
+
+    it("shows the button only on QPayPro rows that are INICIADA or EXPIRADA", async () => {
+      const { rows } = await openCard();
+
+      expect(rows.map((row) => within(row).queryByRole("button", { name: VERIFY }) !== null)).toEqual([
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+      ]);
+    });
+
+    it("POSTs the verify request and updates the row and the balance with the answer", async () => {
+      mockPost.mockResolvedValue({
+        referencia: "QPP-a/b",
+        numeroTarjeta: "TEST-0001",
+        monto: 25,
+        estadoPago: "APROBADA",
+        numeroComprobante: "QPP-REC-9",
+        saldo: 37.5,
+      });
+      const { detail, rows } = await openCard();
+
+      fireEvent.click(within(rows[0]!).getByRole("button", { name: VERIFY }));
+
+      expect(await within(rows[0]!).findByText("QPP-REC-9")).toBeInTheDocument();
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      expect(mockPost).toHaveBeenCalledWith("/cards/TEST-0001/payments/QPP-a%2Fb/verify", {});
+      expect(within(rows[0]!).getByText("Aprobada")).toBeInTheDocument();
+      expect(within(rows[0]!).queryByRole("button", { name: VERIFY })).not.toBeInTheDocument();
+      expect(within(detail).getByText("Saldo: Q37.50")).toBeInTheDocument();
+      expect(within(rows[1]!).getByText("Expirada")).toBeInTheDocument();
+      expect(within(rows[1]!).getByRole("button", { name: VERIFY })).toBeEnabled();
+    });
+
+    it("keeps the button when QPayPro could not confirm the payment", async () => {
+      mockPost.mockResolvedValue({
+        referencia: "QPP-22",
+        numeroTarjeta: "TEST-0001",
+        monto: 25,
+        estadoPago: "EXPIRADA",
+        numeroComprobante: null,
+        saldo: 12.5,
+      });
+      const { detail, rows } = await openCard();
+
+      fireEvent.click(within(rows[1]!).getByRole("button", { name: VERIFY }));
+
+      await waitFor(() => expect(within(rows[1]!).getByRole("button", { name: VERIFY })).toBeEnabled());
+      expect(mockPost).toHaveBeenCalledWith("/cards/TEST-0001/payments/QPP-22/verify", {});
+      expect(within(rows[1]!).getByText("Expirada")).toBeInTheDocument();
+      expect(within(detail).getByText("Saldo: Q12.50")).toBeInTheDocument();
+      expect(within(detail).queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("disables the button while sending", async () => {
+      let release: (value: unknown) => void = () => {};
+      mockPost.mockImplementation(() => new Promise((resolve) => (release = resolve)));
+      const { rows } = await openCard();
+      const button = within(rows[1]!).getByRole("button", { name: VERIFY });
+
+      fireEvent.click(button);
+
+      await waitFor(() => expect(button).toBeDisabled());
+      fireEvent.click(button);
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      await act(async () =>
+        release({ referencia: "QPP-22", numeroTarjeta: "TEST-0001", monto: 25, estadoPago: "RECHAZADA", numeroComprobante: null, saldo: 12.5 }),
+      );
+      expect(within(rows[1]!).getByText("Rechazada")).toBeInTheDocument();
+      expect(within(rows[1]!).queryByRole("button", { name: VERIFY })).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ["the API message of a 404", new ApiError(404, "El pago no existe."), "El pago no existe."],
+      ["a permission message for a 403", new ApiError(403, "Forbidden"), "No tiene permiso para consultar las tarjetas."],
+      ["a generic message for a 500", new ApiError(500, "Internal server error"), "No se pudo verificar el pago con QPayPro."],
+      ["a connection message for a network error", new TypeError("Failed to fetch"), "No se pudo conectar con el servidor. Intente de nuevo."],
+    ])("shows %s and leaves the row unchanged", async (_label, error, message) => {
+      mockPost.mockRejectedValue(error);
+      const { detail, rows } = await openCard();
+
+      fireEvent.click(within(rows[0]!).getByRole("button", { name: VERIFY }));
+
+      expect(await within(detail).findByRole("alert")).toHaveTextContent(message);
+      expect(within(rows[0]!).getByText("Iniciada")).toBeInTheDocument();
+      expect(within(rows[0]!).getByRole("button", { name: VERIFY })).toBeEnabled();
+      expect(within(detail).getByText("Saldo: Q12.50")).toBeInTheDocument();
+    });
   });
 
   it("navigates back to the landing page", async () => {

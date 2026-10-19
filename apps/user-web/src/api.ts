@@ -31,6 +31,24 @@ export interface Recharge {
   repetida: boolean;
 }
 
+/** QPayPro hosted checkout (odd/tasks/qpaypro-checkout.md S3). */
+export interface PaymentCheckout {
+  referencia: string;
+  checkoutUrl: string;
+}
+
+export type PaymentState = "INICIADA" | "APROBADA" | "RECHAZADA" | "ERROR" | "EXPIRADA";
+
+/** Payment status (qpaypro-checkout S6); `saldo` is the current card balance. */
+export interface Payment {
+  referencia: string;
+  numeroTarjeta: string;
+  monto: number;
+  estadoPago: PaymentState;
+  numeroComprobante: string | null;
+  saldo: number;
+}
+
 export type TurnstileType = "ENTRADA" | "SALIDA";
 
 export interface TurnstilePass {
@@ -93,6 +111,12 @@ export const listLines = () => request<Line[]>("/citizen/lines");
 
 export const rechargeCard = (numeroTarjeta: string, monto: number, referencia: string) =>
   request<Recharge>(`${cardPath(numeroTarjeta)}/recharges`, jsonPost({ monto, referencia }));
+
+export const startPayment = (numeroTarjeta: string, monto: number, email: string) =>
+  request<PaymentCheckout>(`${cardPath(numeroTarjeta)}/payments`, jsonPost({ monto, email }));
+
+export const getPayment = (referencia: string) =>
+  request<Payment>(`/citizen/payments/${encodeURIComponent(referencia)}`);
 
 // The balance is never sent: the API reads and charges it.
 export const passTurnstile = (

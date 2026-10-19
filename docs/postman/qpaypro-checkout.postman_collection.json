@@ -1,0 +1,412 @@
+{
+  "info": {
+    "name": "Transmetro - Pagos con QPayPro (checkout alojado)",
+    "description": "Inicio de pago, estado, cancelación y verificación del personal. Guía del pago en el sandbox: docs/qpaypro-sandbox.md. Sin credenciales: el API las lee de su entorno.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Iniciar pago",
+      "item": [
+        {
+          "name": "Iniciar pago Q25 (201)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/citizen/cards/{{numeroTarjeta}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "citizen",
+                "cards",
+                "{{numeroTarjeta}}",
+                "payments"
+              ]
+            },
+            "description": "Registra la transacción en QPayPro y devuelve checkoutUrl. Abra checkoutUrl en el navegador para pagar (docs/qpaypro-sandbox.md). Guarda referencia y checkoutUrl.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 25,\n  \"email\": \"ciudadano@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"201 con referencia y checkoutUrl\", () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(body.referencia).to.match(/^QPP-/);",
+                  "  pm.expect(body.checkoutUrl).to.include(\"/checkout/woocommerce?token=\");",
+                  "});",
+                  "pm.collectionVariables.set(\"referencia\", body.referencia);",
+                  "pm.collectionVariables.set(\"checkoutUrl\", body.checkoutUrl);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: monto no permitido (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/citizen/cards/{{numeroTarjeta}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "citizen",
+                "cards",
+                "{{numeroTarjeta}}",
+                "payments"
+              ]
+            },
+            "description": "Solo se aceptan 10, 25, 50 y 100.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 30,\n  \"email\": \"ciudadano@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: tarjeta inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/citizen/cards/NO-EXISTE-0000/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "citizen",
+                "cards",
+                "NO-EXISTE-0000",
+                "payments"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monto\": 25,\n  \"email\": \"ciudadano@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"404 La tarjeta no existe.\", () => {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.json().message).to.eql(\"La tarjeta no existe.\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Estado",
+      "item": [
+        {
+          "name": "Estado del pago (200)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/citizen/payments/{{referencia}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "citizen",
+                "payments",
+                "{{referencia}}"
+              ]
+            },
+            "description": "Un pago INICIADA con más de 10 minutos se consulta en QPayPro y, si no se confirma, pasa a EXPIRADA antes de responder.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"200 con la forma del estado\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.referencia).to.eql(pm.collectionVariables.get(\"referencia\"));",
+                  "  pm.expect(body).to.have.all.keys(\"referencia\", \"numeroTarjeta\", \"monto\", \"estadoPago\", \"numeroComprobante\", \"saldo\");",
+                  "  pm.expect([\"INICIADA\", \"APROBADA\", \"RECHAZADA\", \"ERROR\", \"EXPIRADA\"]).to.include(body.estadoPago);",
+                  "});",
+                  "pm.test(\"comprobante solo si está aprobado\", () => {",
+                  "  if (body.estadoPago === \"APROBADA\") pm.expect(body.numeroComprobante).to.match(/^QPP-REC-/);",
+                  "  else pm.expect(body.numeroComprobante).to.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: pago inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/citizen/payments/QPP-00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "citizen",
+                "payments",
+                "QPP-00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"404 El pago no existe.\", () => {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.json().message).to.eql(\"El pago no existe.\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Cancelar",
+      "item": [
+        {
+          "name": "Cancelar pago (302)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/citizen/payments/qpaypro/cancel?referencia={{referencia}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "citizen",
+                "payments",
+                "qpaypro",
+                "cancel"
+              ],
+              "query": [
+                {
+                  "key": "referencia",
+                  "value": "{{referencia}}"
+                }
+              ]
+            },
+            "description": "Lo que hace QPayPro cuando el pagador cancela: un pago INICIADA pasa a EXPIRADA. Redirecciones desactivadas para ver el 302.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"302 a user-web con ?pago=\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(pm.response.headers.get(\"Location\")).to.include(\"?pago=\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Verificar (staff)",
+      "item": [
+        {
+          "name": "Verificar con QPayPro (200)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cards/{{numeroTarjeta}}/payments/{{referencia}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cards",
+                "{{numeroTarjeta}}",
+                "payments",
+                "{{referencia}}",
+                "verify"
+              ]
+            },
+            "description": "Requiere RECARGAS_REPORTES_CONSULTAR. Consulta la transacción en QPayPro y responde el mismo cuerpo que el estado.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{staffToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test(\"200 con el estado del pago\", () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.referencia).to.eql(pm.collectionVariables.get(\"referencia\"));",
+                  "  pm.expect(body).to.have.property(\"estadoPago\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Error: sin token (401)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cards/{{numeroTarjeta}}/payments/{{referencia}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cards",
+                "{{numeroTarjeta}}",
+                "payments",
+                "{{referencia}}",
+                "verify"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "numeroTarjeta",
+      "value": "TEST-RID-0001"
+    },
+    {
+      "key": "referencia",
+      "value": ""
+    },
+    {
+      "key": "checkoutUrl",
+      "value": ""
+    },
+    {
+      "key": "staffToken",
+      "value": ""
+    }
+  ]
+}

@@ -11,7 +11,8 @@ interface RechargeFormProps {
   onBalance: (saldo: number) => void;
 }
 
-// S9: simulated recharge. One referencia per attempt: a retry of the same
+// S9: simulated recharge, offered next to QPayPro only when
+// VITE_RECHARGE_SIMULATOR is "true" (qpaypro-checkout S9). One referencia per attempt: a retry of the same
 // amount after a network error reuses it, so the API never charges twice.
 export function RechargeForm({ numeroTarjeta, onBalance }: RechargeFormProps) {
   const [amount, setAmount] = useState("");
@@ -55,7 +56,7 @@ export function RechargeForm({ numeroTarjeta, onBalance }: RechargeFormProps) {
 
   return (
     <form onSubmit={submit} className="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-outline-variant">
-      <h2 className="font-display text-lg font-bold text-primary">Recargar saldo</h2>
+      <h2 className="font-display text-lg font-bold text-primary">Recarga de prueba</h2>
       <p className="text-sm text-on-surface-variant">Recarga simulada: no se realiza ningún cobro real.</p>
       <div>
         <label htmlFor="recharge-amount" className="block text-sm font-medium text-on-surface-variant">

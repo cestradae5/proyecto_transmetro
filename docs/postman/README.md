@@ -75,3 +75,28 @@ y 400 (tipo inválido).
 
 Los conteos se acumulan entre corridas: los tests de Postman comparan contra
 la lectura anterior en lugar de esperar números fijos.
+
+# Postman: pagos con QPayPro
+
+Colección `qpaypro-checkout.postman_collection.json` para el checkout alojado
+de QPayPro. La configuración del API (variables `QPAYPRO_*`,
+`API_PUBLIC_URL`, `USER_WEB_URL`) y el pago de prueba con tarjeta están en
+`docs/qpaypro-sandbox.md`. La colección no lleva credenciales.
+
+| Variable | Valor |
+|---|---|
+| `baseUrl` | `http://localhost:3000` |
+| `numeroTarjeta` | Una tarjeta `ACTIVA` |
+| `referencia` | La guarda `1. Iniciar pago / Iniciar pago Q25` |
+| `staffToken` | JWT de un usuario con `RECARGAS_REPORTES_CONSULTAR` (para la carpeta 4) |
+
+Carpetas:
+
+1. `Iniciar pago`: 201 con `referencia` y `checkoutUrl` (abra `checkoutUrl`
+   en el navegador para pagar), 400 con un monto fuera de Q10/Q25/Q50/Q100 y
+   404 con una tarjeta inexistente.
+2. `Estado`: 200 con el estado y el saldo; 404 "El pago no existe.".
+3. `Cancelar`: 302 a user-web con `?pago=` (las redirecciones están
+   desactivadas en esa petición); un pago `INICIADA` pasa a `EXPIRADA`.
+4. `Verificar (staff)`: consulta el pago en QPayPro con `staffToken` (200) y
+   sin token (401).

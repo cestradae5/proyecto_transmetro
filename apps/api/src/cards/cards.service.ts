@@ -3,6 +3,7 @@ import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
 
 import { CitizenCardNotFound } from "../citizen/citizen.errors.js";
+import { QPAYPRO_REFERENCE_PREFIX } from "../citizen/dto/citizen.dto.js";
 import {
   ACTIVITY_LIMIT,
   CARDS_PAGE_SIZE,
@@ -139,7 +140,12 @@ export class CardsService {
         referencia: row.referencia,
         monto: Number(row.monto),
         estadoPago: row.estadoPago,
-        origen: row.idQpaypro === null || row.idQpaypro === undefined ? "SIMULADA" : "QPAYPRO",
+        // qpaypro-checkout S8: a started QPayPro payment has no QPayPro id
+        // yet, so its server-generated QPP- referencia also marks it.
+        origen:
+          row.referencia.startsWith(QPAYPRO_REFERENCE_PREFIX) || (row.idQpaypro !== null && row.idQpaypro !== undefined)
+            ? "QPAYPRO"
+            : "SIMULADA",
         numeroComprobante: row.numeroComprobante ?? null,
         fecha: new Date(row.fecha).toISOString(),
       })),
