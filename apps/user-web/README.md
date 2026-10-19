@@ -79,6 +79,15 @@ deploy. The API already allows any origin (CORS `*`) and the
 
 - **Card**: an empty number is not sent; an unknown card shows the API
   message ("La tarjeta no existe.").
+- **Test data panel** ("Datos de prueba", always visible; left column on
+  wide screens, below on mobile): the sample Transmetro cards from
+  `docs/postman/ridership-test-data.sql` (`TEST-RID-0001`,
+  `TEST-RID-POOR`, `TEST-RID-BLOCKED`) and the public QPayPro sandbox test
+  card (`4111 1111 1111 1111`, any future expiry, any 3-digit CVV) with a
+  sample email. Those cards must exist in the deployed database (load the
+  SQL file). Each value has a "Copiar" button (clipboard API; the card
+  number is copied without spaces) that shows "Copiado" or "No se pudo
+  copiar" for 2 seconds. QPayPro merchant keys are never shown.
 - **QPayPro recharge**: pick one of Q10, Q25, Q50 or Q100 and enter an
   email; "Pagar con QPayPro" stays disabled until both are valid (email up
   to 100 characters) and while sending. The SPA posts
