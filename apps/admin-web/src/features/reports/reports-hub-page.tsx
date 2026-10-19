@@ -20,7 +20,7 @@ const ADMINISTRATIVE: Submodule = {
   path: "/reports/administrative",
   icon: "picture_as_pdf",
   title: "Reportes administrativos",
-  desc: "Reportes de flota, personal, infraestructura y bitácora en PDF.",
+  desc: "Reportes de flota, personal, infraestructura, viajes, pagos y bitácora en PDF.",
 };
 
 /** Entry point of the Reportes module: one card per submodule the user may open. */

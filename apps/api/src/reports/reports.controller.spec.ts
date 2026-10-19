@@ -48,6 +48,16 @@ describe("ReportsController", () => {
     expect(exportFn).toHaveBeenCalledWith("alerts", { employeeId: "7" }, { from: "2026-01-01", to: "2026-01-31" });
   });
 
+  it("payments() passes the range", async () => {
+    await controller.payments({ from: "2026-01-01", to: "2026-01-31" }, request, response());
+    expect(exportFn).toHaveBeenCalledWith("payments", { employeeId: "7" }, { from: "2026-01-01", to: "2026-01-31" });
+  });
+
+  it("unitTrips() passes the range", async () => {
+    await controller.unitTrips({ from: "2026-01-01", to: "2026-01-31" }, request, response());
+    expect(exportFn).toHaveBeenCalledWith("unit-trips", { employeeId: "7" }, { from: "2026-01-01", to: "2026-01-31" });
+  });
+
   it("rejects a request without an authenticated user", async () => {
     await expect(controller.fleet({} as never, response())).rejects.toBeInstanceOf(UnauthorizedException);
     expect(exportFn).not.toHaveBeenCalled();
@@ -58,16 +68,19 @@ describe("ReportsController", () => {
     expect(Reflect.getMetadata(EXCEPTION_FILTERS_METADATA, ReportsController)).toContain(DomainExceptionFilter);
     expect(Reflect.getMetadata("path", ReportsController)).toBe("reports");
     const proto = ReportsController.prototype as unknown as Record<string, () => void>;
-    for (const name of ["fleet", "personnel", "infrastructure", "alerts"]) {
+    for (const name of ["fleet", "personnel", "infrastructure", "alerts", "unitTrips"]) {
       expect(Reflect.getMetadata(PERMISSIONS_KEY, proto[name]!)).toEqual(["REPORTES_ADMINISTRATIVOS_CONSULTAR"]);
     }
     expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.auditLog!)).toEqual(["AUDITORIA_BITACORA_CONSULTAR"]);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, proto.payments!)).toEqual(["RECARGAS_REPORTES_CONSULTAR"]);
+    expect(Reflect.getMetadata("path", proto.payments!)).toBe("payments");
+    expect(Reflect.getMetadata("path", proto.unitTrips!)).toBe("unit-trips");
   });
 
-  it("exposes only the five report handlers", () => {
+  it("exposes only the seven report handlers", () => {
     const handlers = Object.getOwnPropertyNames(ReportsController.prototype).filter(
       (name) => name !== "constructor" && name !== "send" && name !== "actorOf",
     );
-    expect(handlers.sort()).toEqual(["alerts", "auditLog", "fleet", "infrastructure", "personnel"]);
+    expect(handlers.sort()).toEqual(["alerts", "auditLog", "fleet", "infrastructure", "payments", "personnel", "unitTrips"]);
   });
 });

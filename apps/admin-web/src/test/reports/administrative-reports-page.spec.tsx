@@ -193,6 +193,59 @@ describe("AdministrativeReportsPage", () => {
     expect(downloadButton("Alertas operativas")).toBeDisabled();
   });
 
+  it("shows the payments report only with RECARGAS_REPORTES_CONSULTAR", () => {
+    signIn(ALL);
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Descargar PDF: Pagos realizados" })).not.toBeInTheDocument();
+    expect(downloadButton("Viajes por unidad")).toBeInTheDocument();
+  });
+
+  it("requires both dates for the payments report and sends them", async () => {
+    signIn(["REPORTES_ADMINISTRATIVOS_CONSULTAR", "RECARGAS_REPORTES_CONSULTAR"]);
+    renderPage();
+    expect(downloadButton("Pagos realizados")).toBeDisabled();
+
+    fireEvent.change(rangeOf("Pagos realizados").from, { target: { value: "2026-05-01" } });
+    expect(downloadButton("Pagos realizados")).toBeDisabled();
+    fireEvent.change(rangeOf("Pagos realizados").to, { target: { value: "2026-05-31" } });
+    fireEvent.click(downloadButton("Pagos realizados"));
+
+    await waitFor(() =>
+      expect(mockDownload).toHaveBeenCalledWith(
+        "/reports/payments?from=2026-05-01&to=2026-05-31",
+        "reporte-pagos-2026-05-01_2026-05-31.pdf",
+      ),
+    );
+  });
+
+  it("requires both dates for the unit trips report and sends them", async () => {
+    signIn(["REPORTES_ADMINISTRATIVOS_CONSULTAR"]);
+    renderPage();
+    expect(downloadButton("Viajes por unidad")).toBeDisabled();
+
+    fireEvent.change(rangeOf("Viajes por unidad").from, { target: { value: "2026-06-01" } });
+    expect(downloadButton("Viajes por unidad")).toBeDisabled();
+    fireEvent.change(rangeOf("Viajes por unidad").to, { target: { value: "2026-06-30" } });
+    fireEvent.click(downloadButton("Viajes por unidad"));
+
+    await waitFor(() =>
+      expect(mockDownload).toHaveBeenCalledWith(
+        "/reports/unit-trips?from=2026-06-01&to=2026-06-30",
+        "reporte-viajes-unidades-2026-06-01_2026-06-30.pdf",
+      ),
+    );
+  });
+
+  it("blocks an inverted unit trips range", () => {
+    signIn(["REPORTES_ADMINISTRATIVOS_CONSULTAR"]);
+    renderPage();
+    fireEvent.change(rangeOf("Viajes por unidad").from, { target: { value: "2026-07-01" } });
+    fireEvent.change(rangeOf("Viajes por unidad").to, { target: { value: "2026-06-30" } });
+
+    expect(screen.getByText("La fecha inicial no puede ser posterior a la fecha final.")).toBeInTheDocument();
+    expect(downloadButton("Viajes por unidad")).toBeDisabled();
+  });
+
   it("disables the button and shows progress while downloading", async () => {
     signIn(ALL);
     let resolve!: (value: { blob: Blob; fileName: string }) => void;
