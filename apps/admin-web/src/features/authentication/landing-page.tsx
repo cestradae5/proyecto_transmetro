@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./auth-context";
+import { DemoRoleSwitcher } from "./demo-role-switcher";
 import { FLEET_MANAGE_PERMISSION, FLEET_STATION_VIEW_PERMISSION, hasPermission } from "../fleet/permissions";
 
 // Keys MUST match PERMISSION_TO_MODULE values in
@@ -31,7 +32,10 @@ export function LandingPage() {
     <div className="min-h-screen bg-[#fafbfc]">
       <header className="w-full h-16 border-b border-slate-100 flex items-center justify-between px-6 lg:px-12 bg-white/95 backdrop-blur-sm z-30 shrink-0 fixed top-0 left-0">
         <span className="font-display font-bold text-xl text-primary">Transmetro</span>
-        <span className="text-xs text-slate-500">{user?.email}</span>
+        <div className="flex items-center gap-4">
+          <DemoRoleSwitcher />
+          <span className="text-xs text-slate-500">{user?.email}</span>
+        </div>
       </header>
 
       <main className="pt-20 md:pt-24 px-4 sm:px-8 py-8 lg:py-12 max-w-6xl mx-auto">

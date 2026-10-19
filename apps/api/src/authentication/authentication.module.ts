@@ -15,6 +15,10 @@ import { DatabaseModule } from "../platform/database/database.module.js";
 import { AuthenticationController } from "./authentication.controller.js";
 import { AuthenticationService } from "./authentication.service.js";
 import { AuthenticationGuard } from "./authentication.guard.js";
+import { DemoRoleSwitchController } from "./demo-role-switch.controller.js";
+import { DemoRoleSwitchService, DEMO_ROLE_SWITCH_CONFIG } from "./demo-role-switch.service.js";
+import { DemoPersonaRepository } from "./infrastructure/demo-persona.repository.js";
+import { readDemoRoleSwitchEnvironment } from "../platform/configuration/environment.js";
 import { EmployeeRepository } from "./infrastructure/employee.repository.js";
 import { AuditRepository } from "./infrastructure/audit.repository.js";
 import { AssignmentScopeRepository } from "./infrastructure/assignment-scope.repository.js";
@@ -23,10 +27,16 @@ import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE } from "./infrastructure/google-
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [AuthenticationController],
+  controllers: [AuthenticationController, DemoRoleSwitchController],
   providers: [
     AuthenticationService,
     AuthenticationGuard,
+    DemoRoleSwitchService,
+    DemoPersonaRepository,
+    {
+      provide: DEMO_ROLE_SWITCH_CONFIG,
+      useFactory: () => readDemoRoleSwitchEnvironment(),
+    },
     EmployeeRepository,
     AuditRepository,
     AssignmentScopeRepository,

@@ -93,6 +93,27 @@ export function readAuthenticationEnvironment(
   };
 }
 
+export interface DemoRoleSwitchEnvironment {
+  enabled: boolean;
+  allowedEmails: string[];
+}
+
+// Demo role switch (academic review only). Disabled unless explicitly turned
+// on; DEMO_ROLE_SWITCH_EMAILS is a comma-separated list of reviewer emails.
+export function readDemoRoleSwitchEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): DemoRoleSwitchEnvironment {
+  const allowedEmails = (environment.DEMO_ROLE_SWITCH_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => email.length > 0);
+
+  return {
+    enabled: parseBoolean(environment.DEMO_ROLE_SWITCH_ENABLED),
+    allowedEmails,
+  };
+}
+
 function createDatabaseEnvironment(
   environment: NodeJS.ProcessEnv,
   database: string,
