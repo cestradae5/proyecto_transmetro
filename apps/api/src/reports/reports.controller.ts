@@ -13,6 +13,7 @@ import { ReportsService } from "./reports.service.js";
 // Permission literals match the DB seed values (database/init.sql, tbl_permiso).
 const REPORTES_ADMINISTRATIVOS_CONSULTAR = "REPORTES_ADMINISTRATIVOS_CONSULTAR";
 const AUDITORIA_BITACORA_CONSULTAR = "AUDITORIA_BITACORA_CONSULTAR";
+const RECARGAS_REPORTES_CONSULTAR = "RECARGAS_REPORTES_CONSULTAR";
 
 // Administrative reports, each downloaded as a PDF attachment. Read-only over
 // the data; every successful download is recorded in the audit log.
@@ -78,6 +79,34 @@ export class ReportsController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<StreamableFile> {
     return this.send("alerts", request, response, { from: query.from, to: query.to });
+  }
+
+  @Get("payments")
+  @Permissions(RECARGAS_REPORTES_CONSULTAR)
+  @ApiOperation({ summary: "PDF: platform payments per state, with their amounts, within a date range" })
+  @ApiResponse({ status: 200, description: "PDF file" })
+  @ApiResponse({ status: 400, description: "Missing or invalid date range" })
+  @ApiResponse({ status: 403, description: "Missing RECARGAS_REPORTES_CONSULTAR permission" })
+  payments(
+    @Query() query: AuditSummaryReportQueryDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    return this.send("payments", request, response, { from: query.from, to: query.to });
+  }
+
+  @Get("unit-trips")
+  @Permissions(REPORTES_ADMINISTRATIVOS_CONSULTAR)
+  @ApiOperation({ summary: "PDF: stop reports per unit, with its line and stops, within a date range" })
+  @ApiResponse({ status: 200, description: "PDF file" })
+  @ApiResponse({ status: 400, description: "Missing or invalid date range" })
+  @ApiResponse({ status: 403, description: "Missing REPORTES_ADMINISTRATIVOS_CONSULTAR permission" })
+  unitTrips(
+    @Query() query: AuditSummaryReportQueryDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    return this.send("unit-trips", request, response, { from: query.from, to: query.to });
   }
 
   private async send(

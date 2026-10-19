@@ -326,6 +326,221 @@ describe("ReportsService", () => {
     });
   });
 
+  describe("payments report", () => {
+    const RANGE = { from: "2026-01-01", to: "2026-01-31" };
+
+    beforeEach(() => {
+      tables["GROUP BY t.estado_pago"] = [
+        { state: "APROBADA", total: "2", amount: "150.50" },
+        { state: "RECHAZADA", total: "1", amount: "20.00" },
+      ];
+      tables["ORDER BY t.fecha_transaccion DESC"] = [
+        { createdAt: "2026-01-20 10:30", reference: "REF-3", cardNumber: "TC-001", amount: "100.50", state: "APROBADA", authorization: "AUT-9" },
+        { createdAt: "2026-01-10 09:00", reference: "REF-2", cardNumber: "TC-002", amount: "20.00", state: "RECHAZADA", authorization: null },
+      ];
+    });
+
+    it("summarizes payments per state with their amounts and lists the payments of the range", async () => {
+      await service.export("payments", ACTOR, RANGE);
+      const doc = renderedDocument();
+
+      expect(doc.title).toBe("Reporte de pagos");
+      expect(doc.subtitle).toBe("Del 2026-01-01 al 2026-01-31");
+      expect(doc.summary).toEqual([
+        ["Total de transacciones", "3"],
+        ["Monto aprobado", "Q 150.50"],
+      ]);
+      expect(doc.sections.map((section) => section.heading)).toEqual(["Pagos por estado", "Detalle de pagos"]);
+      expect(doc.sections[0]!.columns).toEqual(["Estado", "Cantidad", "Monto"]);
+      expect(doc.sections[0]!.rows).toEqual([
+        ["Iniciada", "0", "Q 0.00"],
+        ["Pendiente de autenticación", "0", "Q 0.00"],
+        ["Aprobada", "2", "Q 150.50"],
+        ["Rechazada", "1", "Q 20.00"],
+        ["Error", "0", "Q 0.00"],
+        ["Expirada", "0", "Q 0.00"],
+      ]);
+      expect(doc.sections[1]!.columns).toEqual(["Fecha", "Referencia", "Tarjeta", "Monto", "Estado", "Autorización"]);
+      expect(doc.sections[1]!.rows).toEqual([
+        ["2026-01-20 10:30", "REF-3", "TC-001", "Q 100.50", "Aprobada", "AUT-9"],
+        ["2026-01-10 09:00", "REF-2", "TC-002", "Q 20.00", "Rechazada", "-"],
+      ]);
+    });
+
+    it("queries only payments made inside the inclusive range, detail newest first, max 500", async () => {
+      await service.export("payments", ACTOR, RANGE);
+
+      expect(query).toHaveBeenCalledTimes(2);
+      for (const [sql, params] of query.mock.calls) {
+        expect(sql).toContain("t.fecha_transaccion >= $1 AND t.fecha_transaccion < $2");
+        expect(params).toEqual(["2026-01-01", "2026-02-01"]);
+      }
+      const detailSql = query.mock.calls.find(([sql]) => sql.includes("ORDER BY t.fecha_transaccion DESC"))![0];
+      expect(detailSql).toContain("LIMIT 500");
+    });
+
+    it("notes how many payments the detail shows when the range has more", async () => {
+      tables["GROUP BY t.estado_pago"] = [{ state: "APROBADA", total: "501", amount: "5010.00" }];
+
+      await service.export("payments", ACTOR, RANGE);
+
+      expect(renderedDocument().sections[1]!.note).toBe("Se muestran los 2 pagos más recientes de 501.");
+    });
+
+    it("prints empty messages when the range has no payments", async () => {
+      tables = {};
+
+      await service.export("payments", ACTOR, RANGE);
+      const doc = renderedDocument();
+
+      expect(doc.summary).toEqual([
+        ["Total de transacciones", "0"],
+        ["Monto aprobado", "Q 0.00"],
+      ]);
+      expect(doc.sections[1]!.rows).toEqual([]);
+      expect(doc.sections[1]!.emptyMessage).toBe("No hay pagos en el rango.");
+      expect(doc.sections[1]!.note).toBeUndefined();
+    });
+
+    it("rejects a missing or inverted range without querying, rendering or auditing", async () => {
+      await expect(service.export("payments", ACTOR)).rejects.toThrow(
+        new ValidationError("Debe indicar la fecha inicial y la fecha final."),
+      );
+      await expect(
+        service.export("payments", ACTOR, { from: "2026-02-01", to: "2026-01-31" }),
+      ).rejects.toThrow(new ValidationError("La fecha inicial no puede ser posterior a la fecha final."));
+      expect(query).not.toHaveBeenCalled();
+      expect(render).not.toHaveBeenCalled();
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
+    it("names the file after its range and audits the export with the range", async () => {
+      const result = await service.export("payments", ACTOR, RANGE);
+
+      expect(result.fileName).toBe("reporte-pagos-2026-01-01_2026-01-31.pdf");
+      expect(auditCreate).toHaveBeenCalledTimes(1);
+      expect(auditCreate.mock.calls[0]![1]).toMatchObject({
+        action: "export_report",
+        module: "reports",
+        detalle: { report: "payments", from: "2026-01-01", to: "2026-01-31" },
+      });
+    });
+  });
+
+  describe("unit trips report", () => {
+    const RANGE = { from: "2026-01-01", to: "2026-01-31" };
+    const stop = (unitId: string, reportedAt: string, order: number | null, stopName: string, stationName: string | null, boarded: number, alighted: number, occupancy: number, pilotName: string | null) =>
+      ({ unitId, reportedAt, order, stopName, stationName, boarded, alighted, occupancy, pilotName });
+
+    beforeEach(() => {
+      tables["GROUP BY u.id_unidad"] = [
+        { unitId: "1", plate: "P-001", lineNumber: "12", lineName: "Centra Sur", stops: "2", boarded: "15", alighted: "4" },
+        { unitId: "2", plate: "P-002", lineNumber: null, lineName: null, stops: "1", boarded: "3", alighted: "0" },
+      ];
+      // Newest first, as the query returns it.
+      tables["ORDER BY pu.fecha_reporte DESC"] = [
+        stop("2", "2026-01-21 07:00", null, "Trébol", null, 3, 0, 3, null),
+        stop("1", "2026-01-20 08:15", 2, "Trébol", null, 5, 4, 11, "Luis Piloto"),
+        stop("1", "2026-01-20 08:00", 1, "Plaza", "Estación Plaza", 10, 0, 10, "Luis Piloto"),
+      ];
+    });
+
+    it("summarizes trips per unit with its line and lists each unit's stops in order", async () => {
+      await service.export("unit-trips", ACTOR, RANGE);
+      const doc = renderedDocument();
+
+      expect(doc.title).toBe("Reporte de viajes por unidad");
+      expect(doc.subtitle).toBe("Del 2026-01-01 al 2026-01-31");
+      expect(doc.summary).toEqual([
+        ["Unidades con viajes", "2"],
+        ["Paradas registradas", "3"],
+        ["Pasajeros que subieron", "18"],
+        ["Pasajeros que bajaron", "4"],
+      ]);
+      expect(doc.sections.map((section) => section.heading)).toEqual([
+        "Viajes por unidad",
+        "Unidad P-001 - Línea 12 - Centra Sur (2 paradas)",
+        "Unidad P-002 - Sin línea (1 parada)",
+      ]);
+      const [byUnit, first, second] = doc.sections as [
+        (typeof doc.sections)[number],
+        (typeof doc.sections)[number],
+        (typeof doc.sections)[number],
+      ];
+      expect(byUnit.note).toBe("La línea corresponde a la asignación actual de cada unidad.");
+      expect(byUnit.columns).toEqual(["Unidad", "Línea", "Paradas", "Subieron", "Bajaron"]);
+      expect(byUnit.rows).toEqual([
+        ["P-001", "12 - Centra Sur", "2", "15", "4"],
+        ["P-002", "Sin línea", "1", "3", "0"],
+      ]);
+      expect(first.columns).toEqual(["Fecha", "Orden", "Parada", "Estación", "Subieron", "Bajaron", "Ocupación", "Piloto"]);
+      expect(first.rows).toEqual([
+        ["2026-01-20 08:00", "1", "Plaza", "Estación Plaza", "10", "0", "10", "Luis Piloto"],
+        ["2026-01-20 08:15", "2", "Trébol", "-", "5", "4", "11", "Luis Piloto"],
+      ]);
+      expect(second.rows).toEqual([["2026-01-21 07:00", "-", "Trébol", "-", "3", "0", "3", "-"]]);
+    });
+
+    it("queries only stop reports inside the inclusive range, detail newest first, max 1000", async () => {
+      await service.export("unit-trips", ACTOR, RANGE);
+
+      expect(query).toHaveBeenCalledTimes(2);
+      for (const [sql, params] of query.mock.calls) {
+        expect(sql).toContain("pu.fecha_reporte >= $1 AND pu.fecha_reporte < $2");
+        expect(sql).toContain("tbl_asignacion_unidad");
+        expect(params).toEqual(["2026-01-01", "2026-02-01"]);
+      }
+      const detailSql = query.mock.calls.find(([sql]) => sql.includes("ORDER BY pu.fecha_reporte DESC"))![0];
+      expect(detailSql).toContain("LIMIT 1000");
+    });
+
+    it("notes how many stop reports the detail shows when the range has more", async () => {
+      tables["GROUP BY u.id_unidad"] = [
+        { unitId: "1", plate: "P-001", lineNumber: "12", lineName: "Centra Sur", stops: "1001", boarded: "0", alighted: "0" },
+      ];
+
+      await service.export("unit-trips", ACTOR, RANGE);
+
+      expect(renderedDocument().sections[0]!.note).toBe(
+        "La línea corresponde a la asignación actual de cada unidad. " +
+          "El detalle muestra los 3 reportes de parada más recientes de 1001.",
+      );
+    });
+
+    it("prints an empty message when the range has no trips", async () => {
+      tables = {};
+
+      await service.export("unit-trips", ACTOR, RANGE);
+      const doc = renderedDocument();
+
+      expect(doc.summary[0]).toEqual(["Unidades con viajes", "0"]);
+      expect(doc.sections).toHaveLength(1);
+      expect(doc.sections[0]!.rows).toEqual([]);
+      expect(doc.sections[0]!.emptyMessage).toBe("No hay viajes registrados en el rango.");
+    });
+
+    it("rejects a missing or inverted range without querying, rendering or auditing", async () => {
+      await expect(service.export("unit-trips", ACTOR)).rejects.toThrow(
+        new ValidationError("Debe indicar la fecha inicial y la fecha final."),
+      );
+      await expect(
+        service.export("unit-trips", ACTOR, { from: "2026-02-01", to: "2026-01-31" }),
+      ).rejects.toThrow(new ValidationError("La fecha inicial no puede ser posterior a la fecha final."));
+      expect(query).not.toHaveBeenCalled();
+      expect(render).not.toHaveBeenCalled();
+      expect(auditCreate).not.toHaveBeenCalled();
+    });
+
+    it("names the file after its range and audits the export with the range", async () => {
+      const result = await service.export("unit-trips", ACTOR, RANGE);
+
+      expect(result.fileName).toBe("reporte-viajes-unidades-2026-01-01_2026-01-31.pdf");
+      expect(auditCreate.mock.calls[0]![1]).toMatchObject({
+        detalle: { report: "unit-trips", from: "2026-01-01", to: "2026-01-31" },
+      });
+    });
+  });
+
   describe("export result and audit trail (S3, S5)", () => {
     it("returns the rendered PDF with a dated file name and passes the actor to the renderer", async () => {
       const result = await service.export("fleet", ACTOR);

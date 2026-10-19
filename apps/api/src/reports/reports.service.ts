@@ -24,6 +24,8 @@ import {
   EMPLOYEE_STATUS_LABELS,
   label,
   LINE_STATUS_LABELS,
+  PAYMENT_STATE_LABELS,
+  PAYMENT_STATE_ORDER,
   ROUTE_TYPE_LABELS,
   STOP_STATUS_LABELS,
   UNIT_STATUS_LABELS,
@@ -37,6 +39,10 @@ const UNASSIGNED = "Sin asignar";
 const NO_LINE = "Sin línea";
 const NO_ALERTS = "No hay alertas en el rango.";
 const ALERTS_DETAIL_LIMIT = 500;
+const NO_PAYMENTS = "No hay pagos en el rango.";
+const PAYMENTS_DETAIL_LIMIT = 500;
+const TRIPS_DETAIL_LIMIT = 1000;
+const TRIPS_LINE_NOTE = "La línea corresponde a la asignación actual de cada unidad.";
 
 const FILE_PREFIX: Record<ReportType, string> = {
   fleet: "reporte-flota",
@@ -44,6 +50,8 @@ const FILE_PREFIX: Record<ReportType, string> = {
   infrastructure: "reporte-infraestructura",
   "audit-log": "reporte-bitacora",
   alerts: "reporte-alertas",
+  payments: "reporte-pagos",
+  "unit-trips": "reporte-viajes-unidades",
 };
 
 interface UnitRow {
@@ -111,6 +119,43 @@ interface AlertDetailRow {
   pilotName: string | null;
 }
 
+interface PaymentCountRow {
+  state: string;
+  total: string | number;
+  amount: string | number;
+}
+
+interface PaymentDetailRow {
+  createdAt: string;
+  reference: string;
+  cardNumber: string;
+  amount: string | number;
+  state: string;
+  authorization: string | null;
+}
+
+interface UnitTripCountRow {
+  unitId: string;
+  plate: string;
+  lineNumber: string | null;
+  lineName: string | null;
+  stops: string | number;
+  boarded: string | number;
+  alighted: string | number;
+}
+
+interface UnitTripStopRow {
+  unitId: string;
+  reportedAt: string;
+  order: number | string | null;
+  stopName: string;
+  stationName: string | null;
+  boarded: number | string;
+  alighted: number | string;
+  occupancy: number | string;
+  pilotName: string | null;
+}
+
 interface AuditByUserRow {
   name: string;
   email: string;
@@ -166,6 +211,10 @@ export class ReportsService {
         return this.auditSummaryReport(range!);
       case "alerts":
         return this.alertsReport(range!);
+      case "payments":
+        return this.paymentsReport(range!);
+      case "unit-trips":
+        return this.unitTripsReport(range!);
     }
   }
 
@@ -439,6 +488,174 @@ export class ReportsService {
       ],
     };
   }
+
+  // QPayPro recharge transactions started in the range (tbl_transaccion_pago),
+  // in every state. Counts and amounts come from one grouped query; the detail
+  // lists the newest PAYMENTS_DETAIL_LIMIT.
+  private async paymentsReport(range: DateRange): Promise<ReportDocument> {
+    const params = [range.from, nextDay(range.to)];
+    const where = "WHERE t.fecha_transaccion >= $1 AND t.fecha_transaccion < $2";
+    const counts = (await this.dataSource.query(
+      `SELECT t.estado_pago AS "state", COUNT(*) AS "total", COALESCE(SUM(t.monto_pago), 0) AS "amount"
+         FROM tbl_transaccion_pago t ${where}
+        GROUP BY t.estado_pago`,
+      params,
+    )) as PaymentCountRow[];
+    const detail = (await this.dataSource.query(
+      `SELECT to_char(t.fecha_transaccion, 'YYYY-MM-DD HH24:MI') AS "createdAt",
+              t.referencia_pago AS "reference", tc.numero_tarjeta AS "cardNumber",
+              t.monto_pago AS "amount", t.estado_pago AS "state", t.numero_autorizacion AS "authorization"
+         FROM tbl_transaccion_pago t
+         JOIN tbl_tarjeta_ciudadana tc ON tc.id_tarjeta_ciudadana = t.id_tarjeta_ciudadana
+        ${where}
+        ORDER BY t.fecha_transaccion DESC, t.id_transaccion_pago DESC
+        LIMIT ${PAYMENTS_DETAIL_LIMIT}`,
+      params,
+    )) as PaymentDetailRow[];
+
+    const total = counts.reduce((sum, row) => sum + Number(row.total), 0);
+    const ofState = (state: string) => counts.find((row) => row.state === state);
+    const states = orderedValues(PAYMENT_STATE_ORDER, counts.map((row) => row.state));
+
+    return {
+      title: "Reporte de pagos",
+      subtitle: `Del ${range.from} al ${range.to}`,
+      summary: [
+        ["Total de transacciones", String(total)],
+        ["Monto aprobado", money(ofState("APROBADA")?.amount ?? 0)],
+      ],
+      sections: [
+        {
+          heading: "Pagos por estado",
+          columns: ["Estado", "Cantidad", "Monto"],
+          rows: states.map((state) => [
+            label(PAYMENT_STATE_LABELS, state),
+            String(Number(ofState(state)?.total ?? 0)),
+            money(ofState(state)?.amount ?? 0),
+          ]),
+        },
+        {
+          heading: "Detalle de pagos",
+          ...(total > detail.length
+            ? { note: `Se muestran los ${detail.length} pagos más recientes de ${total}.` }
+            : {}),
+          columns: ["Fecha", "Referencia", "Tarjeta", "Monto", "Estado", "Autorización"],
+          rows: detail.map((row) => [
+            row.createdAt,
+            row.reference,
+            row.cardNumber,
+            money(row.amount),
+            label(PAYMENT_STATE_LABELS, row.state),
+            row.authorization ?? "-",
+          ]),
+          emptyMessage: NO_PAYMENTS,
+        },
+      ],
+    };
+  }
+
+  // Pilot stop reports (tbl_parada_unidad) made in the range, per unit. The
+  // report row stores no line, so the line is the unit's current assignment
+  // and the stop order is the stop's position on that line. Totals come from
+  // one grouped query; the detail holds the newest TRIPS_DETAIL_LIMIT reports,
+  // printed oldest first under each unit.
+  private async unitTripsReport(range: DateRange): Promise<ReportDocument> {
+    const params = [range.from, nextDay(range.to)];
+    const where = "WHERE pu.fecha_reporte >= $1 AND pu.fecha_reporte < $2";
+    const units = (await this.dataSource.query(
+      `SELECT u.id_unidad AS "unitId", u.numero_placa AS "plate",
+              l.numero_linea AS "lineNumber", l.nombre_linea AS "lineName",
+              COUNT(*) AS "stops", COALESCE(SUM(pu.subieron), 0) AS "boarded",
+              COALESCE(SUM(pu.bajaron), 0) AS "alighted"
+         FROM tbl_parada_unidad pu
+         JOIN tbl_unidad u ON u.id_unidad = pu.id_unidad
+         LEFT JOIN tbl_asignacion_unidad au ON au.id_unidad = u.id_unidad
+         LEFT JOIN tbl_linea l ON l.id_linea = au.id_linea
+        ${where}
+        GROUP BY u.id_unidad, u.numero_placa, l.numero_linea, l.nombre_linea
+        ORDER BY u.numero_placa`,
+      params,
+    )) as UnitTripCountRow[];
+    const detail = (await this.dataSource.query(
+      `SELECT pu.id_unidad AS "unitId", to_char(pu.fecha_reporte, 'YYYY-MM-DD HH24:MI') AS "reportedAt",
+              lp.orden AS "order", p.nombre_parada AS "stopName", es.nombre_estacion AS "stationName",
+              pu.subieron AS "boarded", pu.bajaron AS "alighted", pu.ocupacion_resultante AS "occupancy",
+              e.nombre_emple AS "pilotName"
+         FROM tbl_parada_unidad pu
+         JOIN tbl_parada p ON p.id_parada = pu.id_parada
+         LEFT JOIN tbl_estacion es ON es.id_parada = p.id_parada
+         LEFT JOIN tbl_asignacion_unidad au ON au.id_unidad = pu.id_unidad
+         LEFT JOIN tbl_linea_parada lp ON lp.id_linea = au.id_linea AND lp.id_parada = pu.id_parada
+         LEFT JOIN tbl_empleado e ON e.id_emple = pu.id_empleado
+        ${where}
+        ORDER BY pu.fecha_reporte DESC, pu.id_parada_unidad DESC
+        LIMIT ${TRIPS_DETAIL_LIMIT}`,
+      params,
+    )) as UnitTripStopRow[];
+
+    const sum = (field: "stops" | "boarded" | "alighted") =>
+      units.reduce((total, row) => total + Number(row[field]), 0);
+    const totalStops = sum("stops");
+    const lineLabel = (row: UnitTripCountRow) =>
+      row.lineNumber === null ? NO_LINE : `${row.lineNumber} - ${row.lineName}`;
+    const truncated =
+      totalStops > detail.length
+        ? ` El detalle muestra los ${detail.length} reportes de parada más recientes de ${totalStops}.`
+        : "";
+
+    return {
+      title: "Reporte de viajes por unidad",
+      subtitle: `Del ${range.from} al ${range.to}`,
+      summary: [
+        ["Unidades con viajes", String(units.length)],
+        ["Paradas registradas", String(totalStops)],
+        ["Pasajeros que subieron", String(sum("boarded"))],
+        ["Pasajeros que bajaron", String(sum("alighted"))],
+      ],
+      sections: [
+        {
+          heading: "Viajes por unidad",
+          note: `${TRIPS_LINE_NOTE}${truncated}`,
+          columns: ["Unidad", "Línea", "Paradas", "Subieron", "Bajaron"],
+          rows: units.map((row) => [
+            row.plate,
+            lineLabel(row),
+            String(Number(row.stops)),
+            String(Number(row.boarded)),
+            String(Number(row.alighted)),
+          ]),
+          emptyMessage: "No hay viajes registrados en el rango.",
+        },
+        ...units.map((unit) => {
+          const stops = Number(unit.stops);
+          const line = unit.lineNumber === null ? NO_LINE : `Línea ${lineLabel(unit)}`;
+          return {
+            heading: `Unidad ${unit.plate} - ${line} (${stops} ${stops === 1 ? "parada" : "paradas"})`,
+            columns: ["Fecha", "Orden", "Parada", "Estación", "Subieron", "Bajaron", "Ocupación", "Piloto"],
+            rows: detail
+              .filter((row) => String(row.unitId) === String(unit.unitId))
+              .reverse()
+              .map((row) => [
+                row.reportedAt,
+                row.order === null ? "-" : String(row.order),
+                row.stopName,
+                row.stationName ?? "-",
+                String(row.boarded),
+                String(row.alighted),
+                String(row.occupancy),
+                row.pilotName ?? "-",
+              ]),
+            emptyMessage: "Sus reportes quedan fuera del detalle mostrado.",
+          };
+        }),
+      ],
+    };
+  }
+}
+
+/** Quetzal amount with two decimals, e.g. "Q 150.50". */
+function money(amount: string | number): string {
+  return `Q ${Number(amount).toFixed(2)}`;
 }
 
 /** Fixed order first; any unexpected stored value is appended so nothing is lost. */

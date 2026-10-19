@@ -58,6 +58,25 @@ export const ALERT_STATE_LABELS: Record<string, string> = {
   RESUELTA: "Resuelta",
 };
 
+// Same codes as tbl_transaccion_pago.estado_pago (database/init.sql).
+export const PAYMENT_STATE_ORDER = [
+  "INICIADA",
+  "PENDIENTE_AUTENTICACION",
+  "APROBADA",
+  "RECHAZADA",
+  "ERROR",
+  "EXPIRADA",
+] as const;
+
+export const PAYMENT_STATE_LABELS: Record<string, string> = {
+  INICIADA: "Iniciada",
+  PENDIENTE_AUTENTICACION: "Pendiente de autenticación",
+  APROBADA: "Aprobada",
+  RECHAZADA: "Rechazada",
+  ERROR: "Error",
+  EXPIRADA: "Expirada",
+};
+
 /** Falls back to the raw value so an unknown state is still printed. */
 export function label(labels: Record<string, string>, value: string): string {
   return labels[value] ?? value;
