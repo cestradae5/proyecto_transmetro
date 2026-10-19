@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../authentication/auth-context";
 import { useReportDownload } from "./hooks/use-report-download";
-import { canViewAdministrativeReports, canViewAuditLog } from "./permissions";
+import { canViewAdministrativeReports, canViewAuditLog, canViewPaymentsReport } from "./permissions";
 
 const CONTROL =
   "px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30";
@@ -146,6 +146,30 @@ export function AdministrativeReportsPage() {
                 busy={downloading === "alerts"}
                 onDownload={(from, to) =>
                   download("alerts", ...rangedDownload("/reports/alerts", "reporte-alertas", from, to))
+                }
+              />
+            )}
+
+            {canViewAdministrativeReports(user) && (
+              <RangedReportCard
+                title="Viajes por unidad"
+                icon="departure_board"
+                desc="Paradas registradas por cada unidad, con su línea, pasajeros y ocupación en un rango de fechas."
+                busy={downloading === "unit-trips"}
+                onDownload={(from, to) =>
+                  download("unit-trips", ...rangedDownload("/reports/unit-trips", "reporte-viajes-unidades", from, to))
+                }
+              />
+            )}
+
+            {canViewPaymentsReport(user) && (
+              <RangedReportCard
+                title="Pagos realizados"
+                icon="payments"
+                desc="Pagos de recarga hechos en la plataforma, por estado y con su monto, en un rango de fechas."
+                busy={downloading === "payments"}
+                onDownload={(from, to) =>
+                  download("payments", ...rangedDownload("/reports/payments", "reporte-pagos", from, to))
                 }
               />
             )}
