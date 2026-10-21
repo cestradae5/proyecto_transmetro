@@ -14,7 +14,7 @@ import { GOOGLE_CREDENTIAL_VERIFIER, DATASOURCE, type GoogleCredentialVerifier }
 import { InvalidCredentials, EmployeeNotEligible, LoginInput, LoginResult, MeResult, LogoutResult, type DemoActor } from "./authentication.contracts.js";
 
 // ────────────────────────────────────────────────────────────────────────────
-// PERMISSION_TO_MODULE — maps DB permission codes to the 8 canonical dashboard
+// PERMISSION_TO_MODULE — maps DB permission codes to the 6 role-based dashboard
 // modules (spec Requirement 2) plus the ambient `self_profile` card.
 // Keys MUST match MODULE_LABELS in landing-page.tsx or the card won't render
 // (guarded by the completeness assertion in role-module-matrix.spec.ts).
@@ -37,8 +37,6 @@ export const PERMISSION_TO_MODULE: Record<string, string> = {
   ALERTAS_UNIDAD_GESTIONAR: "operational_alerts",
   METRICAS_UNIDAD_REPORTAR: "operational_alerts",
 
-  PANEL_OPERATIVO_CENTRAL_USAR: "central_operations_panel",
-
   // Administrative reports and the audit log are one "Reportes" module.
   REPORTES_ADMINISTRATIVOS_CONSULTAR: "reports",
   AUDITORIA_BITACORA_CONSULTAR: "reports",
@@ -46,7 +44,7 @@ export const PERMISSION_TO_MODULE: Record<string, string> = {
   RECARGAS_REPORTES_CONSULTAR: "recharge_reporting",
 
   // Ambient card: every authenticated employee gets it, regardless of role.
-  // Excluded from the 8-module RBAC matrix (design Decision 3).
+  // Excluded from the role-based RBAC matrix (design Decision 3).
   PERFIL_PROPIO_CONSULTAR: "self_profile",
 };
 
@@ -56,7 +54,6 @@ const MODULE_ORDER = [
   "fleet",
   "personnel",
   "operational_alerts",
-  "central_operations_panel",
   "reports",
   "recharge_reporting",
   "self_profile",

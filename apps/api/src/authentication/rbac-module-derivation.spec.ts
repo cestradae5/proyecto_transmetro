@@ -23,7 +23,6 @@ const FRONTEND_MODULES = [
   "fleet",
   "personnel",
   "operational_alerts",
-  "central_operations_panel",
   "reports",
   "recharge_reporting",
   "self_profile",
@@ -107,6 +106,11 @@ describe("RBAC module derivation (task 2.4)", () => {
         "AUDITORIA_BITACORA_CONSULTAR",
       ]),
     ).toEqual(["reports"]);
+  });
+
+  it("no longer derives the retired central operations panel card", () => {
+    expect(PERMISSION_TO_MODULE).not.toHaveProperty("PANEL_OPERATIVO_CENTRAL_USAR");
+    expect(deriveModulesFromPermissions(["PANEL_OPERATIVO_CENTRAL_USAR"])).toEqual([]);
   });
 
   it("leaves ROLES_PERMISOS_ADMINISTRAR unmapped (admin-only, not a dashboard card)", () => {

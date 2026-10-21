@@ -85,12 +85,16 @@ VALUES
     ('ALERTAS_ESTACION_GESTIONAR', 'Gestionar alertas de estación'),
     ('ALERTAS_UNIDAD_GESTIONAR', 'Gestionar alertas de unidad'),
     ('ALERTAS_OPERATIVAS_GESTIONAR', 'Gestionar alertas operativas'),
-    ('PANEL_OPERATIVO_CENTRAL_USAR', 'Usar panel operativo central'),
     ('REPORTES_ADMINISTRATIVOS_CONSULTAR', 'Consultar reportes administrativos'),
     ('AUDITORIA_BITACORA_CONSULTAR', 'Consultar auditoría y bitácora'),
     ('RECARGAS_REPORTES_CONSULTAR', 'Consultar reportes de recargas')
 ON CONFLICT (codigo_permiso) DO UPDATE
 SET accion_permiso = EXCLUDED.accion_permiso;
+
+-- PANEL_OPERATIVO_CENTRAL_USAR was retired together with its dashboard card.
+-- Existing databases still hold it; ON DELETE CASCADE on tbl_rol_permiso
+-- drops its role assignments too.
+DELETE FROM tbl_permiso WHERE codigo_permiso = 'PANEL_OPERATIVO_CENTRAL_USAR';
 
 INSERT INTO tbl_rol_permiso (
     id_rol,
@@ -129,7 +133,6 @@ INNER JOIN tbl_permiso AS permiso
         ('OPERADOR_CENTRAL', 'FLOTA_GESTIONAR'),
         ('OPERADOR_CENTRAL', 'FLOTA_ESTACION_CONSULTAR'),
         ('OPERADOR_CENTRAL', 'ALERTAS_OPERATIVAS_GESTIONAR'),
-        ('OPERADOR_CENTRAL', 'PANEL_OPERATIVO_CENTRAL_USAR'),
         ('OPERADOR_CENTRAL', 'REPORTES_ADMINISTRATIVOS_CONSULTAR'),
         ('OPERADOR_CENTRAL', 'AUDITORIA_BITACORA_CONSULTAR'),
         ('OPERADOR_CENTRAL', 'RECARGAS_REPORTES_CONSULTAR')

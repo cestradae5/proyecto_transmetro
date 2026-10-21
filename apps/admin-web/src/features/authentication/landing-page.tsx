@@ -12,7 +12,6 @@ const MODULE_LABELS: Record<string, { icon: string; title: string; desc: string;
   "fleet": { icon: "directions_bus", title: "Flota", desc: "Gestión de unidades, líneas y asignaciones", color: "bg-lime-50/80 border-lime-200/70 text-lime-700 text-lime-900" },
   "personnel": { icon: "groups", title: "Personal", desc: "Administración de perfiles de empleados", color: "bg-sky-50/80 border-sky-200/70 text-sky-700 text-sky-900" },
   "operational_alerts": { icon: "warning", title: "Alertas Operativas", desc: "Gestión de alertas de estación y unidad", color: "bg-orange-50/80 border-orange-200/70 text-orange-700 text-orange-900" },
-  "central_operations_panel": { icon: "dashboard", title: "Panel Operativo Central", desc: "Panel central de operaciones en tiempo real", color: "bg-indigo-50/80 border-indigo-200/70 text-indigo-700 text-indigo-900" },
   "reports": { icon: "bar_chart", title: "Reportes", desc: "Reportes administrativos, auditoría y cumplimiento", color: "bg-purple-50/80 border-purple-200/70 text-purple-700 text-purple-900" },
   "recharge_reporting": { icon: "credit_card", title: "Recarga", desc: "Gestión de recargas y pagos", color: "bg-emerald-50/80 border-emerald-200/70 text-emerald-700 text-emerald-900" },
   "self_profile": { icon: "person", title: "Perfil", desc: "Consulta tus credenciales de identificación", color: "bg-amber-50/80 border-amber-200/70 text-amber-700 text-amber-900" },

@@ -13,7 +13,6 @@ const ALL_MODULE_TITLES = [
   "Flota",
   "Personal",
   "Alertas Operativas",
-  "Panel Operativo Central",
   "Reportes",
   "Recarga",
   "Perfil",
@@ -62,13 +61,21 @@ describe("LandingPage card filtering (task 5)", () => {
     }
   });
 
-  it("renders all 8 cards for a user with full module access", async () => {
+  it("does not render the retired Panel Operativo Central card", async () => {
+    // A session stored before the card was retired may still carry the module.
+    seedSession(["fleet", "central_operations_panel"], ["FLOTA_GESTIONAR"]);
+    renderLandingPage();
+
+    expect(await screen.findByText("Flota")).toBeInTheDocument();
+    expect(screen.queryByText("Panel Operativo Central")).not.toBeInTheDocument();
+  });
+
+  it("renders all 7 cards for a user with full module access", async () => {
     seedSession([
       "infrastructure",
       "fleet",
       "personnel",
       "operational_alerts",
-      "central_operations_panel",
       "reports",
       "recharge_reporting",
       "self_profile",
@@ -82,7 +89,7 @@ describe("LandingPage card filtering (task 5)", () => {
   });
 
   it("navigates to /fleet when the Flota card is clicked and marks it clickable", async () => {
-    seedSession(["fleet", "central_operations_panel"], ["FLOTA_GESTIONAR"]);
+    seedSession(["fleet"], ["FLOTA_GESTIONAR"]);
     render(
       <MemoryRouter initialEntries={["/landing"]}>
         <AuthProvider>
@@ -97,8 +104,6 @@ describe("LandingPage card filtering (task 5)", () => {
 
     const fleetCard = (await screen.findByText("Flota")).closest("div[class*='border']") as HTMLElement;
     expect(fleetCard.className).toContain("cursor-pointer");
-    const panelCard = screen.getByText("Panel Operativo Central").closest("div[class*='border']") as HTMLElement;
-    expect(panelCard.className).not.toContain("cursor-pointer");
 
     fireEvent.click(fleetCard);
     expect(await screen.findByText("Fleet destination")).toBeInTheDocument();
