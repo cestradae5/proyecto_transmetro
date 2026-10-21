@@ -292,10 +292,16 @@ CREATE TABLE IF NOT EXISTS tbl_afectacion (
     estado_afectacion VARCHAR(30) NOT NULL,
     id_parada BIGINT,
     id_estacion BIGINT,
+    id_linea BIGINT,
     FOREIGN KEY (id_parada) REFERENCES tbl_parada (id_parada),
     FOREIGN KEY (id_estacion) REFERENCES tbl_estacion (id_estacion),
+    FOREIGN KEY (id_linea) REFERENCES tbl_linea (id_linea),
     CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio),
-    CHECK ((id_parada IS NOT NULL) <> (id_estacion IS NOT NULL))
+    CONSTRAINT chk_afectacion_objetivo CHECK (
+        (id_parada IS NOT NULL)::int +
+        (id_estacion IS NOT NULL)::int +
+        (id_linea IS NOT NULL)::int = 1
+    )
 );
 
 CREATE TABLE IF NOT EXISTS tbl_asignacion_estacion (
@@ -707,6 +713,43 @@ BEGIN
                     FROM tbl_evento_talanquera ev WHERE ev.id_parada = p.id_parada)
                + (SELECT COALESCE(SUM(pu.bajaron - pu.subieron), 0)
                     FROM tbl_parada_unidad pu WHERE pu.id_parada = p.id_parada));
+    END IF;
+END
+$$;
+
+-- tbl_afectacion.id_linea — nullable. Una afectación activa o desactiva una
+-- línea, una parada o una estación (exactamente una). tipo_afectacion guarda
+-- la acción (ACTIVAR / DESACTIVAR); las filas anteriores conservan su tipo
+-- original. El CHECK XOR sin nombre de parada/estación se reemplaza por
+-- chk_afectacion_objetivo; las filas existentes ya cumplen la nueva regla.
+
+ALTER TABLE tbl_afectacion ADD COLUMN IF NOT EXISTS id_linea BIGINT REFERENCES tbl_linea (id_linea);
+
+DO $$
+DECLARE
+    old_check RECORD;
+BEGIN
+    FOR old_check IN
+        SELECT conname FROM pg_constraint
+         WHERE conrelid = 'tbl_afectacion'::regclass
+           AND contype = 'c'
+           AND conname <> 'chk_afectacion_objetivo'
+           AND pg_get_constraintdef(oid) LIKE '%id_parada%'
+           AND pg_get_constraintdef(oid) LIKE '%id_estacion%'
+    LOOP
+        EXECUTE format('ALTER TABLE tbl_afectacion DROP CONSTRAINT %I', old_check.conname);
+    END LOOP;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'tbl_afectacion'::regclass
+           AND conname = 'chk_afectacion_objetivo'
+    ) THEN
+        ALTER TABLE tbl_afectacion ADD CONSTRAINT chk_afectacion_objetivo CHECK (
+            (id_parada IS NOT NULL)::int +
+            (id_estacion IS NOT NULL)::int +
+            (id_linea IS NOT NULL)::int = 1
+        );
     END IF;
 END
 $$;
