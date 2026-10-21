@@ -5,86 +5,185 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { AfectacionEntity, EstadoAfectacion } from "./afectacion.entity.js";
+import type { EntityManager, Repository } from "typeorm";
+import {
+  AccionAfectacion,
+  AfectacionEntity,
+  ESTADO_AFECTACION_APLICADA,
+} from "./afectacion.entity.js";
 import { CreateAfectacionDto } from "./dto/create-afectacion.dto.js";
-import { UpdateAfectacionDto } from "./dto/update-afectacion.dto.js";
 import { AfectacionResponseDto } from "./dto/afectacion-response.dto.js";
-import { validateForeignKey } from "../shared/validators.js";
-import { ParadaEntity } from "../parada/parada.entity.js";
+import { LineaEntity, EstadoLinea } from "../linea/linea.entity.js";
+import { ParadaEntity, EstadoParada } from "../parada/parada.entity.js";
 import { EstacionEntity } from "../estacion/estacion.entity.js";
 import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
 import {
   INFRASTRUCTURE_AUDIT_ACTIONS,
   INFRASTRUCTURE_ENTITY_TYPES,
+  type InfrastructureEntityType,
 } from "../shared/infrastructure-audit.constants.js";
+
+/**
+ * Loads, reads and writes the state of one kind of afectación target. Ids are
+ * bigint columns, so they travel as numeric strings (validated by the DTO)
+ * even where an entity types its key as number.
+ */
+interface TargetKind {
+  entityType: InfrastructureEntityType;
+  /** "Línea con ID 9 no encontrada" */
+  label: string;
+  /** "La línea ya está activa" */
+  article: string;
+  load(manager: EntityManager, id: string): Promise<{ row: object; estado: string } | null>;
+  save(manager: EntityManager, row: object, estado: string): Promise<void>;
+  activeState: string;
+  inactiveState: string;
+}
+
+const LINEA: TargetKind = {
+  entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+  label: "Línea",
+  article: "La línea",
+  activeState: EstadoLinea.ACTIVA,
+  inactiveState: EstadoLinea.INACTIVA,
+  async load(manager, id) {
+    const row = await manager.getRepository(LineaEntity).findOne({
+      where: { idLinea: id },
+      lock: { mode: "pessimistic_write" },
+    });
+    return row ? { row, estado: row.estadoLinea } : null;
+  },
+  async save(manager, row, estado) {
+    await manager
+      .getRepository(LineaEntity)
+      .save({ ...(row as LineaEntity), estadoLinea: estado as EstadoLinea });
+  },
+};
+
+const PARADA: TargetKind = {
+  entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+  label: "Parada",
+  article: "La parada",
+  activeState: EstadoParada.ACTIVA,
+  inactiveState: EstadoParada.CERRADA,
+  async load(manager, id) {
+    const row = await manager.getRepository(ParadaEntity).findOne({
+      where: { idParada: id as unknown as number },
+      lock: { mode: "pessimistic_write" },
+    });
+    return row ? { row, estado: row.estadoParada } : null;
+  },
+  async save(manager, row, estado) {
+    await manager
+      .getRepository(ParadaEntity)
+      .save({ ...(row as ParadaEntity), estadoParada: estado as EstadoParada });
+  },
+};
+
+const ESTACION: TargetKind = {
+  entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
+  label: "Estación",
+  article: "La estación",
+  activeState: "ACTIVA",
+  inactiveState: "CERRADA",
+  async load(manager, id) {
+    const row = await manager.getRepository(EstacionEntity).findOne({
+      where: { idEstacion: id as unknown as number },
+      lock: { mode: "pessimistic_write" },
+    });
+    return row ? { row, estado: row.estadoEstacion } : null;
+  },
+  async save(manager, row, estado) {
+    await manager
+      .getRepository(EstacionEntity)
+      .save({ ...(row as EstacionEntity), estadoEstacion: estado });
+  },
+};
 
 @Injectable()
 export class AfectacionService {
   constructor(
     @InjectRepository(AfectacionEntity)
     private readonly afectacionRepository: Repository<AfectacionEntity>,
-    @InjectRepository(ParadaEntity)
-    private readonly paradaRepository: Repository<ParadaEntity>,
-    @InjectRepository(EstacionEntity)
-    private readonly estacionRepository: Repository<EstacionEntity>,
     private readonly audit: InfrastructureAuditService
   ) {}
 
-  async create(
-    createAfectacionDto: CreateAfectacionDto,
-    actorEmployeeId: string
-  ): Promise<AfectacionResponseDto> {
-    // XOR validation: exactly one must be provided
-    const hasParada = !!createAfectacionDto.idParada;
-    const hasEstacion = !!createAfectacionDto.idEstacion;
-
-    if (hasParada === hasEstacion) {
+  /**
+   * Applies the afectación: sets the target's state, stores the afectación and
+   * writes its bitácora row, all in one transaction. The target row is locked
+   * so two concurrent afectaciones on it cannot both pass the "already in that
+   * state" check. Dates are informative: nothing reverts automatically.
+   */
+  async create(dto: CreateAfectacionDto, actorEmployeeId: string): Promise<AfectacionResponseDto> {
+    const targets = [
+      dto.idLinea ? ([LINEA, dto.idLinea] as const) : null,
+      dto.idParada ? ([PARADA, dto.idParada] as const) : null,
+      dto.idEstacion ? ([ESTACION, dto.idEstacion] as const) : null,
+    ].filter((target) => target !== null);
+    if (targets.length !== 1) {
       throw new BadRequestException(
-        "Debe proporcionar exactamente uno: idParada o idEstacion"
+        "Debe proporcionar exactamente uno: idLinea, idParada o idEstacion"
       );
     }
-
-    // Validate FK
-    if (hasParada) {
-      await validateForeignKey(
-        this.paradaRepository,
-        createAfectacionDto.idParada!,
-        "idParada",
-        "Parada"
-      );
-    } else {
-      await validateForeignKey(
-        this.estacionRepository,
-        createAfectacionDto.idEstacion!,
-        "idEstacion",
-        "Estación"
+    if (dto.fechaFin && new Date(dto.fechaFin) < new Date(dto.fechaInicio)) {
+      throw new BadRequestException(
+        "La fecha de fin no puede ser anterior a la fecha de inicio"
       );
     }
+    const [kind, targetId] = targets[0]!;
+    const activar = dto.accion === AccionAfectacion.ACTIVAR;
+    const estadoNuevo = activar ? kind.activeState : kind.inactiveState;
 
-    const saved = await this.afectacionRepository.manager.transaction(
-      async (manager) => {
-        const repo = manager.getRepository(AfectacionEntity);
-        const afectacion = repo.create(createAfectacionDto);
-        const persisted = await repo.save(afectacion);
-        await this.audit.record(manager, actorEmployeeId, {
-          action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
-          entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-          entityId: String(persisted.idAfectacion),
-          detalle: {
-            tipoAfectacion: persisted.tipoAfectacion,
-            idParada: persisted.idParada ?? null,
-            idEstacion: persisted.idEstacion ?? null,
-          },
-        });
-        return persisted;
+    const saved = await this.afectacionRepository.manager.transaction(async (manager) => {
+      const target = await kind.load(manager, targetId);
+      if (!target) {
+        throw new NotFoundException(`${kind.label} con ID ${targetId} no encontrada`);
       }
-    );
+      if (target.estado === estadoNuevo) {
+        throw new ConflictException(
+          `${kind.article} ya está ${activar ? "activa" : "inactiva"}`,
+          "AFECTACION_SIN_CAMBIO"
+        );
+      }
+      await kind.save(manager, target.row, estadoNuevo);
+
+      const repo = manager.getRepository(AfectacionEntity);
+      const persisted = await repo.save(
+        repo.create({
+          tipoAfectacion: dto.accion,
+          motivo: dto.motivo,
+          fechaInicio: dto.fechaInicio,
+          fechaFin: dto.fechaFin ?? null,
+          estadoAfectacion: ESTADO_AFECTACION_APLICADA,
+          idLinea: dto.idLinea ?? null,
+          idParada: dto.idParada ?? null,
+          idEstacion: dto.idEstacion ?? null,
+        })
+      );
+      await this.audit.record(manager, actorEmployeeId, {
+        action: activar
+          ? INFRASTRUCTURE_AUDIT_ACTIONS.ACTIVATE
+          : INFRASTRUCTURE_AUDIT_ACTIONS.DEACTIVATE,
+        entityType: kind.entityType,
+        entityId: String(targetId),
+        detalle: {
+          idAfectacion: String(persisted.idAfectacion),
+          motivo: dto.motivo,
+          fechaInicio: dto.fechaInicio,
+          fechaFin: dto.fechaFin ?? null,
+          estadoAnterior: target.estado,
+          estadoNuevo,
+        },
+      });
+      return persisted;
+    });
     return this.toResponseDto(saved);
   }
 
   async findAll(): Promise<AfectacionResponseDto[]> {
-    const afectaciones = await this.afectacionRepository.find();
+    const afectaciones = await this.afectacionRepository.find({
+      order: { fechaInicio: "DESC", idAfectacion: "DESC" },
+    });
     return afectaciones.map((a) => this.toResponseDto(a));
   }
 
@@ -98,130 +197,16 @@ export class AfectacionService {
     return this.toResponseDto(afectacion);
   }
 
-  async update(
-    id: string,
-    updateAfectacionDto: UpdateAfectacionDto,
-    actorEmployeeId: string
-  ): Promise<AfectacionResponseDto> {
-    const afectacion = await this.afectacionRepository.findOne({
-      where: { idAfectacion: id },
-    });
-    if (!afectacion) {
-      throw new NotFoundException(`Afectación con ID ${id} no encontrada`);
-    }
-
-    // XOR validation if both are provided in update
-    if (updateAfectacionDto.idParada && updateAfectacionDto.idEstacion) {
-      throw new BadRequestException(
-        "No puede proporcionar idParada e idEstacion simultáneamente"
-      );
-    }
-
-    // Validate FK if provided
-    if (updateAfectacionDto.idParada) {
-      await validateForeignKey(
-        this.paradaRepository,
-        updateAfectacionDto.idParada,
-        "idParada",
-        "Parada"
-      );
-      // Clear the other FK
-      afectacion.idEstacion = undefined;
-    }
-
-    if (updateAfectacionDto.idEstacion) {
-      await validateForeignKey(
-        this.estacionRepository,
-        updateAfectacionDto.idEstacion,
-        "idEstacion",
-        "Estación"
-      );
-      // Clear the other FK
-      afectacion.idParada = undefined;
-    }
-
-    const changedFields = Object.keys(updateAfectacionDto);
-    const updated = await this.afectacionRepository.manager.transaction(
-      async (manager) => {
-        const repo = manager.getRepository(AfectacionEntity);
-        Object.assign(afectacion, updateAfectacionDto);
-        const persisted = await repo.save(afectacion);
-        await this.audit.record(manager, actorEmployeeId, {
-          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
-          entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-          entityId: String(id),
-          detalle: { changedFields },
-        });
-        return persisted;
-      }
-    );
-    return this.toResponseDto(updated);
-  }
-
-  async close(id: string, actorEmployeeId: string): Promise<AfectacionResponseDto> {
-    const afectacion = await this.afectacionRepository.findOne({
-      where: { idAfectacion: id },
-    });
-    if (!afectacion) {
-      throw new NotFoundException(`Afectación con ID ${id} no encontrada`);
-    }
-    if (afectacion.estadoAfectacion === EstadoAfectacion.CERRADA) {
-      throw new ConflictException(
-        `La afectación ${id} ya está cerrada`,
-        "AFECTACION_ALREADY_CLOSED"
-      );
-    }
-
-    const closed = await this.afectacionRepository.manager.transaction(
-      async (manager) => {
-        const repo = manager.getRepository(AfectacionEntity);
-        afectacion.estadoAfectacion = EstadoAfectacion.CERRADA;
-        afectacion.fechaFin = new Date();
-        const persisted = await repo.save(afectacion);
-        await this.audit.record(manager, actorEmployeeId, {
-          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
-          entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-          entityId: String(id),
-          detalle: { estadoAfectacion: EstadoAfectacion.CERRADA, closed: true },
-        });
-        return persisted;
-      }
-    );
-    return this.toResponseDto(closed);
-  }
-
-  async remove(id: string, actorEmployeeId: string): Promise<void> {
-    const afectacion = await this.afectacionRepository.findOne({
-      where: { idAfectacion: id },
-    });
-    if (!afectacion) {
-      throw new NotFoundException(`Afectación con ID ${id} no encontrada`);
-    }
-
-    // Soft delete: set status to CERRADA
-    await this.afectacionRepository.manager.transaction(async (manager) => {
-      const repo = manager.getRepository(AfectacionEntity);
-      afectacion.estadoAfectacion = "CERRADA" as any;
-      await repo.save(afectacion);
-      await this.audit.record(manager, actorEmployeeId, {
-        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
-        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-        entityId: String(id),
-        detalle: { tipoAfectacion: afectacion.tipoAfectacion },
-      });
-    });
-  }
-
   private toResponseDto(afectacion: AfectacionEntity): AfectacionResponseDto {
     return {
       idAfectacion: afectacion.idAfectacion,
-      tipoAfectacion: afectacion.tipoAfectacion,
+      accion: afectacion.tipoAfectacion,
       motivo: afectacion.motivo,
       fechaInicio: afectacion.fechaInicio,
-      fechaFin: afectacion.fechaFin,
-      estadoAfectacion: afectacion.estadoAfectacion,
-      idParada: afectacion.idParada,
-      idEstacion: afectacion.idEstacion,
+      fechaFin: afectacion.fechaFin ?? null,
+      idLinea: afectacion.idLinea ?? null,
+      idParada: afectacion.idParada ?? null,
+      idEstacion: afectacion.idEstacion ?? null,
     };
   }
 }

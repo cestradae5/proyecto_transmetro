@@ -5,57 +5,57 @@ import {
   ManyToOne,
   JoinColumn,
 } from "typeorm";
+import { LineaEntity } from "../linea/linea.entity.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
 import { EstacionEntity } from "../estacion/estacion.entity.js";
 
-export enum TipoAfectacion {
-  TEMPORAL = "TEMPORAL",
-  PERMANENTE = "PERMANENTE",
-  MANTENIMIENTO = "MANTENIMIENTO",
+/** What an afectación does to its target. Stored in tipo_afectacion. */
+export enum AccionAfectacion {
+  ACTIVAR = "ACTIVAR",
+  DESACTIVAR = "DESACTIVAR",
 }
 
-export enum EstadoAfectacion {
-  ACTIVA = "ACTIVA",
-  CERRADA = "CERRADA",
-  PENDIENTE = "PENDIENTE",
-}
+/**
+ * estado_afectacion is NOT NULL in the schema. An afectación is applied the
+ * moment it is created, so every new row stores APLICADA; rows written before
+ * the activate/deactivate model keep their original value.
+ */
+export const ESTADO_AFECTACION_APLICADA = "APLICADA";
 
 @Entity({ name: "tbl_afectacion" })
 export class AfectacionEntity {
   @PrimaryGeneratedColumn({ name: "id_afectacion", type: "bigint" })
   idAfectacion!: string;
 
-  @Column({
-    name: "tipo_afectacion",
-    type: "varchar",
-    length: 20,
-    enum: TipoAfectacion,
-  })
-  tipoAfectacion!: TipoAfectacion;
+  // Legacy rows may hold TEMPORAL/PERMANENTE/MANTENIMIENTO.
+  @Column({ name: "tipo_afectacion", type: "varchar", length: 50 })
+  tipoAfectacion!: string;
 
   @Column({ type: "text" })
   motivo!: string;
 
-  @Column({ name: "fecha_inicio", type: "date" })
-  fechaInicio!: Date;
+  @Column({ name: "fecha_inicio", type: "timestamptz" })
+  fechaInicio!: Date | string;
 
-  @Column({ name: "fecha_fin", type: "date", nullable: true })
-  fechaFin?: Date;
+  @Column({ name: "fecha_fin", type: "timestamptz", nullable: true })
+  fechaFin!: Date | string | null;
 
-  @Column({
-    name: "estado_afectacion",
-    type: "varchar",
-    length: 20,
-    enum: EstadoAfectacion,
-  })
-  estadoAfectacion!: EstadoAfectacion;
+  @Column({ name: "estado_afectacion", type: "varchar", length: 30 })
+  estadoAfectacion!: string;
 
-  // XOR: one of these must be set, not both
+  // Exactly one of these is set (chk_afectacion_objetivo).
+  @Column({ name: "id_linea", type: "bigint", nullable: true })
+  idLinea!: string | null;
+
   @Column({ name: "id_parada", type: "bigint", nullable: true })
-  idParada?: string;
+  idParada!: string | null;
 
   @Column({ name: "id_estacion", type: "bigint", nullable: true })
-  idEstacion?: string;
+  idEstacion!: string | null;
+
+  @ManyToOne(() => LineaEntity, { nullable: true })
+  @JoinColumn({ name: "id_linea" })
+  linea?: LineaEntity;
 
   @ManyToOne(() => ParadaEntity, { nullable: true })
   @JoinColumn({ name: "id_parada" })

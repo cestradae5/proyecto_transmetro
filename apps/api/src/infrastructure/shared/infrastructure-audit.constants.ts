@@ -12,6 +12,9 @@ export const INFRASTRUCTURE_AUDIT_ACTIONS = {
   LINK: "link",
   UNLINK: "unlink",
   REORDER: "reorder",
+  // Written by an afectación on its línea, parada or estación.
+  ACTIVATE: "activate",
+  DEACTIVATE: "deactivate",
 } as const;
 
 export type InfrastructureAuditAction =

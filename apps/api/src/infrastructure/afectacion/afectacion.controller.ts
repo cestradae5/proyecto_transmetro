@@ -3,9 +3,7 @@ import {
   Get,
   Post,
   Body,
-  Patch,
   Param,
-  Delete,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -17,12 +15,14 @@ import {
 } from "@nestjs/swagger";
 import { AfectacionService } from "./afectacion.service.js";
 import { CreateAfectacionDto } from "./dto/create-afectacion.dto.js";
-import { UpdateAfectacionDto } from "./dto/update-afectacion.dto.js";
 import { AfectacionResponseDto } from "./dto/afectacion-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { Permissions } from "../../authentication/permissions.decorator.js";
 
 @ApiTags("Infraestructura - Afectaciones")
+// Afectaciones are an append-only history of applied actions: editing or
+// deleting one would desync it from the target's real state, so there is no
+// PATCH or DELETE. Reverting is a new afectación with the opposite action.
 @Controller("infrastructure/afectaciones")
 @UseGuards(AuthenticationGuard)
 @ApiBearerAuth()
@@ -31,12 +31,18 @@ export class AfectacionController {
 
   @Post()
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
-  @ApiOperation({ summary: "Crear una nueva afectación" })
+  @ApiOperation({
+    summary:
+      "Activar o desactivar una línea, parada o estación (queda en la bitácora)",
+  })
   @ApiResponse({
     status: 201,
-    description: "Afectación creada exitosamente",
+    description: "Afectación aplicada",
     type: AfectacionResponseDto,
   })
+  @ApiResponse({ status: 400, description: "Objetivo o fechas inválidos" })
+  @ApiResponse({ status: 404, description: "Línea, parada o estación no encontrada" })
+  @ApiResponse({ status: 409, description: "El objetivo ya está en ese estado" })
   create(
     @Body() createAfectacionDto: CreateAfectacionDto,
     @Req() request: Record<string, any>
@@ -67,58 +73,5 @@ export class AfectacionController {
   @ApiResponse({ status: 404, description: "Afectación no encontrada" })
   findOne(@Param("id") id: string): Promise<AfectacionResponseDto> {
     return this.afectacionService.findOne(id);
-  }
-
-  // Declared before PATCH ":id" for readability; ":id" only matches a single
-  // path segment, so "/:id/close" never collides with it regardless of order.
-  @Patch(":id/close")
-  @Permissions("INFRAESTRUCTURA_GESTIONAR")
-  @ApiOperation({
-    summary: "Cerrar una afectación (estado CERRADA, fechaFin = ahora)",
-  })
-  @ApiResponse({
-    status: 200,
-    description: "Afectación cerrada",
-    type: AfectacionResponseDto,
-  })
-  @ApiResponse({ status: 404, description: "Afectación no encontrada" })
-  @ApiResponse({ status: 409, description: "La afectación ya está cerrada" })
-  close(
-    @Param("id") id: string,
-    @Req() request: Record<string, any>
-  ): Promise<AfectacionResponseDto> {
-    return this.afectacionService.close(id, request.user.employeeId);
-  }
-
-  @Patch(":id")
-  @Permissions("INFRAESTRUCTURA_GESTIONAR")
-  @ApiOperation({ summary: "Actualizar una afectación" })
-  @ApiResponse({
-    status: 200,
-    description: "Afectación actualizada",
-    type: AfectacionResponseDto,
-  })
-  @ApiResponse({ status: 404, description: "Afectación no encontrada" })
-  update(
-    @Param("id") id: string,
-    @Body() updateAfectacionDto: UpdateAfectacionDto,
-    @Req() request: Record<string, any>
-  ): Promise<AfectacionResponseDto> {
-    return this.afectacionService.update(id, updateAfectacionDto, request.user.employeeId);
-  }
-
-  @Delete(":id")
-  @Permissions("INFRAESTRUCTURA_GESTIONAR")
-  @ApiOperation({ summary: "Eliminar (soft delete) una afectación" })
-  @ApiResponse({
-    status: 200,
-    description: "Afectación marcada como CERRADA",
-  })
-  @ApiResponse({ status: 404, description: "Afectación no encontrada" })
-  remove(
-    @Param("id") id: string,
-    @Req() request: Record<string, any>
-  ): Promise<void> {
-    return this.afectacionService.remove(id, request.user.employeeId);
   }
 }

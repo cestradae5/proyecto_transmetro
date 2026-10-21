@@ -1,5 +1,7 @@
-// PR#3 infraestructura-hardening — AfectacionService unit tests (mocked repositories).
-// Same pattern as parada.service.spec.ts: direct instantiation, no TestingModule.
+// AfectacionService unit tests (mocked repositories).
+// An afectación activates or deactivates exactly one línea, parada or estación:
+// the target state, the afectación row and the bitácora row are written in one
+// transaction. Rejected requests write nothing.
 
 import { jest } from "@jest/globals";
 import {
@@ -15,15 +17,12 @@ import {
   INFRASTRUCTURE_AUDIT_ACTIONS,
   INFRASTRUCTURE_ENTITY_TYPES,
 } from "../shared/infrastructure-audit.constants.js";
-import {
-  AfectacionEntity,
-  EstadoAfectacion,
-  TipoAfectacion,
-} from "./afectacion.entity.js";
+import { AccionAfectacion, AfectacionEntity } from "./afectacion.entity.js";
 import { AfectacionService } from "./afectacion.service.js";
 import type { CreateAfectacionDto } from "./dto/create-afectacion.dto.js";
-import type { ParadaEntity } from "../parada/parada.entity.js";
-import type { EstacionEntity } from "../estacion/estacion.entity.js";
+import { LineaEntity } from "../linea/linea.entity.js";
+import { ParadaEntity } from "../parada/parada.entity.js";
+import { EstacionEntity } from "../estacion/estacion.entity.js";
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
@@ -32,302 +31,299 @@ type MockRepository = {
   save: AnyMock;
   find: AnyMock;
   findOne: AnyMock;
-  count: AnyMock;
-  manager: { transaction: AnyMock };
 };
 
 const ACTOR = "7";
 
 function makeMockRepository(): MockRepository {
-  const repo: MockRepository = {
-    create: jest.fn(),
-    save: jest.fn(),
+  return {
+    create: jest.fn((data: unknown) => ({ ...(data as object) })),
+    save: jest.fn(async (row: unknown) => row),
     find: jest.fn(),
     findOne: jest.fn(),
-    count: jest.fn(),
-    manager: { transaction: jest.fn() },
-  };
-  const manager = { getRepository: () => repo } as unknown as EntityManager;
-  repo.manager.transaction.mockImplementation(
-    async (cb: (m: EntityManager) => unknown) => cb(manager)
-  );
-  return repo;
-}
-
-function makeAfectacion(
-  overrides: Partial<AfectacionEntity> = {}
-): AfectacionEntity {
-  return {
-    idAfectacion: "7",
-    tipoAfectacion: TipoAfectacion.MANTENIMIENTO,
-    motivo: "Reparación de acera",
-    fechaInicio: new Date("2025-01-15T08:00:00Z"),
-    fechaFin: undefined,
-    estadoAfectacion: EstadoAfectacion.ACTIVA,
-    idParada: "5",
-    idEstacion: undefined,
-    ...overrides,
   };
 }
 
 function baseDto(overrides: Partial<CreateAfectacionDto> = {}): CreateAfectacionDto {
   return {
-    tipoAfectacion: TipoAfectacion.MANTENIMIENTO as never,
-    motivo: "Reparación de acera",
-    fechaInicio: "2025-01-15T08:00:00Z",
-    estadoAfectacion: EstadoAfectacion.ACTIVA as never,
+    accion: AccionAfectacion.DESACTIVAR,
+    motivo: "Obra vial",
+    fechaInicio: "2026-10-21",
     ...overrides,
   };
 }
 
 describe("AfectacionService", () => {
-  let afectacionRepo: MockRepository;
+  let afectacionRepo: MockRepository & { manager: { transaction: AnyMock } };
+  let lineaRepo: MockRepository;
   let paradaRepo: MockRepository;
   let estacionRepo: MockRepository;
   let audit: { record: AnyMock };
   let service: AfectacionService;
 
   beforeEach(() => {
-    afectacionRepo = makeMockRepository();
+    lineaRepo = makeMockRepository();
     paradaRepo = makeMockRepository();
     estacionRepo = makeMockRepository();
+    const txAfectacionRepo = makeMockRepository();
+    txAfectacionRepo.save.mockImplementation(async (row: unknown) => ({
+      ...(row as object),
+      idAfectacion: "11",
+    }));
+    const repos = new Map<unknown, MockRepository>([
+      [LineaEntity, lineaRepo],
+      [ParadaEntity, paradaRepo],
+      [EstacionEntity, estacionRepo],
+      [AfectacionEntity, txAfectacionRepo],
+    ]);
+    const manager = {
+      getRepository: (entity: unknown) => repos.get(entity),
+    } as unknown as EntityManager;
+    afectacionRepo = {
+      ...txAfectacionRepo,
+      manager: {
+        transaction: jest.fn(async (cb: (m: EntityManager) => unknown) => cb(manager)),
+      },
+    };
     audit = { record: jest.fn() };
     service = new AfectacionService(
       afectacionRepo as unknown as Repository<AfectacionEntity>,
-      paradaRepo as unknown as Repository<ParadaEntity>,
-      estacionRepo as unknown as Repository<EstacionEntity>,
       audit as unknown as InfrastructureAuditService
     );
   });
 
   describe("create", () => {
-    it("creates an afectación at a parada", async () => {
-      paradaRepo.count.mockResolvedValue(1);
-      const saved = makeAfectacion();
-      afectacionRepo.create.mockReturnValue(saved);
-      afectacionRepo.save.mockResolvedValue(saved);
+    it("deactivates a línea, stores the afectación and records it in the bitácora", async () => {
+      const linea = { idLinea: "1", estadoLinea: "ACTIVA" };
+      lineaRepo.findOne.mockResolvedValue(linea);
+
+      const result = await service.create(
+        baseDto({ idLinea: "1", fechaFin: "2026-10-25" }),
+        ACTOR
+      );
+
+      expect(lineaRepo.findOne).toHaveBeenCalledWith({
+        where: { idLinea: "1" },
+        lock: { mode: "pessimistic_write" },
+      });
+      expect(lineaRepo.save).toHaveBeenCalledWith({ idLinea: "1", estadoLinea: "INACTIVA" });
+      expect(result).toEqual({
+        idAfectacion: "11",
+        accion: AccionAfectacion.DESACTIVAR,
+        motivo: "Obra vial",
+        fechaInicio: "2026-10-21",
+        fechaFin: "2026-10-25",
+        idLinea: "1",
+        idParada: null,
+        idEstacion: null,
+      });
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+        action: INFRASTRUCTURE_AUDIT_ACTIONS.DEACTIVATE,
+        entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+        entityId: "1",
+        detalle: {
+          idAfectacion: "11",
+          motivo: "Obra vial",
+          fechaInicio: "2026-10-21",
+          fechaFin: "2026-10-25",
+          estadoAnterior: "ACTIVA",
+          estadoNuevo: "INACTIVA",
+        },
+      });
+    });
+
+    it("activates an inactive línea", async () => {
+      lineaRepo.findOne.mockResolvedValue({ idLinea: "1", estadoLinea: "INACTIVA" });
+
+      await service.create(baseDto({ accion: AccionAfectacion.ACTIVAR, idLinea: "1" }), ACTOR);
+
+      expect(lineaRepo.save).toHaveBeenCalledWith({ idLinea: "1", estadoLinea: "ACTIVA" });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.anything(),
+        ACTOR,
+        expect.objectContaining({
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.ACTIVATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+          detalle: expect.objectContaining({ estadoAnterior: "INACTIVA", estadoNuevo: "ACTIVA" }),
+        })
+      );
+    });
+
+    it("deactivates a parada (CERRADA) and audits it as a parada", async () => {
+      paradaRepo.findOne.mockResolvedValue({ idParada: "5", estadoParada: "ACTIVA" });
 
       const result = await service.create(baseDto({ idParada: "5" }), ACTOR);
 
-      expect(paradaRepo.count).toHaveBeenCalledWith({ where: { idParada: "5" } });
-      expect(estacionRepo.count).not.toHaveBeenCalled();
-      expect(result.idAfectacion).toBe("7");
+      expect(paradaRepo.save).toHaveBeenCalledWith({ idParada: "5", estadoParada: "CERRADA" });
       expect(result.idParada).toBe("5");
-      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
-        action: INFRASTRUCTURE_AUDIT_ACTIONS.CREATE,
-        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-        entityId: "7",
-        detalle: { tipoAfectacion: TipoAfectacion.MANTENIMIENTO, idParada: "5", idEstacion: null },
-      });
+      expect(result.fechaFin).toBeNull();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.anything(),
+        ACTOR,
+        expect.objectContaining({
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.DEACTIVATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.PARADA,
+          entityId: "5",
+        })
+      );
     });
 
-    it("creates an afectación at an estación", async () => {
-      estacionRepo.count.mockResolvedValue(1);
-      const saved = makeAfectacion({ idParada: undefined, idEstacion: "3" });
-      afectacionRepo.create.mockReturnValue(saved);
-      afectacionRepo.save.mockResolvedValue(saved);
+    it("activates an estación in MANTENIMIENTO (ACTIVA)", async () => {
+      estacionRepo.findOne.mockResolvedValue({ idEstacion: "3", estadoEstacion: "MANTENIMIENTO" });
 
-      const result = await service.create(baseDto({ idEstacion: "3" }), ACTOR);
+      await service.create(baseDto({ accion: AccionAfectacion.ACTIVAR, idEstacion: "3" }), ACTOR);
 
-      expect(estacionRepo.count).toHaveBeenCalledWith({
-        where: { idEstacion: "3" },
-      });
-      expect(paradaRepo.count).not.toHaveBeenCalled();
-      expect(result.idEstacion).toBe("3");
+      expect(estacionRepo.save).toHaveBeenCalledWith({ idEstacion: "3", estadoEstacion: "ACTIVA" });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.anything(),
+        ACTOR,
+        expect.objectContaining({
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.ACTIVATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.ESTACION,
+          entityId: "3",
+          detalle: expect.objectContaining({
+            estadoAnterior: "MANTENIMIENTO",
+            estadoNuevo: "ACTIVA",
+          }),
+        })
+      );
     });
 
-    it("rejects both parada and estación (XOR violation)", async () => {
-      await expect(
-        service.create(baseDto({ idParada: "5", idEstacion: "3" }), ACTOR)
-      ).rejects.toThrow(BadRequestException);
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
+    it.each([
+      ["no target", {}],
+      ["línea and parada", { idLinea: "1", idParada: "5" }],
+      ["parada and estación", { idParada: "5", idEstacion: "3" }],
+    ])("rejects %s with 400 and writes nothing", async (_label, targets) => {
+      const error = await service.create(baseDto(targets), ACTOR).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe(
+        "Debe proporcionar exactamente uno: idLinea, idParada o idEstacion"
+      );
+      expect(afectacionRepo.manager.transaction).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it("rejects neither parada nor estación (XOR violation)", async () => {
-      await expect(service.create(baseDto(), ACTOR)).rejects.toThrow(
-        BadRequestException
+    it("rejects a fechaFin before fechaInicio with 400 and writes nothing", async () => {
+      const error = await service
+        .create(baseDto({ idLinea: "1", fechaInicio: "2026-10-21", fechaFin: "2026-10-20" }), ACTOR)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toBe(
+        "La fecha de fin no puede ser anterior a la fecha de inicio"
       );
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
+      expect(afectacionRepo.manager.transaction).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it("throws NotFoundException when the parada does not exist", async () => {
-      paradaRepo.count.mockResolvedValue(0);
+    it.each([
+      ["línea", { idLinea: "999" }, "Línea con ID 999 no encontrada"],
+      ["parada", { idParada: "999" }, "Parada con ID 999 no encontrada"],
+      ["estación", { idEstacion: "999" }, "Estación con ID 999 no encontrada"],
+    ])("throws 404 naming the missing %s and writes nothing", async (_label, targets, message) => {
+      const error = await service.create(baseDto(targets), ACTOR).catch((e: unknown) => e);
 
-      await expect(service.create(baseDto({ idParada: "999" }), ACTOR)).rejects.toThrow(
-        NotFoundException
-      );
-      // The message must name the entity idParada actually references, never the
-      // sibling idEstacion this payload deliberately leaves out.
-      await expect(service.create(baseDto({ idParada: "999" }), ACTOR)).rejects.toThrow(
-        "Parada con ID 999 no encontrada"
-      );
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as Error).message).toBe(message);
+      expect(lineaRepo.save).not.toHaveBeenCalled();
+      expect(paradaRepo.save).not.toHaveBeenCalled();
+      expect(estacionRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it("names the estación when idEstacion does not exist", async () => {
-      estacionRepo.count.mockResolvedValue(0);
+    it.each([
+      [
+        "deactivating an inactive línea",
+        AccionAfectacion.DESACTIVAR,
+        { idLinea: "1" },
+        () => lineaRepo.findOne.mockResolvedValue({ idLinea: "1", estadoLinea: "INACTIVA" }),
+        "La línea ya está inactiva",
+      ],
+      [
+        "activating an active parada",
+        AccionAfectacion.ACTIVAR,
+        { idParada: "5" },
+        () => paradaRepo.findOne.mockResolvedValue({ idParada: "5", estadoParada: "ACTIVA" }),
+        "La parada ya está activa",
+      ],
+      [
+        "deactivating a closed estación",
+        AccionAfectacion.DESACTIVAR,
+        { idEstacion: "3" },
+        () => estacionRepo.findOne.mockResolvedValue({ idEstacion: "3", estadoEstacion: "CERRADA" }),
+        "La estación ya está inactiva",
+      ],
+    ])("rejects %s with 409 and changes nothing", async (_label, accion, targets, arrange, message) => {
+      arrange();
 
-      await expect(service.create(baseDto({ idEstacion: "999" }), ACTOR)).rejects.toThrow(
-        "Estación con ID 999 no encontrada"
+      const error = await service
+        .create(baseDto({ accion, ...targets }), ACTOR)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as Error).message).toBe(message);
+      expect(((error as HttpException).getResponse() as { error?: string }).error).toBe(
+        "AFECTACION_SIN_CAMBIO"
       );
-      expect(estacionRepo.count).toHaveBeenCalledWith({
-        where: { idEstacion: "999" },
-      });
-      expect(paradaRepo.count).not.toHaveBeenCalled();
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
+      expect(lineaRepo.save).not.toHaveBeenCalled();
+      expect(paradaRepo.save).not.toHaveBeenCalled();
+      expect(estacionRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
   describe("findAll / findOne", () => {
-    it("maps every afectación to its response DTO", async () => {
-      afectacionRepo.find.mockResolvedValue([
-        makeAfectacion(),
-        makeAfectacion({ idAfectacion: "8" }),
-      ]);
+    const stored = {
+      idAfectacion: "7",
+      tipoAfectacion: "ACTIVAR",
+      motivo: "Fin de obra",
+      fechaInicio: "2026-10-21",
+      fechaFin: null,
+      estadoAfectacion: "APLICADA",
+      idLinea: null,
+      idParada: "5",
+      idEstacion: null,
+    };
+
+    it("lists afectaciones newest first, mapped to the response DTO", async () => {
+      afectacionRepo.find.mockResolvedValue([stored]);
 
       const result = await service.findAll();
 
-      expect(result.map((a) => a.idAfectacion)).toEqual(["7", "8"]);
+      expect(afectacionRepo.find).toHaveBeenCalledWith({
+        order: { fechaInicio: "DESC", idAfectacion: "DESC" },
+      });
+      expect(result).toEqual([
+        {
+          idAfectacion: "7",
+          accion: "ACTIVAR",
+          motivo: "Fin de obra",
+          fechaInicio: "2026-10-21",
+          fechaFin: null,
+          idLinea: null,
+          idParada: "5",
+          idEstacion: null,
+        },
+      ]);
     });
 
-    it("returns the afectación when found", async () => {
-      afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
+    it("returns one afectación when found", async () => {
+      afectacionRepo.findOne.mockResolvedValue(stored);
 
       const result = await service.findOne("7");
 
-      expect(afectacionRepo.findOne).toHaveBeenCalledWith({
-        where: { idAfectacion: "7" },
-      });
-      expect(result.motivo).toBe("Reparación de acera");
+      expect(afectacionRepo.findOne).toHaveBeenCalledWith({ where: { idAfectacion: "7" } });
+      expect(result.motivo).toBe("Fin de obra");
     });
 
-    it("throws NotFoundException when not found", async () => {
+    it("throws 404 when not found", async () => {
       afectacionRepo.findOne.mockResolvedValue(null);
 
       await expect(service.findOne("missing")).rejects.toThrow(
         "Afectación con ID missing no encontrada"
       );
-    });
-  });
-
-  describe("update", () => {
-    it("updates motivo", async () => {
-      afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
-      afectacionRepo.save.mockImplementation(async (a: AfectacionEntity) => a);
-
-      const result = await service.update("7", { motivo: "Reparación ampliada" }, ACTOR);
-
-      expect(result.motivo).toBe("Reparación ampliada");
-      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
-        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
-        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-        entityId: "7",
-        detalle: { changedFields: ["motivo"] },
-      });
-    });
-
-    it("rejects both idParada and idEstacion in the same update (XOR)", async () => {
-      afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
-
-      await expect(
-        service.update("7", { idParada: "5", idEstacion: "3" }, ACTOR)
-      ).rejects.toThrow(BadRequestException);
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
-      expect(audit.record).not.toHaveBeenCalled();
-    });
-
-    it("switching to an estación clears idParada", async () => {
-      afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
-      estacionRepo.count.mockResolvedValue(1);
-      afectacionRepo.save.mockImplementation(async (a: AfectacionEntity) => a);
-
-      const result = await service.update("7", { idEstacion: "3" }, ACTOR);
-
-      expect(result.idEstacion).toBe("3");
-      expect(result.idParada).toBeUndefined();
-    });
-
-    it("throws NotFoundException when not found", async () => {
-      afectacionRepo.findOne.mockResolvedValue(null);
-
-      await expect(service.update("missing", {}, ACTOR)).rejects.toThrow(
-        NotFoundException
-      );
-    });
-  });
-
-  describe("remove", () => {
-    it("soft-deletes by setting estadoAfectacion to CERRADA", async () => {
-      const existing = makeAfectacion();
-      afectacionRepo.findOne.mockResolvedValue(existing);
-      afectacionRepo.save.mockResolvedValue(existing);
-
-      await service.remove("7", ACTOR);
-
-      expect(afectacionRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ estadoAfectacion: EstadoAfectacion.CERRADA })
-      );
-      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
-        action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
-        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-        entityId: "7",
-        detalle: { tipoAfectacion: TipoAfectacion.MANTENIMIENTO },
-      });
-    });
-
-    it("throws NotFoundException when not found", async () => {
-      afectacionRepo.findOne.mockResolvedValue(null);
-
-      await expect(service.remove("missing", ACTOR)).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe("close", () => {
-    it("sets estado CERRADA and fechaFin to now", async () => {
-      afectacionRepo.findOne.mockResolvedValue(makeAfectacion());
-      afectacionRepo.save.mockImplementation(async (a: AfectacionEntity) => a);
-      const before = Date.now();
-
-      const result = await service.close("7", ACTOR);
-
-      const after = Date.now();
-      expect(result.estadoAfectacion).toBe(EstadoAfectacion.CERRADA);
-      expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
-        action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
-        entityType: INFRASTRUCTURE_ENTITY_TYPES.AFECTACION,
-        entityId: "7",
-        detalle: { estadoAfectacion: EstadoAfectacion.CERRADA, closed: true },
-      });
-      expect(result.fechaFin).toBeInstanceOf(Date);
-      expect(result.fechaFin!.getTime()).toBeGreaterThanOrEqual(before);
-      expect(result.fechaFin!.getTime()).toBeLessThanOrEqual(after);
-      expect(afectacionRepo.save).toHaveBeenCalledTimes(1);
-    });
-
-    it("throws NotFoundException when not found", async () => {
-      afectacionRepo.findOne.mockResolvedValue(null);
-
-      await expect(service.close("missing", ACTOR)).rejects.toThrow(NotFoundException);
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
-    });
-
-    it("throws 409 when the afectación is already closed", async () => {
-      const closedAt = new Date("2025-01-15T16:00:00Z");
-      afectacionRepo.findOne.mockResolvedValue(
-        makeAfectacion({
-          estadoAfectacion: EstadoAfectacion.CERRADA,
-          fechaFin: closedAt,
-        })
-      );
-
-      const error = await service.close("7", ACTOR).catch((e: unknown) => e);
-
-      expect(error).toBeInstanceOf(ConflictException);
-      expect(
-        ((error as HttpException).getResponse() as { error?: string }).error
-      ).toBe("AFECTACION_ALREADY_CLOSED");
-      expect(afectacionRepo.save).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,5 +1,6 @@
-// PR#3 infraestructura-hardening — AfectacionController tests (mocked service).
+// AfectacionController tests (mocked service).
 // Verifies delegation to AfectacionService and guard/permission/route metadata.
+// Afectaciones are an append-only history: there is no update, close or delete.
 
 import { jest } from "@jest/globals";
 import { RequestMethod } from "@nestjs/common";
@@ -16,19 +17,13 @@ import type { AfectacionService } from "./afectacion.service.js";
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
-type MockAfectacionService = Record<
-  "create" | "findAll" | "findOne" | "update" | "remove" | "close",
-  AnyMock
->;
+type MockAfectacionService = Record<"create" | "findAll" | "findOne", AnyMock>;
 
 function makeMockService(): MockAfectacionService {
   return {
     create: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
-    update: jest.fn(),
-    remove: jest.fn(),
-    close: jest.fn(),
   };
 }
 
@@ -77,47 +72,22 @@ describe("AfectacionController", () => {
 
       expect(service.findOne).toHaveBeenCalledWith("7");
     });
-
-    it("update() forwards id and body", async () => {
-      const dto = { motivo: "Reparación ampliada" };
-      service.update.mockResolvedValue({ idAfectacion: "7" });
-
-      await controller.update("7", dto, request);
-
-      expect(service.update).toHaveBeenCalledWith("7", dto, "7");
-    });
-
-    it("remove() forwards the id", async () => {
-      service.remove.mockResolvedValue(undefined);
-
-      await controller.remove("7", request);
-
-      expect(service.remove).toHaveBeenCalledWith("7", "7");
-    });
-
-    it("close() forwards the id and returns the closed afectación", async () => {
-      service.close.mockResolvedValue({
-        idAfectacion: "7",
-        estadoAfectacion: "CERRADA",
-      });
-
-      await expect(controller.close("7", request)).resolves.toEqual({
-        idAfectacion: "7",
-        estadoAfectacion: "CERRADA",
-      });
-      expect(service.close).toHaveBeenCalledWith("7", "7");
-    });
   });
 
   describe("routing metadata", () => {
-    it("maps close() to PATCH :id/close, distinct from update() PATCH :id", () => {
-      expect(Reflect.getMetadata(METHOD_METADATA, handler("close"))).toBe(
-        RequestMethod.PATCH
-      );
-      expect(Reflect.getMetadata(PATH_METADATA, handler("close"))).toBe(
-        ":id/close"
-      );
-      expect(Reflect.getMetadata(PATH_METADATA, handler("update"))).toBe(":id");
+    it("exposes no update, close or delete handler", () => {
+      const proto = AfectacionController.prototype as unknown as Record<string, unknown>;
+
+      expect(proto.update).toBeUndefined();
+      expect(proto.close).toBeUndefined();
+      expect(proto.remove).toBeUndefined();
+    });
+
+    it("maps create() to POST and findAll()/findOne() to GET", () => {
+      expect(Reflect.getMetadata(METHOD_METADATA, handler("create"))).toBe(RequestMethod.POST);
+      expect(Reflect.getMetadata(METHOD_METADATA, handler("findAll"))).toBe(RequestMethod.GET);
+      expect(Reflect.getMetadata(METHOD_METADATA, handler("findOne"))).toBe(RequestMethod.GET);
+      expect(Reflect.getMetadata(PATH_METADATA, handler("findOne"))).toBe(":id");
     });
 
     it("keeps the controller under infrastructure/afectaciones without an /api prefix", () => {
@@ -137,7 +107,7 @@ describe("AfectacionController", () => {
       expect(guards).toContain(AuthenticationGuard);
     });
 
-    it.each(["create", "findAll", "findOne", "update", "remove", "close"])(
+    it.each(["create", "findAll", "findOne"])(
       "requires INFRAESTRUCTURA_GESTIONAR permission on %s()",
       (method) => {
         expect(Reflect.getMetadata(PERMISSIONS_KEY, handler(method))).toEqual([
