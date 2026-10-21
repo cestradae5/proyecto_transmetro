@@ -3,13 +3,18 @@ import {
   IsNumberString,
   IsNotEmpty,
   IsEnum,
-  IsDateString,
+  IsISO8601,
   IsOptional,
+  Matches,
 } from "class-validator";
+import { Transform } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { AccionAfectacion } from "../afectacion.entity.js";
 
 export { AccionAfectacion };
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_MESSAGE = "must be a date in YYYY-MM-DD format";
 
 /**
  * Activates or deactivates exactly one línea, parada or estación. The
@@ -21,12 +26,14 @@ export class CreateAfectacionDto {
   accion!: AccionAfectacion;
 
   @ApiProperty({ description: "Motivo de la afectación" })
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
   @IsString()
   @IsNotEmpty()
   motivo!: string;
 
   @ApiProperty({ description: "Fecha de inicio (YYYY-MM-DD)", example: "2026-10-21" })
-  @IsDateString()
+  @Matches(DATE_ONLY, { message: `fechaInicio ${DATE_MESSAGE}` })
+  @IsISO8601({ strict: true })
   fechaInicio!: string;
 
   @ApiPropertyOptional({
@@ -34,7 +41,8 @@ export class CreateAfectacionDto {
     example: "2026-10-25",
   })
   @IsOptional()
-  @IsDateString()
+  @Matches(DATE_ONLY, { message: `fechaFin ${DATE_MESSAGE}` })
+  @IsISO8601({ strict: true })
   fechaFin?: string;
 
   @ApiPropertyOptional({ description: "ID de la línea (uno solo de idLinea, idParada, idEstacion)" })

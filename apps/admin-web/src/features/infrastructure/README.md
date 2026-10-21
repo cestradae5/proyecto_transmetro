@@ -45,7 +45,7 @@ following the hierarchy **Municipalidad > Línea > Parada**:
 - **"Otros registros"** (`components/grouped/secondary-sections.tsx`): a
   section switcher for Parqueos (edit/delete; created from the wizard), Todas
   las paradas (`ParadasTable`: every parada, including those in no línea, with
-  edit and delete) and Afectaciones ("Nueva afectación", edit, delete).
+  edit and delete) and Afectaciones ("Nueva afectación" and a read-only history).
 
 All dialogs are rendered by the page (not inside the cards), so background
 refetches never unmount an open dialog.
@@ -90,9 +90,9 @@ the page data (the wizard uses its own hook instances).
 infrastructure/
 ├── components/
 │   ├── afectaciones/
-│   │   ├── afectacion-dialog.tsx    # Create/Edit modal for disruptions
-│   │   ├── afectacion-form.tsx      # Form with XOR validation (parada OR estacion)
-│   │   └── afectaciones-table.tsx   # Table with search/filter
+│   │   ├── afectacion-dialog.tsx    # "Nueva Afectación" modal (create only)
+│   │   ├── afectacion-form.tsx      # Activar/Desactivar one línea, parada or estación
+│   │   └── afectaciones-table.tsx   # Read-only history with motivo search
 │   ├── lineas/
 │   │   ├── linea-dialog.tsx         # Create/Edit modal for lines
 │   │   ├── linea-form.tsx           # Form with color picker
@@ -234,18 +234,16 @@ A numbered route with a color identifier.
 
 **Special Feature:** Color picker input for `color_hex`
 
-### 5. Afectación (Disruption)
-Service disruptions affecting stops or stations.
+### 5. Afectación (Activate / deactivate)
+Activates or deactivates one línea, parada or estación and records it in the bitácora.
 
 **Fields:**
-- `tipo_afectacion` (required): DESVIO | CIERRE_TEMPORAL | MANTENIMIENTO
-- `motivo` (required): Text description of the disruption
-- `fecha_inicio` (required): Start date
-- `fecha_fin` (optional): End date
-- `id_parada` XOR `id_estacion` (required): Exactly ONE must be set
-- `estado` (required): ABIERTA | CERRADA
+- `accion` (required): DESACTIVAR (default) | ACTIVAR
+- target (required): exactly one of `idLinea`, `idParada`, `idEstacion`, chosen with the "Afecta a" type select
+- `motivo` (required): why it is activated or deactivated
+- `fechaInicio` (required) and `fechaFin` (optional, not before inicio): informative only, nothing reverts automatically
 
-**Special Feature:** XOR validation ensures a disruption affects either a stop OR a station, never both.
+**Effect:** the API sets the target state (línea ACTIVA/INACTIVA, parada and estación ACTIVA/CERRADA); the page then reloads líneas, paradas and estaciones. A target already in that state is rejected (409) and the message stays in the form. Afectaciones cannot be edited or deleted: to revert, apply the opposite action.
 
 ## API Integration
 

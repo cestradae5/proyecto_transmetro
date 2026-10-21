@@ -67,7 +67,7 @@ infrastructure/
 │       └── acceso-response.dto.ts
 ├── afectacion/
 │   ├── afectacion.entity.ts
-│   ├── afectacion.service.ts (+ .spec.ts)  # includes close()
+│   ├── afectacion.service.ts (+ .spec.ts)  # applies ACTIVAR/DESACTIVAR to the target
 │   ├── afectacion.controller.ts (+ .spec.ts)
 │   └── dto/
 ├── shared/
@@ -186,12 +186,25 @@ fires at 150% of it; a station uses its parada's capacity
 ### Afectaciones — `/infrastructure/afectaciones`
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create |
-| GET | `/` | List all |
+| POST | `/` | Apply: `{ accion: ACTIVAR\|DESACTIVAR, motivo, fechaInicio, fechaFin?, idLinea\|idParada\|idEstacion }` |
+| GET | `/` | List all, newest first |
 | GET | `/:id` | Get one |
-| PATCH | `/:id/close` | Close: sets `estado=CERRADA`, `fechaFin=now()` (PR#3) |
-| PATCH | `/:id` | Update |
-| DELETE | `/:id` | Soft delete → `CERRADA` |
+
+An afectación activates or deactivates exactly one línea, parada or estación
+(`chk_afectacion_objetivo`). POST locks the target, sets its state (línea
+`ACTIVA`/`INACTIVA`, parada and estación `ACTIVA`/`CERRADA`), stores the
+afectación (`estado_afectacion = APLICADA`) and writes the bitácora row in one
+transaction. Dates are YYYY-MM-DD and informative only: nothing reverts
+automatically; reverting is a new afectación with the opposite action.
+
+| Status | When |
+| --- | --- |
+| 400 | Not exactly one target, `fechaFin` before `fechaInicio`, or an invalid field |
+| 404 | `Línea\|Parada\|Estación con ID … no encontrada` |
+| 409 | `La línea\|parada\|estación ya está activa\|inactiva` (`AFECTACION_SIN_CAMBIO`) |
+
+Afectaciones are an append-only history: there is no PATCH or DELETE, since
+editing an applied action would desync it from the target's real state.
 
 ## Audit (bitácora)
 
@@ -209,7 +222,8 @@ no row.
 
 | Entity type (`entidad_tipo`) | Actions (`accion`) | `entidad_id` |
 | --- | --- | --- |
-| `municipalidad`, `acceso`, `parqueo`, `parada`, `estacion`, `linea`, `afectacion` | `create`, `update`, `remove` (afectación `close` is an `update`) | the row's id |
+| `municipalidad`, `acceso`, `parqueo`, `parada`, `estacion`, `linea` | `create`, `update`, `remove` | the row's id |
+| `linea`, `parada`, `estacion` (from an afectación) | `activate`, `deactivate` | the target's id; `detalle` = `idAfectacion`, `motivo`, `fechaInicio`, `fechaFin`, `estadoAnterior`, `estadoNuevo` |
 | `linea_municipalidad` | `link`, `unlink` | the línea id |
 | `estacion_linea` | `link`, `update`, `unlink` | the estación id |
 | `linea_parada` | `link`, `update`, `unlink`, `reorder` | the línea id |
@@ -232,7 +246,7 @@ the TypeORM entity enums must match exactly:
 | `ParqueoEntity` | `EstadoParqueo` | `ABIERTO`, `CERRADO`, `MANTENIMIENTO` |
 | `LineaEntity` | `EstadoLinea` | **`ACTIVA`, `INACTIVA` only** |
 | `LineaEntity` | `TipoRecorrido` | **`CIRCULAR`, `LINEAL` only** (not `IDA_VUELTA`/`DIRECTO`) |
-| `AfectacionEntity` | (estado) | `ACTIVA`, `CERRADA`, `PENDIENTE` (spec drift — see below) |
+| `AfectacionEntity` | `AccionAfectacion` (`tipo_afectacion`) | `ACTIVAR`, `DESACTIVAR` (older rows keep their original tipo) |
 
 `EstadoLinea` was originally coded as `ACTIVA`/`CERRADA`/`MANTENIMIENTO` (the
 same shape as `EstadoParada`) and `TipoRecorrido` as
@@ -264,28 +278,15 @@ Deliberately deferred during `infraestructura-hardening` (tracked here so
 future readers aren't surprised — not blocking, just not yet fixed):
 
 1. **Column length drift**: `numeroLinea` is `varchar(10)` in the entity vs
-   `varchar(20)` in the DB; `afectacion` date columns are typed `date` in
-   TypeORM vs `TIMESTAMPTZ` in the DB (`close()`'s time-of-day may be
-   truncated); `tipoAfectacion` is `varchar(20)` vs `varchar(50)` in the DB.
-2. **Afectación estado spec drift**: entity/DB use
-   `ACTIVA`/`CERRADA`/`PENDIENTE`; the original spec called for
-   `ABIERTA`/`EN_REVISION`. No DB `CHECK` constraint exists on this column,
-   so it doesn't crash — it's purely a naming mismatch. The frontend
-   `afectacion-form.tsx` defaults new records to `'ABIERTA'`, which has no
-   matching `<option>` in its own `<select>` — see the frontend test suite's
-   `afectacion-form.spec.tsx` for a test documenting this.
-3. **Afectación FK immutability**: the spec expects a `400
-   CANNOT_CHANGE_LOCATION` error when a `PATCH` tries to change an
-   afectación's `idParada`/`idEstacion`. The current `update()` allows the
-   change silently.
-4. **Junction add validation error shape**: the spec expects `400
+   `varchar(20)` in the DB.
+2. **Junction add validation error shape**: the spec expects `400
    PARADA_NOT_FOUND` when `POST /:id/paradas` references a nonexistent
    parada. The implementation returns `404`, matching the existing FK-error
    convention used elsewhere in this module instead.
-5. **`force` hard-delete asymmetry**: `ParadaService.remove()` and
+3. **`force` hard-delete asymmetry**: `ParadaService.remove()` and
    `EstacionService.remove()` accept a `force` query param for a hard delete;
    `LineaService.remove()` does not expose the same option.
-6. **`validateForeignKey` is triplicated with divergent contracts**:
+4. **`validateForeignKey` is triplicated with divergent contracts**:
    `shared/validators.ts` (Nest `NotFoundException`, `"… no encontrada"`, FK
    name supplied by the caller, 4 args) and the two byte-identical
    `fk-validation.helper.ts` files under `shared/` and

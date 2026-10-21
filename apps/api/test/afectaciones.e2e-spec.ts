@@ -302,7 +302,58 @@ describe("Afectaciones activar/desactivar (e2e)", () => {
     expect((await newAuditRows()).length).toBe(auditBefore);
   });
 
+  // Hashes every table a rejected request could touch.
+  async function snapshot(): Promise<string> {
+    const q = async (sql: string, params: unknown[] = []) => JSON.stringify(await rows(sql, params));
+    return [
+      await q(`SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY id_afectacion), '')) h FROM tbl_afectacion t`),
+      await q(`SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY id_bitacora), '')) h FROM tbl_bitacora t`),
+      await q(`SELECT estado_linea FROM tbl_linea WHERE id_linea = $1`, [lineaId]),
+      await q(
+        `SELECT id_parada, estado_parada FROM tbl_parada WHERE id_parada = ANY($1::bigint[]) ORDER BY 1`,
+        [[paradaId, estacionParadaId]],
+      ),
+      await q(`SELECT estado_estacion FROM tbl_estacion WHERE id_estacion = $1`, [estacionId]),
+    ].join("\n");
+  }
+
+  const base = { accion: "DESACTIVAR", motivo: "m", fechaInicio: "2026-10-21" };
+  it.each<[string, () => Record<string, unknown>, number, string | null]>([
+    ["missing línea", () => ({ ...base, idLinea: "999999999" }), 404, "Línea con ID 999999999 no encontrada"],
+    ["missing parada", () => ({ ...base, idParada: "999999999" }), 404, "Parada con ID 999999999 no encontrada"],
+    ["missing estación", () => ({ ...base, idEstacion: "999999999" }), 404, "Estación con ID 999999999 no encontrada"],
+    [
+      "fechaFin before fechaInicio",
+      () => ({ ...base, fechaFin: "2026-10-20", idLinea: lineaId }),
+      400,
+      "La fecha de fin no puede ser anterior a la fecha de inicio",
+    ],
+    [
+      "three targets",
+      () => ({ ...base, idLinea: lineaId, idParada: paradaId, idEstacion: estacionId }),
+      400,
+      "Debe proporcionar exactamente uno: idLinea, idParada o idEstacion",
+    ],
+    ["blank motivo", () => ({ ...base, motivo: "   ", idLinea: lineaId }), 400, null],
+    ["legacy accion", () => ({ ...base, accion: "TEMPORAL", idLinea: lineaId }), 400, null],
+    ["datetime fechaInicio", () => ({ ...base, fechaInicio: "2026-10-21T15:30:00Z", idLinea: lineaId }), 400, null],
+    ["negative id", () => ({ ...base, idLinea: "-1" }), 400, null],
+    ["active parada", () => ({ ...base, accion: "ACTIVAR", idParada: estacionParadaId }), 409, "La parada ya está activa"],
+  ])("%s is rejected and changes nothing", async (_label, body, status, message) => {
+    const before = await snapshot();
+
+    const res = await post(body());
+
+    expect(res.status).toBe(status);
+    if (message) expect(res.body.message).toBe(message);
+    expect(await snapshot()).toBe(before);
+  });
+
   it("PATCH and DELETE are no longer routes", async () => {
+    await request(app.getHttpServer())
+      .patch("/infrastructure/afectaciones/1/close")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(404);
     await request(app.getHttpServer())
       .patch("/infrastructure/afectaciones/1")
       .set("Authorization", `Bearer ${token}`)

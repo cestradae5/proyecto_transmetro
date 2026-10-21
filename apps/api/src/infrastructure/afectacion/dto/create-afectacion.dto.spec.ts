@@ -23,8 +23,19 @@ describe("CreateAfectacionDto", () => {
     expect(await errorsOf({ ...valid, accion })).toEqual(["accion"]);
   });
 
-  it("rejects an empty motivo", async () => {
-    expect(await errorsOf({ ...valid, motivo: "" })).toEqual(["motivo"]);
+  it.each(["", "   "])("rejects the blank motivo %j", async (motivo) => {
+    expect(await errorsOf({ ...valid, motivo })).toEqual(["motivo"]);
+  });
+
+  it("trims the motivo", async () => {
+    expect(plainToInstance(CreateAfectacionDto, { ...valid, motivo: "  Obra vial  " }).motivo).toBe(
+      "Obra vial"
+    );
+  });
+
+  it.each(["fechaInicio", "fechaFin"])("rejects a datetime or invalid %s", async (field) => {
+    expect(await errorsOf({ ...valid, [field]: "2026-10-21T15:30:00Z" })).toEqual([field]);
+    expect(await errorsOf({ ...valid, [field]: "2026-13-45" })).toEqual([field]);
   });
 
   it.each(["idLinea", "idParada", "idEstacion"])("rejects a non-numeric %s", async (field) => {
