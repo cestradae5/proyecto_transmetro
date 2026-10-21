@@ -29,8 +29,24 @@ import { apiClient } from "../../lib/api-client";
 const mockGet = vi.mocked(apiClient.get);
 const mockPost = vi.mocked(apiClient.post);
 const mockDelete = vi.mocked(apiClient.delete);
+const mockPatch = vi.mocked(apiClient.patch);
 
 const MIXCO = { idMunicipalidad: "1", nombreMunicipalidad: "Mixco", departamento: "Guatemala", estadoMunicipalidad: "ACTIVA" };
+// Every list an activate/deactivate cascade can change (L10).
+const CASCADE_LISTS = [
+  "/infrastructure/municipalidades",
+  "/infrastructure/lineas",
+  "/infrastructure/paradas",
+  "/infrastructure/estaciones",
+  "/infrastructure/afectaciones",
+];
+
+async function expectRefetched(before: number[]) {
+  await waitFor(() => {
+    CASCADE_LISTS.forEach((path, i) => expect(getCalls(path), path).toBeGreaterThan(before[i]!));
+  });
+}
+
 // Numeric id on purpose: ids may arrive as numbers or strings.
 const VILLA = { idMunicipalidad: 2, nombreMunicipalidad: "Villa Nueva", departamento: "Guatemala", estadoMunicipalidad: "INACTIVA" };
 
@@ -67,6 +83,7 @@ function row(idLineaParada: string, orden: number, p: Parada, minutos = 5): Line
 
 let municipalidades: unknown[] = [];
 let lineas: unknown[] = [];
+let afectaciones: unknown[] = [];
 let failures: Set<string>;
 
 function getCalls(path: string) {
@@ -77,6 +94,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   municipalidades = [MIXCO, VILLA];
   lineas = [L1, L2, L3];
+  afectaciones = [];
   failures = new Set();
   mockGet.mockImplementation(async (path: string) => {
     if (failures.has(path)) {
@@ -96,6 +114,8 @@ beforeEach(() => {
         return PARQUEOS;
       case "/infrastructure/paradas":
         return PARADAS;
+      case "/infrastructure/afectaciones":
+        return afectaciones;
       case "/infrastructure/lineas/10/paradas":
         return [row("101", 1, PARADAS[0]!, 7), row("102", 2, PARADAS[1]!)];
       default:
@@ -307,6 +327,35 @@ describe("InfrastructurePage actions", () => {
     expect(within(await findGroup("Villa Nueva")).queryByRole("button", { name: "Desactivar municipalidad Villa Nueva" })).not.toBeInTheDocument();
   });
 
+  it("refreshes every cascaded list after deactivating a municipalidad", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPage();
+    const mixco = await findGroup("Mixco");
+    await findLinea(mixco, "L1 - Mixco Express");
+    const before = CASCADE_LISTS.map(getCalls);
+
+    fireEvent.click(within(mixco).getByRole("button", { name: "Desactivar municipalidad Mixco" }));
+
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("/infrastructure/municipalidades/1"));
+    await expectRefetched(before);
+  });
+
+  it("refreshes every cascaded list after editing a municipalidad", async () => {
+    mockPatch.mockResolvedValue({ ...MIXCO, estadoMunicipalidad: "INACTIVA" });
+    renderPage();
+    const mixco = await findGroup("Mixco");
+    await findLinea(mixco, "L1 - Mixco Express");
+
+    fireEvent.click(within(mixco).getByRole("button", { name: "Editar municipalidad Mixco" }));
+    const dialog = screen.getByRole("dialog", { name: "Editar Municipalidad" });
+    const before = CASCADE_LISTS.map(getCalls);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith("/infrastructure/municipalidades/1", expect.any(Object)));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Editar Municipalidad" })).not.toBeInTheDocument());
+    await expectRefetched(before);
+  });
+
   it("shows a Spanish error when deactivating fails", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     mockDelete.mockRejectedValueOnce(new Error("Error de conexión. Por favor, intente de nuevo."));
@@ -417,14 +466,10 @@ describe("InfrastructurePage secondary sections and creation", () => {
     return dialog;
   }
 
-  it("creates an afectación, closes the dialog and refreshes líneas, paradas and estaciones", async () => {
+  it("creates an afectación, closes the dialog and refreshes every cascaded list", async () => {
     mockPost.mockResolvedValueOnce({ idAfectacion: "5" });
     const dialog = await openAfectacionDialog();
-    const before = {
-      lineas: getCalls("/infrastructure/lineas"),
-      paradas: getCalls("/infrastructure/paradas"),
-      estaciones: getCalls("/infrastructure/estaciones"),
-    };
+    const before = CASCADE_LISTS.map(getCalls);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
 
@@ -435,11 +480,75 @@ describe("InfrastructurePage secondary sections and creation", () => {
       fechaInicio: "2026-04-01",
       idLinea: "10",
     });
-    await waitFor(() => {
-      expect(getCalls("/infrastructure/lineas")).toBeGreaterThan(before.lineas);
-      expect(getCalls("/infrastructure/paradas")).toBeGreaterThan(before.paradas);
-      expect(getCalls("/infrastructure/estaciones")).toBeGreaterThan(before.estaciones);
-    });
+    await expectRefetched(before);
+  });
+
+  it("edits an afectación from its row with a PATCH of the changed fields and refreshes every cascaded list", async () => {
+    afectaciones = [
+      {
+        idAfectacion: "5",
+        accion: "DESACTIVAR",
+        motivo: "Desfile",
+        fechaInicio: "2026-04-01",
+        fechaFin: null,
+        idMunicipalidad: null,
+        idLinea: "10",
+        idParada: null,
+        idEstacion: null,
+        cambios: [{ entidadTipo: "linea", entidadId: "10", estadoAnterior: "ACTIVA", estadoNuevo: "INACTIVA", revertido: false }],
+      },
+    ];
+    mockPatch.mockResolvedValueOnce({ ...(afectaciones[0] as object), accion: "ACTIVAR" });
+    renderPage();
+    const secondary = screen.getByRole("region", { name: "Otros registros" });
+    await within(secondary).findByText("Central Norte");
+    fireEvent.click(await within(secondary).findByRole("button", { name: "Afectaciones (1)" }));
+    fireEvent.click(within(secondary).getByRole("button", { name: /^Editar afectación/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "Editar Afectación" });
+    expect(within(dialog).getByLabelText("Línea *")).toHaveValue("10");
+    expect(within(dialog).getByLabelText("Línea *")).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Activar" }));
+    fireEvent.change(within(dialog).getByLabelText("Fecha fin"), { target: { value: "2026-04-03" } });
+    const before = CASCADE_LISTS.map(getCalls);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Editar Afectación" })).not.toBeInTheDocument());
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+    expect(mockPatch).toHaveBeenCalledWith("/infrastructure/afectaciones/5", { accion: "ACTIVAR", fechaFin: "2026-04-03" });
+    expect(mockPost).not.toHaveBeenCalled();
+    await expectRefetched(before);
+  });
+
+  it("keeps the edit dialog open with the 409 message when the API rejects the edit", async () => {
+    afectaciones = [
+      {
+        idAfectacion: "5",
+        accion: "DESACTIVAR",
+        motivo: "Desfile",
+        fechaInicio: "2026-04-01",
+        fechaFin: null,
+        idMunicipalidad: null,
+        idLinea: "10",
+        idParada: null,
+        idEstacion: null,
+        cambios: [],
+      },
+    ];
+    mockPatch.mockRejectedValueOnce(new Error("Solo la afectación más reciente de este objetivo puede cambiar de acción"));
+    renderPage();
+    const secondary = screen.getByRole("region", { name: "Otros registros" });
+    await within(secondary).findByText("Central Norte");
+    fireEvent.click(await within(secondary).findByRole("button", { name: "Afectaciones (1)" }));
+    fireEvent.click(within(secondary).getByRole("button", { name: /^Editar afectación/ }));
+    const dialog = screen.getByRole("dialog", { name: "Editar Afectación" });
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Activar" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Solo la afectación más reciente de este objetivo puede cambiar de acción",
+    );
+    expect(screen.getByRole("dialog", { name: "Editar Afectación" })).toBeInTheDocument();
   });
 
   it("keeps the afectación dialog open with the server message when the API rejects it", async () => {

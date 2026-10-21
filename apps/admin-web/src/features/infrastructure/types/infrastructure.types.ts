@@ -138,15 +138,28 @@ export interface Acceso {
  * estación. `accion` is a string because legacy rows may carry old types
  * (TEMPORAL...), shown as-is.
  */
+/** One state change an afectación made: its target or an item it cascaded to. */
+export interface AfectacionCambio {
+  entidadTipo: 'municipalidad' | 'linea' | 'parada' | 'estacion';
+  entidadId: string;
+  estadoAnterior: string;
+  estadoNuevo: string;
+  /** True once an edit back to ACTIVAR (or a later activation) restored it. */
+  revertido: boolean;
+}
+
 export interface Afectacion {
   idAfectacion: string;
   accion: string;
   motivo: string;
   fechaInicio: string;
   fechaFin: string | null;
+  idMunicipalidad: string | null;
   idLinea: string | null;
   idParada: string | null;
   idEstacion: string | null;
+  /** Oldest first. */
+  cambios: AfectacionCambio[];
 }
 
 // esEstacion/idEstacion are derived read-only fields: never sent to the API.
@@ -202,7 +215,15 @@ export type CreateAfectacionDto = {
   motivo: string;
   fechaInicio: string;
   fechaFin?: string;
-} & ({ idLinea: string } | { idParada: string } | { idEstacion: string });
+} & ({ idMunicipalidad: string } | { idLinea: string } | { idParada: string } | { idEstacion: string });
+
+/** PATCH body: only the changed fields; the target is fixed. `fechaFin: null` clears it. */
+export interface UpdateAfectacionDto {
+  accion?: AccionAfectacion;
+  motivo?: string;
+  fechaInicio?: string;
+  fechaFin?: string | null;
+}
 
 export interface LineaParada {
   idLineaParada: string;

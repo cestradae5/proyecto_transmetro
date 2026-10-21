@@ -3,6 +3,7 @@ import type {
   Afectacion,
   Estacion,
   Linea,
+  Municipalidad,
   Parada,
   ParadaFormValues,
   Parqueo,
@@ -19,6 +20,7 @@ interface SecondarySectionsProps {
   parqueos: Parqueo[];
   paradas: Parada[];
   estaciones: Estacion[];
+  municipalidades: Municipalidad[];
   lineas: Linea[];
   afectaciones: Afectacion[];
   onUpdateParqueo: (id: number, data: UpdateParqueoDto) => Promise<unknown>;
@@ -26,12 +28,13 @@ interface SecondarySectionsProps {
   onSaveParada: (paradaId: number | string, values: ParadaFormValues) => Promise<void>;
   onDeleteParada: (id: number | string) => Promise<unknown>;
   onNewAfectacion: () => void;
+  onEditAfectacion: (afectacion: Afectacion) => void;
 }
 
 /**
  * Records that do not hang from a single línea: parqueos (shared by líneas),
  * every parada (including those in no línea, and their delete) and the
- * read-only history of afectaciones.
+ * history of afectaciones (editable, never deleted).
  */
 export function SecondarySections(props: SecondarySectionsProps) {
   const [section, setSection] = useState<Section>('parqueos');
@@ -89,9 +92,11 @@ export function SecondarySections(props: SecondarySectionsProps) {
       {section === 'afectaciones' && (
         <AfectacionesTable
           afectaciones={props.afectaciones}
+          municipalidades={props.municipalidades}
           lineas={props.lineas}
           paradas={props.paradas}
           estaciones={props.estaciones}
+          onEdit={props.onEditAfectacion}
         />
       )}
     </section>

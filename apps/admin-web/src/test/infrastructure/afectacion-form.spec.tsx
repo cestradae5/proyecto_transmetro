@@ -1,7 +1,22 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { AfectacionForm } from "../../features/infrastructure/components/afectaciones/afectacion-form";
-import type { Estacion, Linea, Parada } from "../../features/infrastructure/types/infrastructure.types";
+import type {
+  Afectacion,
+  Estacion,
+  Linea,
+  Municipalidad,
+  Parada,
+} from "../../features/infrastructure/types/infrastructure.types";
+
+const MUNICIPALIDADES: Municipalidad[] = [
+  {
+    idMunicipalidad: "4",
+    nombreMunicipalidad: "Villa Nueva",
+    departamento: "Guatemala",
+    estadoMunicipalidad: "ACTIVA" as Municipalidad["estadoMunicipalidad"],
+  },
+];
 
 const LINEAS: Linea[] = [
   {
@@ -38,10 +53,18 @@ const ESTACIONES: Estacion[] = [
   },
 ];
 
-function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined), afectacion?: Afectacion) {
   const onCancel = vi.fn();
   render(
-    <AfectacionForm lineas={LINEAS} paradas={PARADAS} estaciones={ESTACIONES} onSubmit={onSubmit} onCancel={onCancel} />,
+    <AfectacionForm
+      municipalidades={MUNICIPALIDADES}
+      lineas={LINEAS}
+      paradas={PARADAS}
+      estaciones={ESTACIONES}
+      afectacion={afectacion}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    />,
   );
   return { onSubmit, onCancel };
 }
@@ -82,7 +105,7 @@ describe("AfectacionForm", () => {
 
     expect(await screen.findByText("El motivo es requerido")).toBeInTheDocument();
     expect(screen.getByText("La fecha de inicio es requerida")).toBeInTheDocument();
-    expect(screen.getByText("Seleccione la línea, parada o estación afectada")).toBeInTheDocument();
+    expect(screen.getByText("Seleccione la municipalidad, línea, parada o estación afectada")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -200,6 +223,31 @@ describe("AfectacionForm", () => {
     expect(screen.getByRole("button", { name: "Guardar" })).not.toBeDisabled();
   });
 
+  it("offers Municipalidad as a target, showing its current estado, and submits only idMunicipalidad", async () => {
+    const { onSubmit } = renderForm();
+
+    expect(within(tipoSelect()).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Municipalidad",
+      "Línea",
+      "Parada",
+      "Estación",
+    ]);
+    fireEvent.change(tipoSelect(), { target: { value: "municipalidad" } });
+    expect(screen.getByLabelText("Municipalidad *")).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Villa Nueva (ACTIVA)" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Municipalidad *"), { target: { value: "4" } });
+    fillCommon({ motivo: "Cierre municipal", fechaInicio: "2026-05-01" });
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({
+      accion: "DESACTIVAR",
+      motivo: "Cierre municipal",
+      fechaInicio: "2026-05-01",
+      idMunicipalidad: "4",
+    });
+  });
+
   it("calls onCancel from Cancelar", () => {
     const { onCancel, onSubmit } = renderForm();
 
@@ -207,5 +255,107 @@ describe("AfectacionForm", () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+const EXISTING: Afectacion = {
+  idAfectacion: "12",
+  accion: "DESACTIVAR",
+  motivo: "Cierre municipal",
+  fechaInicio: "2026-05-01",
+  fechaFin: "2026-05-10",
+  idMunicipalidad: "4",
+  idLinea: null,
+  idParada: null,
+  idEstacion: null,
+  cambios: [],
+};
+
+describe("AfectacionForm edit mode", () => {
+  it("prefills every field and shows the target fixed (disabled)", () => {
+    renderForm(undefined, EXISTING);
+
+    expect(screen.getByRole("radio", { name: "Desactivar" })).toBeChecked();
+    expect(tipoSelect()).toHaveValue("municipalidad");
+    expect(tipoSelect()).toBeDisabled();
+    expect(screen.getByLabelText("Municipalidad *")).toHaveValue("4");
+    expect(screen.getByLabelText("Municipalidad *")).toBeDisabled();
+    expect(motivo()).toHaveValue("Cierre municipal");
+    expect(fechaInicio()).toHaveValue("2026-05-01");
+    expect(fechaFin()).toHaveValue("2026-05-10");
+    expect(screen.getByRole("radio", { name: "Activar" })).not.toBeDisabled();
+    expect(motivo()).not.toBeDisabled();
+  });
+
+  it("submits only the changed acción", async () => {
+    const { onSubmit } = renderForm(undefined, EXISTING);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Activar" }));
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({ accion: "ACTIVAR" });
+  });
+
+  it("submits changed motivo and fechas, sending null when fecha fin is cleared", async () => {
+    const { onSubmit } = renderForm(undefined, EXISTING);
+
+    fillCommon({ motivo: " Cierre por obras ", fechaInicio: "2026-05-02", fechaFin: "" });
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({
+      motivo: "Cierre por obras",
+      fechaInicio: "2026-05-02",
+      fechaFin: null,
+    });
+  });
+
+  it("does not submit when nothing changed", async () => {
+    const { onSubmit } = renderForm(undefined, EXISTING);
+
+    submit();
+
+    expect(await screen.findByText("No hay cambios para guardar")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("prefills a línea target and a legacy datetime fecha inicio without counting it as a change", async () => {
+    const { onSubmit } = renderForm(undefined, {
+      ...EXISTING,
+      accion: "TEMPORAL",
+      fechaInicio: "2026-01-10T00:00:00.000Z",
+      fechaFin: null,
+      idMunicipalidad: null,
+      idLinea: "7",
+    });
+
+    expect(tipoSelect()).toHaveValue("linea");
+    expect(screen.getByLabelText("Línea *")).toHaveValue("7");
+    expect(screen.getByRole("radio", { name: "Desactivar" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Activar" })).not.toBeChecked();
+    expect(fechaInicio()).toHaveValue("2026-01-10");
+
+    fillCommon({ motivo: "Dato corregido" });
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({ motivo: "Dato corregido" });
+  });
+
+  it("shows a 409 server message and keeps the edited values", async () => {
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValue(new Error("Solo la afectación más reciente de este objetivo puede cambiar de acción"));
+    renderForm(onSubmit, EXISTING);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Activar" }));
+    submit();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Solo la afectación más reciente de este objetivo puede cambiar de acción",
+    );
+    expect(screen.getByRole("radio", { name: "Activar" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Guardar" })).not.toBeDisabled();
   });
 });
