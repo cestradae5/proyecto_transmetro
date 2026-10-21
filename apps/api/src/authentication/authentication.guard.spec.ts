@@ -23,7 +23,7 @@ type MockAuthenticationService = {
 };
 
 // Helper para crear un MeResult con scope completo.
-// Module vocabulary matches the 8 canonical modules + self_profile from
+// Module vocabulary matches the 6 role-based modules + self_profile from
 // PERMISSION_TO_MODULE.
 function makeMeResult(overrides: Partial<MeResult> = {}): MeResult {
   return {
@@ -38,7 +38,6 @@ function makeMeResult(overrides: Partial<MeResult> = {}): MeResult {
         "fleet",
         "personnel",
         "operational_alerts",
-        "central_operations_panel",
         "reports",
         "recharge_reporting",
         "self_profile",
