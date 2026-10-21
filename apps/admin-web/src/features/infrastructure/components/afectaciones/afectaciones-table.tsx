@@ -1,41 +1,47 @@
 import { useState } from 'react';
-import type { Afectacion, Parada, Estacion } from '../../types/infrastructure.types';
-import { AfectacionDialog } from './afectacion-dialog';
+import { AccionAfectacion, type Afectacion, type Estacion, type Linea, type Parada } from '../../types/infrastructure.types';
 
 interface AfectacionesTableProps {
   afectaciones: Afectacion[];
+  lineas: Linea[];
   paradas: Parada[];
   estaciones: Estacion[];
-  onUpdate: (id: number, data: any) => Promise<any>;
-  onDelete: (id: number) => Promise<any>;
 }
 
-export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate, onDelete }: AfectacionesTableProps) {
+const ACCION_BADGES: Record<string, { label: string; className: string }> = {
+  [AccionAfectacion.ACTIVAR]: { label: 'Activar', className: 'bg-green-100 text-green-700' },
+  [AccionAfectacion.DESACTIVAR]: { label: 'Desactivar', className: 'bg-red-100 text-red-700' },
+};
+
+// Reads the calendar date from the string itself: new Date('YYYY-MM-DD') is UTC
+// midnight and would show the previous day in Guatemala.
+function formatFecha(fecha: string | null) {
+  if (!fecha) return '—';
+  const [year, month, day] = fecha.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** Read-only history of afectaciones (newest first, as returned by the API). */
+export function AfectacionesTable({ afectaciones, lineas, paradas, estaciones }: AfectacionesTableProps) {
   const [search, setSearch] = useState('');
-  const [editingAfectacion, setEditingAfectacion] = useState<Afectacion | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const filteredAfectaciones = afectaciones.filter((a) =>
-    a.motivo.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredAfectaciones = afectaciones.filter((a) => a.motivo.toLowerCase().includes(search.toLowerCase()));
 
-  const handleEdit = (afectacion: Afectacion) => {
-    setEditingAfectacion(afectacion);
-    setIsDialogOpen(true);
-  };
-
-  const handleDelete = async (id: number) => {
-    if (confirm('¿Está seguro de eliminar esta afectación?')) {
-      await onDelete(id);
+  const targetName = (afectacion: Afectacion) => {
+    if (afectacion.idLinea != null) {
+      const id = String(afectacion.idLinea);
+      const linea = lineas.find((l) => String(l.idLinea) === id);
+      return `Línea: ${linea ? `${linea.numeroLinea} - ${linea.nombreLinea}` : `#${id}`}`;
     }
-  };
-
-  const handleSave = async (data: any) => {
-    if (editingAfectacion) {
-      await onUpdate(Number(editingAfectacion.idAfectacion), data);
+    if (afectacion.idParada != null) {
+      const id = String(afectacion.idParada);
+      return `Parada: ${paradas.find((p) => String(p.idParada) === id)?.nombreParada ?? `#${id}`}`;
     }
-    setIsDialogOpen(false);
-    setEditingAfectacion(null);
+    if (afectacion.idEstacion != null) {
+      const id = String(afectacion.idEstacion);
+      return `Estación: ${estaciones.find((e) => String(e.idEstacion) === id)?.nombreEstacion ?? `#${id}`}`;
+    }
+    return '—';
   };
 
   return (
@@ -43,7 +49,8 @@ export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate,
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Buscar afectación..."
+          placeholder="Buscar por motivo..."
+          aria-label="Buscar afectación por motivo"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -54,70 +61,40 @@ export function AfectacionesTable({ afectaciones, paradas, estaciones, onUpdate,
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-slate-50">
-              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">ID</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Tipo</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Fecha inicio</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Fecha fin</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Acción</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Afecta a</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Motivo</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Fecha Inicio</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Fecha Fin</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Estado</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-slate-700">Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {filteredAfectaciones.map((afectacion) => (
-              <tr key={afectacion.idAfectacion} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.idAfectacion}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.tipoAfectacion}</td>
-                <td className="px-4 py-3 text-sm text-slate-900">{afectacion.motivo}</td>
-                <td className="px-4 py-3 text-sm text-slate-600">
-                  {new Date(afectacion.fechaInicio).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-600">
-                  {afectacion.fechaFin ? new Date(afectacion.fechaFin).toLocaleDateString() : '—'}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`px-2 py-1 text-xs font-medium rounded ${
-                      afectacion.estadoAfectacion === 'ACTIVA'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}
-                  >
-                    {afectacion.estadoAfectacion}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => handleEdit(afectacion)}
-                    className="px-3 py-1 text-sm text-blue-600 hover:text-blue-800 font-medium mr-2"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(Number(afectacion.idAfectacion))}
-                    className="px-3 py-1 text-sm text-red-600 hover:text-red-800 font-medium"
-                  >
-                    Eliminar
-                  </button>
-                </td>
+            {afectaciones.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">No hay afectaciones registradas.</td>
               </tr>
-            ))}
+            )}
+            {filteredAfectaciones.map((afectacion) => {
+              // Legacy rows may carry old types (TEMPORAL...): shown as-is.
+              const badge = ACCION_BADGES[afectacion.accion] ?? {
+                label: afectacion.accion,
+                className: 'bg-slate-100 text-slate-700',
+              };
+              return (
+                <tr key={afectacion.idAfectacion} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3 text-sm text-slate-600">{formatFecha(afectacion.fechaInicio)}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{formatFecha(afectacion.fechaFin)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 text-xs font-medium rounded ${badge.className}`}>{badge.label}</span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-900">{targetName(afectacion)}</td>
+                  <td className="px-4 py-3 text-sm text-slate-900">{afectacion.motivo}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-
-      {isDialogOpen && editingAfectacion && (
-        <AfectacionDialog
-          afectacion={editingAfectacion}
-          paradas={paradas}
-          estaciones={estaciones}
-          onSave={handleSave}
-          onClose={() => {
-            setIsDialogOpen(false);
-            setEditingAfectacion(null);
-          }}
-        />
-      )}
     </div>
   );
 }

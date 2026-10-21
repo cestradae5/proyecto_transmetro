@@ -29,17 +29,10 @@ export enum TipoRecorrido {
   LINEAL = 'LINEAL',
 }
 
-export enum TipoAfectacion {
-  TEMPORAL = 'TEMPORAL',
-  PERMANENTE = 'PERMANENTE',
-  MANTENIMIENTO = 'MANTENIMIENTO',
-}
-
-/** Valid only for Afectación (`tbl_afectacion.estado_afectacion` DB CHECK constraint). */
-export enum EstadoAfectacion {
-  ACTIVA = 'ACTIVA',
-  CERRADA = 'CERRADA',
-  PENDIENTE = 'PENDIENTE',
+/** Action an afectación applies to its target (línea, parada or estación). */
+export enum AccionAfectacion {
+  ACTIVAR = 'ACTIVAR',
+  DESACTIVAR = 'DESACTIVAR',
 }
 
 /** Valid only for Municipalidad (`tbl_municipalidad.estado_municipalidad` DB CHECK constraint). */
@@ -140,15 +133,20 @@ export interface Acceso {
   estadoAcceso: EstadoAcceso;
 }
 
+/**
+ * Immutable history row: an afectación targets exactly one línea, parada or
+ * estación. `accion` is a string because legacy rows may carry old types
+ * (TEMPORAL...), shown as-is.
+ */
 export interface Afectacion {
   idAfectacion: string;
-  tipoAfectacion: TipoAfectacion;
+  accion: string;
   motivo: string;
   fechaInicio: string;
   fechaFin: string | null;
+  idLinea: string | null;
   idParada: string | null;
   idEstacion: string | null;
-  estadoAfectacion: EstadoAfectacion;
 }
 
 // esEstacion/idEstacion are derived read-only fields: never sent to the API.
@@ -198,8 +196,13 @@ export type CreateAccesoDto = Omit<Acceso, 'idAcceso' | 'idParada' | 'estadoAcce
 };
 export type UpdateAccesoDto = Partial<CreateAccesoDto>;
 
-export type CreateAfectacionDto = Omit<Afectacion, 'idAfectacion'>;
-export type UpdateAfectacionDto = Partial<CreateAfectacionDto>;
+/** Dates are 'YYYY-MM-DD'; exactly one target id is sent. */
+export type CreateAfectacionDto = {
+  accion: AccionAfectacion;
+  motivo: string;
+  fechaInicio: string;
+  fechaFin?: string;
+} & ({ idLinea: string } | { idParada: string } | { idEstacion: string });
 
 export interface LineaParada {
   idLineaParada: string;

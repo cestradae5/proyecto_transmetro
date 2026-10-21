@@ -71,7 +71,7 @@ export function InfrastructurePage() {
   const { estaciones, refresh: refreshEstaciones, createEstacion, updateEstacion, deleteEstacion } = useEstaciones();
   const { parqueos, refresh: refreshParqueos, updateParqueo, deleteParqueo } = useParqueos();
   const { lineas, error: lineasError, refresh: refreshLineas, updateLinea, deleteLinea } = useLineas();
-  const { afectaciones, createAfectacion, updateAfectacion, deleteAfectacion } = useAfectaciones();
+  const { afectaciones, createAfectacion } = useAfectaciones();
 
   const municipalidadIds = municipalidades.map((m) => String(m.idMunicipalidad));
   const memberships = useMunicipalidadLineas(municipalidadIds);
@@ -343,8 +343,6 @@ export function InfrastructurePage() {
           onDeleteParqueo={deleteParqueo}
           onSaveParada={saveParada}
           onDeleteParada={deleteParada}
-          onUpdateAfectacion={updateAfectacion}
-          onDeleteAfectacion={deleteAfectacion}
           onNewAfectacion={() => setDialog({ kind: 'afectacion' })}
         />
       </main>
@@ -407,11 +405,15 @@ export function InfrastructurePage() {
       )}
       {dialog?.kind === 'afectacion' && (
         <AfectacionDialog
+          lineas={lineas}
           paradas={paradas}
           estaciones={estaciones}
           onSave={async (data: CreateAfectacionDto) => {
+            // A rejection propagates to the form, which shows it and stays open.
             await createAfectacion(data);
             setDialog(null);
+            // The afectación changed its target's state: refresh the badges.
+            void Promise.all([refreshLineas(), refreshParadas(), refreshEstaciones()]);
           }}
           onClose={() => setDialog(null)}
         />

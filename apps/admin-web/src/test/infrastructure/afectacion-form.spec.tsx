@@ -1,27 +1,33 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { AfectacionForm } from "../../features/infrastructure/components/afectaciones/afectacion-form";
-import type { Afectacion, Estacion, Parada } from "../../features/infrastructure/types/infrastructure.types";
+import type { Estacion, Linea, Parada } from "../../features/infrastructure/types/infrastructure.types";
 
-// Same caveat as parada-form.spec.tsx: labels are not associated via
-// htmlFor/id, so fields are queried by role/type/order instead of
-// getByLabelText.
+const LINEAS: Linea[] = [
+  {
+    idLinea: "7",
+    numeroLinea: "L1",
+    nombreLinea: "Roosevelt",
+    colorHex: "#ff0000",
+    tipoRecorrido: "LINEAL" as Linea["tipoRecorrido"],
+    idParqueo: null,
+    estadoLinea: "ACTIVA" as Linea["estadoLinea"],
+  },
+];
 
-const SAMPLE_PARADAS: Parada[] = [
+const PARADAS: Parada[] = [
   {
     idParada: 1,
     nombreParada: "Parada A",
     latitud: 14.6,
     longitud: -90.5,
-    estadoParada: "ACTIVA" as Parada["estadoParada"],
+    estadoParada: "CERRADA" as Parada["estadoParada"],
     esEstacion: false,
     idEstacion: null,
-    fecha_creacion: "2026-01-01T00:00:00.000Z",
-    fecha_actualizacion: "2026-01-01T00:00:00.000Z",
   },
 ];
 
-const SAMPLE_ESTACIONES: Estacion[] = [
+const ESTACIONES: Estacion[] = [
   {
     idEstacion: 2,
     nombreEstacion: "Estación B",
@@ -32,185 +38,174 @@ const SAMPLE_ESTACIONES: Estacion[] = [
   },
 ];
 
-const SAMPLE_AFECTACION: Afectacion = {
-  idAfectacion: "6",
-  tipoAfectacion: "TEMPORAL" as Afectacion["tipoAfectacion"],
-  motivo: "Obra vial",
-  fechaInicio: "2026-02-01T00:00:00.000Z",
-  fechaFin: null,
-  idParada: "1",
-  idEstacion: null,
-  estadoAfectacion: "ACTIVA" as Afectacion["estadoAfectacion"],
-};
-
-function renderForm(props: Partial<Parameters<typeof AfectacionForm>[0]> = {}) {
-  const onSubmit = vi.fn().mockResolvedValue(undefined);
+function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined)) {
   const onCancel = vi.fn();
-  const utils = render(
-    <AfectacionForm
-      paradas={SAMPLE_PARADAS}
-      estaciones={SAMPLE_ESTACIONES}
-      onSubmit={onSubmit}
-      onCancel={onCancel}
-      {...props}
-    />,
+  render(
+    <AfectacionForm lineas={LINEAS} paradas={PARADAS} estaciones={ESTACIONES} onSubmit={onSubmit} onCancel={onCancel} />,
   );
-  const motivo = utils.container.querySelector("textarea") as HTMLTextAreaElement;
-  const dates = utils.container.querySelectorAll("input[type='date']");
-  const fechaInicio = dates[0]! as HTMLInputElement;
-  const fechaFin = dates[1]! as HTMLInputElement;
-  const radios = screen.getAllByRole("radio") as HTMLInputElement[];
-  const paradaRadio = radios[0]!;
-  const estacionRadio = radios[1]!;
-  const selects = utils.container.querySelectorAll("select");
-  const tipoSelect = selects[0] as HTMLSelectElement;
-  const paradaSelect = selects[1] as HTMLSelectElement;
-  const estacionSelect = selects[2] as HTMLSelectElement;
-  const estadoSelect = selects[3] as HTMLSelectElement;
-  return {
-    ...utils,
-    onSubmit,
-    onCancel,
-    motivo,
-    fechaInicio,
-    fechaFin,
-    paradaRadio,
-    estacionRadio,
-    tipoSelect,
-    paradaSelect,
-    estacionSelect,
-    estadoSelect,
-  };
+  return { onSubmit, onCancel };
+}
+
+const tipoSelect = () => screen.getByLabelText("Afecta a *") as HTMLSelectElement;
+const motivo = () => screen.getByLabelText("Motivo *") as HTMLTextAreaElement;
+const fechaInicio = () => screen.getByLabelText("Fecha inicio *") as HTMLInputElement;
+const fechaFin = () => screen.getByLabelText("Fecha fin") as HTMLInputElement;
+const submit = () => fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+
+function fillCommon(values: { motivo?: string; fechaInicio?: string; fechaFin?: string }) {
+  if (values.motivo !== undefined) fireEvent.change(motivo(), { target: { value: values.motivo } });
+  if (values.fechaInicio !== undefined) fireEvent.change(fechaInicio(), { target: { value: values.fechaInicio } });
+  if (values.fechaFin !== undefined) fireEvent.change(fechaFin(), { target: { value: values.fechaFin } });
 }
 
 describe("AfectacionForm", () => {
-  it("renders empty fields in create mode, defaulting target to parada", () => {
-    const { motivo, fechaInicio, fechaFin, paradaRadio, estacionRadio, paradaSelect, estacionSelect } =
-      renderForm();
+  it("renders only the action, target, motivo and date fields, defaulting to Desactivar", () => {
+    renderForm();
 
-    expect(motivo).toHaveValue("");
-    expect(fechaInicio).toHaveValue("");
-    expect(fechaFin).toHaveValue("");
-    expect(paradaRadio).toBeChecked();
-    expect(estacionRadio).not.toBeChecked();
-    expect(paradaSelect).not.toBeDisabled();
-    expect(estacionSelect).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Desactivar" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Activar" })).not.toBeChecked();
+    expect(tipoSelect()).toHaveValue("linea");
+    expect(screen.getByLabelText("Línea *")).toHaveValue("");
+    expect(motivo()).toHaveValue("");
+    expect(fechaInicio()).toHaveValue("");
+    expect(fechaFin()).toHaveValue("");
+    expect(screen.getByText("Solo informativa: la afectación no se revierte automáticamente.")).toBeInTheDocument();
+    // The old tipo/estado selectors are gone.
+    expect(screen.queryByText(/TEMPORAL|PERMANENTE|PENDIENTE/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Estado/)).not.toBeInTheDocument();
   });
 
-  it("renders pre-filled fields in edit mode, targeting the parada", () => {
-    const { motivo, fechaInicio, paradaRadio, estacionRadio, paradaSelect } = renderForm({
-      afectacion: SAMPLE_AFECTACION,
-    });
+  it("requires motivo, fecha inicio and a target", async () => {
+    const { onSubmit } = renderForm();
 
-    expect(motivo).toHaveValue("Obra vial");
-    expect(fechaInicio).toHaveValue("2026-02-01");
-    expect(paradaRadio).toBeChecked();
-    expect(estacionRadio).not.toBeChecked();
-    expect(paradaSelect).toHaveValue("1");
-  });
-
-  it("shows validation errors for empty motivo/fechaInicio and end date before start date", async () => {
-    const { fechaInicio, fechaFin, onSubmit } = renderForm();
-
-    fireEvent.change(fechaInicio, { target: { value: "2026-03-10" } });
-    fireEvent.change(fechaFin, { target: { value: "2026-03-01" } });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    submit();
 
     expect(await screen.findByText("El motivo es requerido")).toBeInTheDocument();
-    expect(screen.getByText("La fecha de fin debe ser posterior a la fecha de inicio")).toBeInTheDocument();
+    expect(screen.getByText("La fecha de inicio es requerida")).toBeInTheDocument();
+    expect(screen.getByText("Seleccione la línea, parada o estación afectada")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("requires a fechaInicio when it is left empty", async () => {
-    const { motivo, onSubmit } = renderForm();
+  it("treats a blank motivo as missing", async () => {
+    const { onSubmit } = renderForm();
 
-    fireEvent.change(motivo, { target: { value: "Mantenimiento de vía" } });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    fillCommon({ motivo: "   ", fechaInicio: "2026-03-01" });
+    fireEvent.change(screen.getByLabelText("Línea *"), { target: { value: "7" } });
+    submit();
 
-    expect(await screen.findByText("La fecha de inicio es requerida")).toBeInTheDocument();
+    expect(await screen.findByText("El motivo es requerido")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("requires selecting a parada or estación (XOR target)", async () => {
-    const { motivo, fechaInicio, onSubmit } = renderForm();
+  it("rejects a fecha fin before fecha inicio but accepts the same day", async () => {
+    const { onSubmit } = renderForm();
 
-    fireEvent.change(motivo, { target: { value: "Mantenimiento de vía" } });
-    fireEvent.change(fechaInicio, { target: { value: "2026-03-01" } });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    fillCommon({ motivo: "Obra", fechaInicio: "2026-03-10", fechaFin: "2026-03-09" });
+    fireEvent.change(screen.getByLabelText("Línea *"), { target: { value: "7" } });
+    submit();
 
-    expect(await screen.findByText("Debe seleccionar una parada o una estación")).toBeInTheDocument();
+    expect(await screen.findByText("La fecha de fin no puede ser anterior a la fecha de inicio")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
-  });
 
-  it("XOR: switching the radio to estación disables/clears the parada selection and vice versa", () => {
-    const { paradaSelect, estacionSelect, paradaRadio, estacionRadio } = renderForm();
-
-    // Default: parada target is active.
-    fireEvent.change(paradaSelect, { target: { value: "1" } });
-    expect(paradaSelect).toHaveValue("1");
-
-    // Switching to the estación radio clears idParada and swaps which
-    // select is enabled (the form's XOR behavior).
-    fireEvent.click(estacionRadio);
-    expect(estacionRadio).toBeChecked();
-    expect(paradaRadio).not.toBeChecked();
-    expect(estacionSelect).not.toBeDisabled();
-    expect(paradaSelect).toBeDisabled();
-    expect(paradaSelect).toHaveValue("");
-
-    // Switching back to the parada radio clears idEstacion again.
-    fireEvent.change(estacionSelect, { target: { value: "2" } });
-    fireEvent.click(paradaRadio);
-    expect(paradaRadio).toBeChecked();
-    expect(paradaSelect).not.toBeDisabled();
-    expect(estacionSelect).toBeDisabled();
-    expect(estacionSelect).toHaveValue("");
-  });
-
-  it("calls onSubmit with correctly shaped data when targeting a parada", async () => {
-    const { motivo, fechaInicio, paradaSelect, onSubmit } = renderForm();
-
-    fireEvent.change(motivo, { target: { value: "Cierre por desfile" } });
-    fireEvent.change(fechaInicio, { target: { value: "2026-04-01" } });
-    fireEvent.change(paradaSelect, { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    fillCommon({ fechaFin: "2026-03-10" });
+    submit();
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    expect(onSubmit).toHaveBeenCalledWith({
-      tipoAfectacion: "TEMPORAL",
+    expect(screen.queryByText("La fecha de fin no puede ser anterior a la fecha de inicio")).not.toBeInTheDocument();
+  });
+
+  it("swaps the record list when the target type changes and clears the selection", () => {
+    renderForm();
+
+    const lineaSelect = screen.getByLabelText("Línea *");
+    expect(screen.getByRole("option", { name: "L1 - Roosevelt (ACTIVA)" })).toBeInTheDocument();
+    fireEvent.change(lineaSelect, { target: { value: "7" } });
+    expect(lineaSelect).toHaveValue("7");
+
+    fireEvent.change(tipoSelect(), { target: { value: "parada" } });
+    expect(screen.queryByLabelText("Línea *")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Parada *")).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Parada A (CERRADA)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "L1 - Roosevelt (ACTIVA)" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Parada *"), { target: { value: "1" } });
+    fireEvent.change(tipoSelect(), { target: { value: "estacion" } });
+    expect(screen.getByLabelText("Estación *")).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Estación B (ACTIVA)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Parada A (CERRADA)" })).not.toBeInTheDocument();
+  });
+
+  it("submits a línea deactivation with only idLinea and no fechaFin", async () => {
+    const { onSubmit } = renderForm();
+
+    fillCommon({ motivo: "  Cierre por desfile ", fechaInicio: "2026-04-01" });
+    fireEvent.change(screen.getByLabelText("Línea *"), { target: { value: "7" } });
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({
+      accion: "DESACTIVAR",
       motivo: "Cierre por desfile",
       fechaInicio: "2026-04-01",
-      fechaFin: undefined,
-      idParada: "1",
-      idEstacion: undefined,
-      estadoAfectacion: "ACTIVA",
+      idLinea: "7",
     });
   });
 
-  it("calls onSubmit with correctly shaped data when targeting an estación", async () => {
-    const { motivo, fechaInicio, estacionRadio, estacionSelect, onSubmit } = renderForm();
+  it("submits a parada activation with fechaFin and only idParada", async () => {
+    const { onSubmit } = renderForm();
 
-    fireEvent.change(motivo, { target: { value: "Mantenimiento de andén" } });
-    fireEvent.change(fechaInicio, { target: { value: "2026-04-05" } });
-    fireEvent.click(estacionRadio);
-    fireEvent.change(estacionSelect, { target: { value: "2" } });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Activar" }));
+    fireEvent.change(tipoSelect(), { target: { value: "parada" } });
+    fireEvent.change(screen.getByLabelText("Parada *"), { target: { value: "1" } });
+    fillCommon({ motivo: "Reapertura", fechaInicio: "2026-04-05", fechaFin: "2026-04-06" });
+    submit();
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    expect(onSubmit).toHaveBeenCalledWith({
-      tipoAfectacion: "TEMPORAL",
-      motivo: "Mantenimiento de andén",
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({
+      accion: "ACTIVAR",
+      motivo: "Reapertura",
       fechaInicio: "2026-04-05",
-      fechaFin: undefined,
-      idParada: undefined,
-      idEstacion: "2",
-      estadoAfectacion: "ACTIVA",
+      fechaFin: "2026-04-06",
+      idParada: "1",
     });
   });
 
-  it("defaults estadoAfectacion to 'ACTIVA', which matches an existing <option>", () => {
-    const { estadoSelect } = renderForm();
+  it("submits an estación deactivation with only idEstacion", async () => {
+    const { onSubmit } = renderForm();
 
-    expect(estadoSelect).toHaveValue("ACTIVA");
+    fireEvent.change(tipoSelect(), { target: { value: "estacion" } });
+    fireEvent.change(screen.getByLabelText("Estación *"), { target: { value: "2" } });
+    fillCommon({ motivo: "Mantenimiento de andén", fechaInicio: "2026-04-05" });
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]![0]).toStrictEqual({
+      accion: "DESACTIVAR",
+      motivo: "Mantenimiento de andén",
+      fechaInicio: "2026-04-05",
+      idEstacion: "2",
+    });
+  });
+
+  it("shows the server message when saving fails and keeps the values", async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error("La línea ya está inactiva"));
+    renderForm(onSubmit);
+
+    fillCommon({ motivo: "Obra", fechaInicio: "2026-04-01" });
+    fireEvent.change(screen.getByLabelText("Línea *"), { target: { value: "7" } });
+    submit();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("La línea ya está inactiva");
+    expect(motivo()).toHaveValue("Obra");
+    expect(screen.getByRole("button", { name: "Guardar" })).not.toBeDisabled();
+  });
+
+  it("calls onCancel from Cancelar", () => {
+    const { onCancel, onSubmit } = renderForm();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

@@ -404,6 +404,54 @@ describe("InfrastructurePage secondary sections and creation", () => {
     expect(screen.getByText("Nueva Afectación")).toBeInTheDocument();
   });
 
+  async function openAfectacionDialog() {
+    renderPage();
+    const secondary = screen.getByRole("region", { name: "Otros registros" });
+    await within(secondary).findByText("Central Norte");
+    fireEvent.click(within(secondary).getByRole("button", { name: "Afectaciones (0)" }));
+    fireEvent.click(within(secondary).getByRole("button", { name: "Nueva afectación" }));
+    const dialog = screen.getByRole("dialog", { name: "Nueva Afectación" });
+    fireEvent.change(await within(dialog).findByLabelText("Línea *"), { target: { value: "10" } });
+    fireEvent.change(within(dialog).getByLabelText("Motivo *"), { target: { value: "Desfile" } });
+    fireEvent.change(within(dialog).getByLabelText("Fecha inicio *"), { target: { value: "2026-04-01" } });
+    return dialog;
+  }
+
+  it("creates an afectación, closes the dialog and refreshes líneas, paradas and estaciones", async () => {
+    mockPost.mockResolvedValueOnce({ idAfectacion: "5" });
+    const dialog = await openAfectacionDialog();
+    const before = {
+      lineas: getCalls("/infrastructure/lineas"),
+      paradas: getCalls("/infrastructure/paradas"),
+      estaciones: getCalls("/infrastructure/estaciones"),
+    };
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Nueva Afectación" })).not.toBeInTheDocument());
+    expect(mockPost).toHaveBeenCalledWith("/infrastructure/afectaciones", {
+      accion: "DESACTIVAR",
+      motivo: "Desfile",
+      fechaInicio: "2026-04-01",
+      idLinea: "10",
+    });
+    await waitFor(() => {
+      expect(getCalls("/infrastructure/lineas")).toBeGreaterThan(before.lineas);
+      expect(getCalls("/infrastructure/paradas")).toBeGreaterThan(before.paradas);
+      expect(getCalls("/infrastructure/estaciones")).toBeGreaterThan(before.estaciones);
+    });
+  });
+
+  it("keeps the afectación dialog open with the server message when the API rejects it", async () => {
+    mockPost.mockRejectedValueOnce(new Error("La línea ya está inactiva"));
+    const dialog = await openAfectacionDialog();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Guardar" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("La línea ya está inactiva");
+    expect(screen.getByRole("dialog", { name: "Nueva Afectación" })).toBeInTheDocument();
+  });
+
   it("opens the wizard from 'Nueva infraestructura' and closes it without reloading when nothing was saved", async () => {
     renderPage();
     await findLinea(await findGroup("Mixco"), "L1 - Mixco Express");

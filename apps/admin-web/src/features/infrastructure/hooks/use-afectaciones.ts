@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../../../lib/api-client';
-import type { Afectacion, CreateAfectacionDto, UpdateAfectacionDto } from '../types/infrastructure.types';
+import type { Afectacion, CreateAfectacionDto } from '../types/infrastructure.types';
+
+// Afectaciones are an immutable history: the API only lists and creates them.
 
 export function useAfectaciones() {
   const [afectaciones, setAfectaciones] = useState<Afectacion[]>([]);
@@ -26,17 +28,6 @@ export function useAfectaciones() {
     return result;
   };
 
-  const updateAfectacion = async (id: number, data: UpdateAfectacionDto) => {
-    const result = await apiClient.patch<Afectacion>(`/infrastructure/afectaciones/${id}`, data);
-    await fetchAfectaciones();
-    return result;
-  };
-
-  const deleteAfectacion = async (id: number) => {
-    await apiClient.delete(`/infrastructure/afectaciones/${id}`);
-    await fetchAfectaciones();
-  };
-
   useEffect(() => {
     fetchAfectaciones();
   }, [fetchAfectaciones]);
@@ -47,7 +38,5 @@ export function useAfectaciones() {
     error,
     refresh: fetchAfectaciones,
     createAfectacion,
-    updateAfectacion,
-    deleteAfectacion,
   };
 }
