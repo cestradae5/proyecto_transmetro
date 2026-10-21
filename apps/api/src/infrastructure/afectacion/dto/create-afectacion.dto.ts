@@ -13,12 +13,12 @@ import { AccionAfectacion } from "../afectacion.entity.js";
 
 export { AccionAfectacion };
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_MESSAGE = "must be a date in YYYY-MM-DD format";
+export const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+export const DATE_MESSAGE = "must be a date in YYYY-MM-DD format";
 
 /**
- * Activates or deactivates exactly one línea, parada or estación. The
- * "exactly one target" rule is enforced by AfectacionService.
+ * Activates or deactivates exactly one municipalidad, línea, parada or
+ * estación. The "exactly one target" rule is enforced by AfectacionService.
  */
 export class CreateAfectacionDto {
   @ApiProperty({ description: "Acción a aplicar", enum: AccionAfectacion })
@@ -45,17 +45,24 @@ export class CreateAfectacionDto {
   @IsISO8601({ strict: true })
   fechaFin?: string;
 
-  @ApiPropertyOptional({ description: "ID de la línea (uno solo de idLinea, idParada, idEstacion)" })
+  @ApiPropertyOptional({
+    description: "ID de la municipalidad (uno solo de idMunicipalidad, idLinea, idParada, idEstacion)",
+  })
+  @IsOptional()
+  @IsNumberString({ no_symbols: true })
+  idMunicipalidad?: string;
+
+  @ApiPropertyOptional({ description: "ID de la línea (uno solo de idMunicipalidad, idLinea, idParada, idEstacion)" })
   @IsOptional()
   @IsNumberString({ no_symbols: true })
   idLinea?: string;
 
-  @ApiPropertyOptional({ description: "ID de la parada (uno solo de idLinea, idParada, idEstacion)" })
+  @ApiPropertyOptional({ description: "ID de la parada (uno solo de idMunicipalidad, idLinea, idParada, idEstacion)" })
   @IsOptional()
   @IsNumberString({ no_symbols: true })
   idParada?: string;
 
-  @ApiPropertyOptional({ description: "ID de la estación (uno solo de idLinea, idParada, idEstacion)" })
+  @ApiPropertyOptional({ description: "ID de la estación (uno solo de idMunicipalidad, idLinea, idParada, idEstacion)" })
   @IsOptional()
   @IsNumberString({ no_symbols: true })
   idEstacion?: string;

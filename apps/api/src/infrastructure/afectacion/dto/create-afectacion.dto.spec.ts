@@ -38,7 +38,7 @@ describe("CreateAfectacionDto", () => {
     expect(await errorsOf({ ...valid, [field]: "2026-13-45" })).toEqual([field]);
   });
 
-  it.each(["idLinea", "idParada", "idEstacion"])("rejects a non-numeric %s", async (field) => {
+  it.each(["idMunicipalidad", "idLinea", "idParada", "idEstacion"])("rejects a non-numeric %s", async (field) => {
     expect(await errorsOf({ ...valid, idLinea: undefined, [field]: "abc" })).toEqual([field]);
   });
 });

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Req,
@@ -15,14 +16,15 @@ import {
 } from "@nestjs/swagger";
 import { AfectacionService } from "./afectacion.service.js";
 import { CreateAfectacionDto } from "./dto/create-afectacion.dto.js";
+import { UpdateAfectacionDto } from "./dto/update-afectacion.dto.js";
 import { AfectacionResponseDto } from "./dto/afectacion-response.dto.js";
 import { AuthenticationGuard } from "../../authentication/authentication.guard.js";
 import { Permissions } from "../../authentication/permissions.decorator.js";
 
 @ApiTags("Infraestructura - Afectaciones")
-// Afectaciones are an append-only history of applied actions: editing or
-// deleting one would desync it from the target's real state, so there is no
-// PATCH or DELETE. Reverting is a new afectación with the opposite action.
+// An afectación is applied when created and re-applied when its acción is
+// edited, so its stored changes always match the target's state. There is no
+// DELETE: removing one would lose the record of what it changed.
 @Controller("infrastructure/afectaciones")
 @UseGuards(AuthenticationGuard)
 @ApiBearerAuth()
@@ -33,7 +35,7 @@ export class AfectacionController {
   @Permissions("INFRAESTRUCTURA_GESTIONAR")
   @ApiOperation({
     summary:
-      "Activar o desactivar una línea, parada o estación (queda en la bitácora)",
+      "Activar o desactivar una municipalidad, línea, parada o estación, con cascada (queda en la bitácora)",
   })
   @ApiResponse({
     status: 201,
@@ -41,13 +43,33 @@ export class AfectacionController {
     type: AfectacionResponseDto,
   })
   @ApiResponse({ status: 400, description: "Objetivo o fechas inválidos" })
-  @ApiResponse({ status: 404, description: "Línea, parada o estación no encontrada" })
+  @ApiResponse({ status: 404, description: "Municipalidad, línea, parada o estación no encontrada" })
   @ApiResponse({ status: 409, description: "El objetivo ya está en ese estado" })
   create(
     @Body() createAfectacionDto: CreateAfectacionDto,
     @Req() request: Record<string, any>
   ): Promise<AfectacionResponseDto> {
     return this.afectacionService.create(createAfectacionDto, request.user.employeeId);
+  }
+
+  @Patch(":id")
+  @Permissions("INFRAESTRUCTURA_GESTIONAR")
+  @ApiOperation({
+    summary: "Editar acción, motivo o fechas de una afectación (cambiar la acción la aplica)",
+  })
+  @ApiResponse({ status: 200, description: "Afectación editada", type: AfectacionResponseDto })
+  @ApiResponse({ status: 400, description: "Fechas o campos inválidos" })
+  @ApiResponse({ status: 404, description: "Afectación no encontrada" })
+  @ApiResponse({
+    status: 409,
+    description: "No es la afectación más reciente del objetivo, es una afectación anterior, o el objetivo ya está en ese estado",
+  })
+  update(
+    @Param("id") id: string,
+    @Body() updateAfectacionDto: UpdateAfectacionDto,
+    @Req() request: Record<string, any>
+  ): Promise<AfectacionResponseDto> {
+    return this.afectacionService.update(id, updateAfectacionDto, request.user.employeeId);
   }
 
   @Get()

@@ -1,6 +1,6 @@
 // AfectacionController tests (mocked service).
 // Verifies delegation to AfectacionService and guard/permission/route metadata.
-// Afectaciones are an append-only history: there is no update, close or delete.
+// An afectación can be edited (PATCH /:id) but not closed or deleted.
 
 import { jest } from "@jest/globals";
 import { RequestMethod } from "@nestjs/common";
@@ -17,11 +17,12 @@ import type { AfectacionService } from "./afectacion.service.js";
 
 type AnyMock = jest.Mock<(...args: any[]) => any>;
 
-type MockAfectacionService = Record<"create" | "findAll" | "findOne", AnyMock>;
+type MockAfectacionService = Record<"create" | "update" | "findAll" | "findOne", AnyMock>;
 
 function makeMockService(): MockAfectacionService {
   return {
     create: jest.fn(),
+    update: jest.fn(),
     findAll: jest.fn(),
     findOne: jest.fn(),
   };
@@ -57,6 +58,14 @@ describe("AfectacionController", () => {
       expect(service.create).toHaveBeenCalledWith(dto, "7");
     });
 
+    it("update() forwards the id, the body and the actor", async () => {
+      const dto = { accion: "ACTIVAR" } as never;
+      service.update.mockResolvedValue({ idAfectacion: "7" });
+
+      await expect(controller.update("7", dto, request)).resolves.toEqual({ idAfectacion: "7" });
+      expect(service.update).toHaveBeenCalledWith("7", dto, "7");
+    });
+
     it("findAll() delegates", async () => {
       service.findAll.mockResolvedValue([]);
 
@@ -75,10 +84,9 @@ describe("AfectacionController", () => {
   });
 
   describe("routing metadata", () => {
-    it("exposes no update, close or delete handler", () => {
+    it("exposes no close or delete handler", () => {
       const proto = AfectacionController.prototype as unknown as Record<string, unknown>;
 
-      expect(proto.update).toBeUndefined();
       expect(proto.close).toBeUndefined();
       expect(proto.remove).toBeUndefined();
     });
@@ -88,6 +96,8 @@ describe("AfectacionController", () => {
       expect(Reflect.getMetadata(METHOD_METADATA, handler("findAll"))).toBe(RequestMethod.GET);
       expect(Reflect.getMetadata(METHOD_METADATA, handler("findOne"))).toBe(RequestMethod.GET);
       expect(Reflect.getMetadata(PATH_METADATA, handler("findOne"))).toBe(":id");
+      expect(Reflect.getMetadata(METHOD_METADATA, handler("update"))).toBe(RequestMethod.PATCH);
+      expect(Reflect.getMetadata(PATH_METADATA, handler("update"))).toBe(":id");
     });
 
     it("keeps the controller under infrastructure/afectaciones without an /api prefix", () => {
@@ -107,7 +117,7 @@ describe("AfectacionController", () => {
       expect(guards).toContain(AuthenticationGuard);
     });
 
-    it.each(["create", "findAll", "findOne"])(
+    it.each(["create", "update", "findAll", "findOne"])(
       "requires INFRAESTRUCTURA_GESTIONAR permission on %s()",
       (method) => {
         expect(Reflect.getMetadata(PERMISSIONS_KEY, handler(method))).toEqual([

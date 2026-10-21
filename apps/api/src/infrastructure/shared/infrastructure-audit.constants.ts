@@ -12,7 +12,8 @@ export const INFRASTRUCTURE_AUDIT_ACTIONS = {
   LINK: "link",
   UNLINK: "unlink",
   REORDER: "reorder",
-  // Written by an afectación on its línea, parada or estación.
+  // Written by an afectación on its municipalidad, línea, parada or estación
+  // (detalle.cascada lists the other rows it changed).
   ACTIVATE: "activate",
   DEACTIVATE: "deactivate",
 } as const;
