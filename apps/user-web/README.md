@@ -102,9 +102,13 @@ deploy. The API already allows any origin (CORS `*`) and the
   exitosa" with comprobante, amount and new balance; `RECHAZADA` -> "El pago
   fue rechazado."; `EXPIRADA` -> "Pago cancelado o expirado."; `ERROR` -> "No
   se pudo completar el pago."; `INICIADA` -> "Estamos confirmando tu
-  pago..." with "Verificar de nuevo" (asks again). `?pago=desconocido` or a
-  404 -> "No encontramos el pago.". "Volver" clears the query string and
-  returns to the card lookup.
+  pago..." with "Verificar de nuevo" (asks again). The QPayPro sandbox
+  credits through a relay call with `order_id` but sends the browser back
+  without it, so the API answers `?pago=desconocido`; the tab remembers the
+  `referencia` it started (sessionStorage) and shows that payment instead.
+  `?pago=desconocido` with no remembered payment, or a 404 -> "No
+  encontramos el pago.". "Volver" clears the query string, forgets the
+  remembered payment and returns to the card lookup.
 - **Simulated recharge** (only with `VITE_RECHARGE_SIMULATOR=true`): Q1.00 to Q500.00 with up to 2 decimals, checked before
   sending. Each attempt has one `referencia`; retrying the same amount after
   a network error reuses it, so the API never charges twice. A 404 from the
