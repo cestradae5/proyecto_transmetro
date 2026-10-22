@@ -3,10 +3,13 @@ import { ValidationPipe } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 
 import { AppModule } from "./app.module.js";
+import { trustReverseProxy } from "./platform/http/trust-reverse-proxy.js";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const port = process.env.PORT ?? 3000;
+
+  trustReverseProxy(app);
 
   // CORS simplificado para JWT stateless — no cookies
   app.enableCors({
