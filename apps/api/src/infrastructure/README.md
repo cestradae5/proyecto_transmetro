@@ -175,8 +175,8 @@ fires at 150% of it; a station uses its parada's capacity
 | POST | `/` | Create |
 | GET | `/` | List all |
 | GET | `/:id` | Get one |
-| PATCH | `/:id` | Update |
-| DELETE | `/:id` | Soft delete → `INACTIVA` (no `force` param) |
+| PATCH | `/:id` | Update; a changed `estadoLinea` goes through an afectación (see Afectaciones) |
+| DELETE | `/:id` | Soft delete → `INACTIVA` through a DESACTIVAR afectación that closes its exclusive paradas/estaciones (no `force` param); an already `INACTIVA` línea → 200, no afectación |
 | GET | `/:id/paradas` | List the línea's parada sequence, ordered by `orden` |
 | POST | `/:id/paradas` | Add a parada to the sequence (PR#3) |
 | PUT | `/:id/paradas/orden` | Bulk reorder, body `{ idsLineaParada: string[] }` (the full sequence; position i → `orden` i + 1; `minutosHastaSiguiente` unchanged); returns the list in the same shape as `GET /:id/paradas`; list with duplicates, missing or foreign ids → 400 `ORDEN_LIST_MISMATCH`; unknown línea → 404. Runs in one transaction with a two-phase update (shift every `orden` above the current max, then write 1..n) because `UNIQUE (id_linea, orden)` is not deferrable and `CHECK (orden > 0)` forbids temporary negatives |
@@ -235,6 +235,13 @@ state, the afectación, its cambios and the bitácora row:
   (motivo `Desactivada desde Municipalidades` / `Activada desde
   Municipalidades`, `fechaInicio` = today) in the same transaction, then write
   their usual `remove`/`update` row.
+- **Líneas**: likewise, `DELETE /lineas/:id` on an `ACTIVA` one and a `PATCH`
+  that changes `estadoLinea` create an afectación internally (motivo
+  `Desactivada desde Líneas` / `Activada desde Líneas`, `fechaInicio` =
+  today), so deactivating closes its exclusive paradas/estaciones and
+  reactivating restores what that cascade closed; then they write their usual
+  `remove`/`update` row. A línea already in the requested state gets no
+  afectación (decided under the row lock).
 
 | Status | When |
 | --- | --- |
@@ -253,8 +260,8 @@ Every mutation writes its `tbl_bitacora` rows inside the same transaction as
 the write, so a change and its audit rows commit or roll back together
 (fleet/personal precedent). That is one row, except when an afectación is
 applied as part of another mutation: an afectación edit that changes `accion`
-writes `activate`/`deactivate` + `update`, and a municipalidad delete/estado
-edit writes the afectación's row + its own `remove`/`update`. A rejected
+writes `activate`/`deactivate` + `update`, and a municipalidad or línea
+delete/estado edit writes the afectación's row + its own `remove`/`update`. A rejected
 request (400/404/409) writes no row.
 
 - Writer: `shared/infrastructure-audit.service.ts` (`InfrastructureAuditService.record`).

@@ -356,6 +356,35 @@ describe("InfrastructurePage actions", () => {
     await expectRefetched(before);
   });
 
+  it("refreshes every cascaded list after deactivating a línea", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPage();
+    const mixco = await findGroup("Mixco");
+    await findLinea(mixco, "L1 - Mixco Express");
+    const before = CASCADE_LISTS.map(getCalls);
+
+    fireEvent.click(within(mixco).getByRole("button", { name: "Desactivar línea L1 - Mixco Express" }));
+
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("/infrastructure/lineas/10"));
+    await expectRefetched(before);
+  });
+
+  it("refreshes every cascaded list after editing a línea", async () => {
+    mockPatch.mockResolvedValue({ ...L1, estadoLinea: "INACTIVA" });
+    renderPage();
+    const mixco = await findGroup("Mixco");
+    await findLinea(mixco, "L1 - Mixco Express");
+
+    fireEvent.click(within(mixco).getByRole("button", { name: "Editar línea L1 - Mixco Express" }));
+    expect(screen.getByRole("heading", { name: "Editar Línea" })).toBeInTheDocument();
+    const before = CASCADE_LISTS.map(getCalls);
+    fireEvent.click(screen.getByRole("button", { name: "Guardar" }));
+
+    await waitFor(() => expect(mockPatch).toHaveBeenCalledWith("/infrastructure/lineas/10", expect.any(Object)));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Editar Línea" })).not.toBeInTheDocument());
+    await expectRefetched(before);
+  });
+
   it("shows a Spanish error when deactivating fails", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     mockDelete.mockRejectedValueOnce(new Error("Error de conexión. Por favor, intente de nuevo."));

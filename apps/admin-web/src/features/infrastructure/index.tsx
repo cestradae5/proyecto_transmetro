@@ -124,7 +124,8 @@ export function InfrastructurePage() {
   };
 
   // Activating/deactivating cascades on the API (municipalidad -> líneas ->
-  // paradas/estaciones) and records an afectación: refresh all of them.
+  // paradas/estaciones, also from a línea) and records an afectación: refresh
+  // all of them.
   const refreshAfterStateChange = () =>
     void Promise.all([
       refreshMunicipalidades(),
@@ -145,7 +146,10 @@ export function InfrastructurePage() {
 
   const deactivateLinea = (linea: Linea) => {
     if (!confirm(`¿Está seguro de desactivar la línea ${linea.numeroLinea} - ${linea.nombreLinea}?`)) return;
-    return runAction(() => deleteLinea(Number(linea.idLinea)), 'Error al desactivar la línea');
+    return runAction(async () => {
+      await deleteLinea(Number(linea.idLinea));
+      refreshAfterStateChange();
+    }, 'Error al desactivar la línea');
   };
 
   const reloadAfterSave = () => {
@@ -388,6 +392,8 @@ export function InfrastructurePage() {
           onSave={async (data: UpdateLineaDto) => {
             await updateLinea(dialog.linea.idLinea, data);
             setDialog(null);
+            // An estado change cascades like a deactivation/activation.
+            refreshAfterStateChange();
           }}
           onClose={() => setDialog(null)}
         />

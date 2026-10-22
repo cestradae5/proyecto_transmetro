@@ -35,7 +35,8 @@ following the hierarchy **Municipalidad > Línea > Parada**:
 - **Línea card** (`components/grouped/linea-card.tsx`): color, número - nombre,
   tipo de recorrido, parqueo ("Sin parqueo"), estado badge; "Editar"
   (`LineaDialog`), "Municipalidades" (`LineaMunicipalidadesDialog`),
-  "Desactivar" (soft delete, ACTIVA only). Expanding it loads its paradas
+  "Desactivar" (soft delete, ACTIVA only; the API closes its exclusive
+  paradas/estaciones through an afectación). Expanding it loads its paradas
   lazily (`GET /lineas/:id/paradas`): count, order, "Estación" badge, minutes to
   the next one; per parada "Editar" (`ParadaDialog`, "Es estación" toggle),
   "Accesos" (`AccesosDialog`) and, for estaciones, "Líneas de la estación"
@@ -251,7 +252,7 @@ to what depends on it, and records it in the bitácora.
 
 **Edit ("Editar" per row):** the same form, pre-filled, with the target shown but disabled. Acción, motivo and fechas are editable and only the changed fields are sent (`PATCH /afectaciones/:id`; clearing fecha fin sends `fechaFin: null`). Changing DESACTIVAR→ACTIVAR reverts what that afectación changed; ACTIVAR→DESACTIVAR applies a new deactivation. Only the most recent afectación of a target may change acción; the API's 409 message stays in the form.
 
-**Refresh:** after any afectación create/edit, and after deactivating or editing a municipalidad (the API routes those through the same cascade), the page reloads municipalidades, líneas, paradas, estaciones and afectaciones.
+**Refresh:** after any afectación create/edit, and after deactivating or editing a municipalidad or a línea (the API routes those through the same cascade), the page reloads municipalidades, líneas, paradas, estaciones and afectaciones.
 
 ## API Integration
 

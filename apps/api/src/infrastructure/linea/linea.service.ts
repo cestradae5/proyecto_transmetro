@@ -21,6 +21,8 @@ import { validateForeignKey } from "../shared/validators.js";
 import { ParqueoEntity } from "../parqueo/parqueo.entity.js";
 import { ParadaEntity } from "../parada/parada.entity.js";
 import { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import { AfectacionService } from "../afectacion/afectacion.service.js";
+import { AccionAfectacion } from "../afectacion/afectacion.entity.js";
 import {
   INFRASTRUCTURE_AUDIT_ACTIONS,
   INFRASTRUCTURE_ENTITY_TYPES,
@@ -28,6 +30,16 @@ import {
 
 /** Minimum number of paradas a línea must keep once its sequence is built. */
 export const LINEA_MIN_PARADAS = 2;
+
+const MOTIVO_DESACTIVADA = "Desactivada desde Líneas";
+const MOTIVO_ACTIVADA = "Activada desde Líneas";
+
+/** Today as YYYY-MM-DD in the server's local time zone. */
+function today(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
 @Injectable()
 export class LineaService {
@@ -40,7 +52,8 @@ export class LineaService {
     private readonly lineaParadaRepository: Repository<LineaParadaEntity>,
     @InjectRepository(ParadaEntity)
     private readonly paradaRepository: Repository<ParadaEntity>,
-    private readonly audit: InfrastructureAuditService
+    private readonly audit: InfrastructureAuditService,
+    private readonly afectaciones: AfectacionService
   ) {}
 
   async create(
@@ -121,9 +134,29 @@ export class LineaService {
     const changedFields = Object.keys(updateLineaDto);
     const updated = await this.lineaRepository.manager.transaction(
       async (manager) => {
+        // An estado change goes through an afectación, so it cascades to the
+        // exclusive paradas/estaciones like one made from Afectaciones. The
+        // engine compares the estado under its row lock (no afectación when it
+        // already matches). It runs first, in the engine's lock order; the row
+        // is then re-read under the lock so the save never writes back a stale
+        // estado.
+        if (updateLineaDto.estadoLinea !== undefined) {
+          const activar = updateLineaDto.estadoLinea === EstadoLinea.ACTIVA;
+          await this.afectaciones.aplicarSiCambia(
+            manager,
+            {
+              accion: activar ? AccionAfectacion.ACTIVAR : AccionAfectacion.DESACTIVAR,
+              motivo: activar ? MOTIVO_ACTIVADA : MOTIVO_DESACTIVADA,
+              fechaInicio: today(),
+              idLinea: id,
+            },
+            actorEmployeeId
+          );
+        }
         const repo = manager.getRepository(LineaEntity);
-        Object.assign(linea, updateLineaDto);
-        const persisted = await repo.save(linea);
+        const actual = await this.lockOrFail(repo, id);
+        Object.assign(actual, updateLineaDto);
+        const persisted = await repo.save(actual);
         await this.audit.record(manager, actorEmployeeId, {
           action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
           entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
@@ -137,19 +170,25 @@ export class LineaService {
   }
 
   async remove(id: string, actorEmployeeId: string): Promise<void> {
-    const linea = await this.lineaRepository.findOne({
-      where: { idLinea: id },
-    });
-    if (!linea) {
-      throw new NotFoundException(`Línea con ID ${id} no encontrada`);
-    }
+    await this.ensureLineaExists(id);
 
-    // Soft delete: set status to INACTIVA (the DB CHECK constraint only
-    // allows ACTIVA/INACTIVA for estado_linea).
+    // Soft delete: the row is kept and only marked INACTIVA, through a
+    // DESACTIVAR afectación so its exclusive paradas and estaciones close too.
+    // An already INACTIVA línea has nothing left to deactivate; the engine
+    // decides that under the row lock, so of two concurrent deletes the second
+    // one creates no afectación.
     await this.lineaRepository.manager.transaction(async (manager) => {
-      const repo = manager.getRepository(LineaEntity);
-      linea.estadoLinea = EstadoLinea.INACTIVA;
-      await repo.save(linea);
+      await this.afectaciones.aplicarSiCambia(
+        manager,
+        {
+          accion: AccionAfectacion.DESACTIVAR,
+          motivo: MOTIVO_DESACTIVADA,
+          fechaInicio: today(),
+          idLinea: id,
+        },
+        actorEmployeeId
+      );
+      const linea = await this.lockOrFail(manager.getRepository(LineaEntity), id);
       await this.audit.record(manager, actorEmployeeId, {
         action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
         entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
@@ -349,6 +388,21 @@ export class LineaService {
         "ORDEN_LIST_MISMATCH"
       );
     }
+  }
+
+  /** Re-reads the row inside the transaction, locked FOR UPDATE. */
+  private async lockOrFail(
+    repo: Repository<LineaEntity>,
+    id: string
+  ): Promise<LineaEntity> {
+    const linea = await repo.findOne({
+      where: { idLinea: id },
+      lock: { mode: "pessimistic_write" },
+    });
+    if (!linea) {
+      throw new NotFoundException(`Línea con ID ${id} no encontrada`);
+    }
+    return linea;
   }
 
   private async ensureLineaExists(lineaId: string): Promise<void> {

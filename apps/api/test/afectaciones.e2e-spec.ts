@@ -931,6 +931,124 @@ describe("Afectaciones activar/desactivar (e2e)", () => {
     });
   });
 
+  describe("Líneas delete and estado edit go through the engine (S12)", () => {
+    let linea: string;
+    let paradaExclusiva: string;
+    let estacionExclusiva: string;
+    let paradaCompartida: string;
+    let paradaYaCerrada: string;
+
+    beforeAll(async () => {
+      linea = await insertLinea("S12 objetivo");
+      const otra = await insertLinea("S12 otra activa");
+      paradaExclusiva = await insertParada("S12 exclusiva", "ACTIVA", [linea]);
+      estacionExclusiva = await insertEstacion("S12 estación exclusiva", paradaExclusiva, "ACTIVA", [linea]);
+      paradaCompartida = await insertParada("S12 compartida", "ACTIVA", [linea, otra]);
+      paradaYaCerrada = await insertParada("S12 ya cerrada", "CERRADA", [linea]);
+    });
+
+    function lineaRequest(method: "delete" | "patch") {
+      return request(app.getHttpServer())
+        [method](`/infrastructure/lineas/${linea}`)
+        .set("Authorization", `Bearer ${token}`);
+    }
+
+    async function afectacionesDeLinea() {
+      return rows<Record<string, unknown>>(
+        `SELECT id_afectacion::text AS id, tipo_afectacion, motivo, to_char(fecha_inicio, 'YYYY-MM-DD') AS fecha
+           FROM tbl_afectacion WHERE id_linea = $1 ORDER BY id_afectacion`,
+        [linea],
+      );
+    }
+
+    it("a rejected PATCH (invalid field next to estadoLinea) is 400 and changes nothing", async () => {
+      const before = await snapshot();
+
+      await lineaRequest("patch").send({ estadoLinea: "INACTIVA", colorHex: "rojo" }).expect(400);
+
+      expect(await snapshot()).toBe(before);
+      expect(await estado("linea", linea)).toBe("ACTIVA");
+    });
+
+    it("DELETE deactivates it with cascade, through an afectación, keeping the remove row", async () => {
+      const mark = await auditMark();
+
+      await lineaRequest("delete").expect(200);
+
+      expect(await estado("linea", linea)).toBe("INACTIVA");
+      expect(await estado("parada", paradaExclusiva)).toBe("CERRADA");
+      expect(await estado("estacion", estacionExclusiva)).toBe("CERRADA");
+      expect(await estado("parada", paradaCompartida)).toBe("ACTIVA");
+      expect(await estado("parada", paradaYaCerrada)).toBe("CERRADA");
+      const stored = await afectacionesDeLinea();
+      expect(stored).toEqual([
+        { id: expect.any(String), tipo_afectacion: "DESACTIVAR", motivo: "Desactivada desde Líneas", fecha: today() },
+      ]);
+      expect(await storedCambios(stored[0]!.id as string)).toEqual([
+        { ...cambio("linea", linea, "ACTIVA", "INACTIVA"), revertido: false },
+        { ...cambio("parada", paradaExclusiva, "ACTIVA", "CERRADA"), revertido: false },
+        { ...cambio("estacion", estacionExclusiva, "ACTIVA", "CERRADA"), revertido: false },
+      ]);
+      const audit = await auditSince(mark);
+      expect(audit.map((a) => `${a.accion} ${a.entidad_tipo} ${a.entidad_id}`)).toEqual([
+        `deactivate linea ${linea}`,
+        `remove linea ${linea}`,
+      ]);
+      expect((audit[0]!.detalle as { cascada: unknown[] }).cascada).toEqual([
+        cambio("parada", paradaExclusiva, "ACTIVA", "CERRADA"),
+        cambio("estacion", estacionExclusiva, "ACTIVA", "CERRADA"),
+      ]);
+    });
+
+    it("DELETE of an already INACTIVA línea is 200 with its remove row and no afectación", async () => {
+      const before = (await afectacionesDeLinea()).length;
+      const mark = await auditMark();
+
+      await lineaRequest("delete").expect(200);
+
+      expect((await afectacionesDeLinea()).length).toBe(before);
+      const audit = await auditSince(mark);
+      expect(audit.map((a) => `${a.accion} ${a.entidad_tipo}`)).toEqual(["remove linea"]);
+    });
+
+    it("PATCH estadoLinea ACTIVA restores only what the cascade closed", async () => {
+      const mark = await auditMark();
+
+      const res = await lineaRequest("patch").send({ estadoLinea: "ACTIVA" }).expect(200);
+
+      expect(res.body.estadoLinea).toBe("ACTIVA");
+      expect(await estado("linea", linea)).toBe("ACTIVA");
+      expect(await estado("parada", paradaExclusiva)).toBe("ACTIVA");
+      expect(await estado("estacion", estacionExclusiva)).toBe("ACTIVA");
+      expect(await estado("parada", paradaCompartida)).toBe("ACTIVA");
+      expect(await estado("parada", paradaYaCerrada)).toBe("CERRADA");
+      const latest = (await afectacionesDeLinea()).at(-1)!;
+      expect(latest).toMatchObject({ tipo_afectacion: "ACTIVAR", motivo: "Activada desde Líneas", fecha: today() });
+      const audit = await auditSince(mark);
+      expect(audit.map((a) => `${a.accion} ${a.entidad_tipo}`)).toEqual(["activate linea", "update linea"]);
+      expect(audit[1]!.detalle).toEqual({ changedFields: ["estadoLinea"] });
+    });
+
+    it("PATCH estadoLinea INACTIVA with other fields deactivates it with cascade and saves the fields", async () => {
+      const res = await lineaRequest("patch").send({ estadoLinea: "INACTIVA", nombreLinea: `${runTag} S12 renombrada` }).expect(200);
+
+      expect(res.body).toMatchObject({ estadoLinea: "INACTIVA", nombreLinea: `${runTag} S12 renombrada` });
+      expect(await estado("linea", linea)).toBe("INACTIVA");
+      expect(await estado("parada", paradaExclusiva)).toBe("CERRADA");
+      expect(await estado("estacion", estacionExclusiva)).toBe("CERRADA");
+      expect(await estado("parada", paradaCompartida)).toBe("ACTIVA");
+    });
+
+    it("PATCH without estadoLinea creates no afectación", async () => {
+      const before = (await afectacionesDeLinea()).length;
+
+      await lineaRequest("patch").send({ nombreLinea: `${runTag} S12 otra vez` }).expect(200);
+
+      expect((await afectacionesDeLinea()).length).toBe(before);
+      expect(await estado("linea", linea)).toBe("INACTIVA");
+    });
+  });
+
   describe("línea cascade (S7)", () => {
     it("closes paradas no other ACTIVA línea owns, through tbl_linea_parada or tbl_estacion_linea", async () => {
       const linea = await insertLinea("S7 objetivo");
