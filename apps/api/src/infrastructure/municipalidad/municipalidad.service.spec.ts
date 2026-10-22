@@ -83,7 +83,7 @@ function errorCode(error: unknown): unknown {
 describe("MunicipalidadService", () => {
   let repo: MockRepository;
   let audit: { record: AnyMock };
-  let afectaciones: { aplicar: AnyMock };
+  let afectaciones: { aplicarSiCambia: AnyMock };
   let calls: string[];
   let service: MunicipalidadService;
 
@@ -91,7 +91,12 @@ describe("MunicipalidadService", () => {
     repo = makeMockRepository();
     calls = [];
     audit = { record: jest.fn() };
-    afectaciones = { aplicar: jest.fn(async () => calls.push("aplicar")) };
+    afectaciones = {
+      aplicarSiCambia: jest.fn(async () => {
+        calls.push("aplicar");
+        return null;
+      }),
+    };
     service = new MunicipalidadService(
       repo as unknown as Repository<MunicipalidadEntity>,
       audit as unknown as InfrastructureAuditService,
@@ -230,7 +235,7 @@ describe("MunicipalidadService", () => {
 
         const result = await service.update("1", { estadoMunicipalidad: to, departamento: "Escuintla" }, ACTOR);
 
-        expect(afectaciones.aplicar).toHaveBeenCalledWith(
+        expect(afectaciones.aplicarSiCambia).toHaveBeenCalledWith(
           expect.anything(),
           { accion, motivo, fechaInicio: today(), idMunicipalidad: "1" },
           ACTOR
@@ -249,14 +254,37 @@ describe("MunicipalidadService", () => {
       }
     );
 
-    it("does not create an afectación when estado is unchanged or absent", async () => {
+    it("leaves an unchanged estado to the engine (decided under its row lock) and skips it when absent", async () => {
       repo.findOne.mockResolvedValue(makeMunicipalidad());
       repo.save.mockImplementation(async (v) => v);
 
       await service.update("1", { estadoMunicipalidad: EstadoMunicipalidad.ACTIVA }, ACTOR);
       await service.update("1", { departamento: "Escuintla" }, ACTOR);
 
-      expect(afectaciones.aplicar).not.toHaveBeenCalled();
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledTimes(1);
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ accion: "ACTIVAR", idMunicipalidad: "1" }),
+        ACTOR
+      );
+    });
+
+    it("saves over the row re-read under a FOR UPDATE lock, never the stale estado read before the transaction", async () => {
+      repo.findOne
+        .mockResolvedValueOnce(makeMunicipalidad())
+        .mockResolvedValueOnce(makeMunicipalidad({ estadoMunicipalidad: EstadoMunicipalidad.INACTIVA }));
+      repo.save.mockImplementation(async (v) => v);
+
+      const result = await service.update("1", { departamento: "Escuintla" }, ACTOR);
+
+      expect(repo.findOne).toHaveBeenLastCalledWith({
+        where: { idMunicipalidad: "1" },
+        lock: { mode: "pessimistic_write" },
+      });
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ departamento: "Escuintla", estadoMunicipalidad: EstadoMunicipalidad.INACTIVA })
+      );
+      expect(result.estadoMunicipalidad).toBe(EstadoMunicipalidad.INACTIVA);
     });
 
     it("allows keeping the same nombre without a duplicate check", async () => {
@@ -265,7 +293,7 @@ describe("MunicipalidadService", () => {
 
       await service.update("1", { nombreMunicipalidad: "Guatemala" }, ACTOR);
 
-      expect(repo.findOne).toHaveBeenCalledTimes(1);
+      expect(repo.findOne).not.toHaveBeenCalledWith({ where: { nombreMunicipalidad: "Guatemala" } });
     });
 
     it("rejects renaming to a nombre used by another municipalidad and does not audit", async () => {
@@ -283,7 +311,7 @@ describe("MunicipalidadService", () => {
       expect(errorCode(error)).toBe("MUNICIPALIDAD_NOMBRE_DUPLICATE");
       expect(repo.save).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
-      expect(afectaciones.aplicar).not.toHaveBeenCalled();
+      expect(afectaciones.aplicarSiCambia).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when missing", async () => {
@@ -300,7 +328,7 @@ describe("MunicipalidadService", () => {
 
       await service.remove("1", ACTOR);
 
-      expect(afectaciones.aplicar).toHaveBeenCalledWith(
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledWith(
         expect.anything(),
         {
           accion: "DESACTIVAR",
@@ -318,12 +346,21 @@ describe("MunicipalidadService", () => {
       });
     });
 
-    it("keeps an already INACTIVA municipalidad as is: no afectación, remove still audited", async () => {
-      repo.findOne.mockResolvedValue(makeMunicipalidad({ estadoMunicipalidad: EstadoMunicipalidad.INACTIVA }));
+    it("keeps an already INACTIVA municipalidad as is: the engine applies nothing, remove still audited", async () => {
+      // Two concurrent deletes: the second sees INACTIVA only under the lock,
+      // so the decision is the engine's (aplicarSiCambia → null), not a stale read.
+      repo.findOne
+        .mockResolvedValueOnce(makeMunicipalidad())
+        .mockResolvedValueOnce(makeMunicipalidad({ estadoMunicipalidad: EstadoMunicipalidad.INACTIVA }));
 
       await service.remove("1", ACTOR);
 
-      expect(afectaciones.aplicar).not.toHaveBeenCalled();
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledTimes(1);
+      expect(repo.findOne).toHaveBeenLastCalledWith({
+        where: { idMunicipalidad: "1" },
+        lock: { mode: "pessimistic_write" },
+      });
+      expect(audit.record).toHaveBeenCalledTimes(1);
       expect(audit.record).toHaveBeenCalledWith(
         expect.anything(),
         ACTOR,
@@ -337,7 +374,7 @@ describe("MunicipalidadService", () => {
         NotFoundException
       );
       expect(repo.save).not.toHaveBeenCalled();
-      expect(afectaciones.aplicar).not.toHaveBeenCalled();
+      expect(afectaciones.aplicarSiCambia).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
   });

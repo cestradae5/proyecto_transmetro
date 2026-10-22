@@ -56,6 +56,9 @@ function noEncontrado(target: EntidadRef): NotFoundException {
   return new NotFoundException(`${ENTIDAD_KINDS[target.tipo].label} con ID ${target.id} no encontrada`);
 }
 
+const refsDe = (cambios: PlanCambios["cambios"]): EntidadRef[] =>
+  cambios.map((c) => ({ tipo: c.entidadTipo, id: c.entidadId }));
+
 function fechasInvalidas(fechaInicio: string, fechaFin: string | null | undefined): boolean {
   return Boolean(fechaFin) && new Date(fechaFin!) < new Date(fechaInicio);
 }
@@ -80,7 +83,9 @@ export class AfectacionService {
   /**
    * Applies an afectación inside the caller's transaction (also used by
    * MunicipalidadService): changes the target and its cascade, stores the
-   * afectación and every change, and writes one bitácora row. Dates are
+   * afectación and every change, and writes one bitácora row. Earlier changes
+   * still in effect on the rows it changes are superseded (marked revertido),
+   * so a later ACTIVAR never undoes a newer change (S8). Dates are
    * informative: nothing reverts automatically. Every check runs before the
    * first write.
    */
@@ -89,6 +94,28 @@ export class AfectacionService {
     dto: CreateAfectacionDto,
     actorEmployeeId: string
   ): Promise<AfectacionResponseDto> {
+    return (await this.aplicarPlan(manager, dto, actorEmployeeId, false))!;
+  }
+
+  /**
+   * Like `aplicar`, but a target already in the requested state is not an
+   * error: nothing is written and it returns null. The state is read under the
+   * target's row lock, so concurrent callers see each other's result.
+   */
+  async aplicarSiCambia(
+    manager: EntityManager,
+    dto: CreateAfectacionDto,
+    actorEmployeeId: string
+  ): Promise<AfectacionResponseDto | null> {
+    return this.aplicarPlan(manager, dto, actorEmployeeId, true);
+  }
+
+  private async aplicarPlan(
+    manager: EntityManager,
+    dto: CreateAfectacionDto,
+    actorEmployeeId: string,
+    omitirSinCambio: boolean
+  ): Promise<AfectacionResponseDto | null> {
     const targets = targetsOf(dto);
     if (targets.length !== 1) {
       throw new BadRequestException(
@@ -112,6 +139,7 @@ export class AfectacionService {
           return revertidos;
         })
       : await engine.planDesactivar(target);
+    if (omitirSinCambio && plan.estadoActual !== null && plan.cambios.length === 0) return null;
     this.assertAplicable(target, activar, plan);
 
     await engine.aplicar(plan);
@@ -126,8 +154,9 @@ export class AfectacionService {
       idEstacion: dto.idEstacion ?? null,
     };
     const idAfectacion = await store.insertarAfectacion(registro);
-    await store.insertarCambios(idAfectacion, plan.cambios);
     await store.marcarRevertidos(revertidos.map((c) => c.idCambio));
+    await store.superarCambios(refsDe(plan.cambios));
+    await store.insertarCambios(idAfectacion, plan.cambios);
     await this.auditarAccion(manager, actorEmployeeId, target, activar, { ...registro, idAfectacion }, plan);
 
     return this.toResponse(
@@ -141,7 +170,8 @@ export class AfectacionService {
    * the acción applies it, and only on the target's most recent afectación:
    * DESACTIVAR→ACTIVAR reverts what this afectación changed (rows still in the
    * state it set), ACTIVAR→DESACTIVAR applies a fresh deactivation with
-   * cascade. Either way its previous changes are marked revertido.
+   * cascade. Either way its previous changes are marked revertido, and so is
+   * any earlier change still in effect on a row it changes now.
    */
   async update(
     id: string,
@@ -230,6 +260,7 @@ export class AfectacionService {
 
     await engine.aplicar(plan);
     await store.marcarRevertidos(vigentes.map((c) => c.idCambio));
+    await store.superarCambios(refsDe(plan.cambios));
     await store.insertarCambios(actual.idAfectacion, plan.cambios);
     await this.auditarAccion(manager, actorEmployeeId, target, activar, merged, plan);
   }

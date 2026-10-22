@@ -799,6 +799,138 @@ describe("Afectaciones activar/desactivar (e2e)", () => {
     });
   });
 
+  // A cascade's change stops counting once anything else changes that row, so
+  // a later ACTIVAR of the municipalidad never undoes a newer direct change.
+  describe("superseded cascade changes (S8)", () => {
+    async function cambiosDeEntidad(tipo: Tipo, id: string, ids: string[]) {
+      return rows<Record<string, unknown>>(
+        `SELECT estado_anterior AS "estadoAnterior", estado_nuevo AS "estadoNuevo" FROM tbl_afectacion_cambio
+          WHERE entidad_tipo = $1 AND entidad_id = $2 AND id_afectacion = ANY($3::bigint[])`,
+        [tipo, id, ids],
+      );
+    }
+
+    it("parada closed directly after being reopened is not reopened by the municipalidad ACTIVAR", async () => {
+      const muni = await insertMunicipalidad("Supersede parada");
+      const linea = await insertLinea("Supersede parada 1", "ACTIVA", [muni]);
+      const parada = await insertParada("Supersede parada P", "ACTIVA", [linea]);
+      const base = { motivo: "S8", fechaInicio: "2026-10-21" };
+
+      await post({ ...base, accion: "DESACTIVAR", idMunicipalidad: muni }).expect(201);
+      expect(await estado("parada", parada)).toBe("CERRADA");
+      await post({ ...base, accion: "ACTIVAR", idParada: parada }).expect(201);
+      await post({ ...base, accion: "DESACTIVAR", idParada: parada }).expect(201);
+      const res = await post({ ...base, accion: "ACTIVAR", idMunicipalidad: muni }).expect(201);
+
+      expect(await estado("municipalidad", muni)).toBe("ACTIVA");
+      expect(await estado("linea", linea)).toBe("ACTIVA");
+      expect(await estado("parada", parada)).toBe("CERRADA");
+      expect(res.body.cambios.map((c: { entidadTipo: string }) => c.entidadTipo)).toEqual(["municipalidad", "linea"]);
+    });
+
+    it("línea deactivated directly after being reactivated stays INACTIVA", async () => {
+      const muni = await insertMunicipalidad("Supersede línea");
+      const linea = await insertLinea("Supersede línea 1", "ACTIVA", [muni]);
+      const base = { motivo: "S8", fechaInicio: "2026-10-21" };
+
+      await post({ ...base, accion: "DESACTIVAR", idMunicipalidad: muni }).expect(201);
+      await post({ ...base, accion: "ACTIVAR", idLinea: linea }).expect(201);
+      await post({ ...base, accion: "DESACTIVAR", idLinea: linea }).expect(201);
+      const res = await post({ ...base, accion: "ACTIVAR", idMunicipalidad: muni }).expect(201);
+
+      expect(await estado("municipalidad", muni)).toBe("ACTIVA");
+      expect(await estado("linea", linea)).toBe("INACTIVA");
+      expect(res.body.cambios.map((c: { entidadTipo: string }) => c.entidadTipo)).toEqual(["municipalidad"]);
+    });
+
+    it("municipalidad PATCH estado + duplicate name is 409 and changes nothing", async () => {
+      const taken = await insertMunicipalidad("Nombre tomado");
+      const muni = await insertMunicipalidad("Renombrada");
+      await insertLinea("Renombrada 1", "ACTIVA", [muni]);
+      const [nombre] = await rows<{ n: string }>(
+        `SELECT nombre_municipalidad AS n FROM tbl_municipalidad WHERE id_municipalidad = $1`,
+        [taken],
+      );
+      const before = await snapshot();
+
+      const res = await request(app.getHttpServer())
+        .patch(`/infrastructure/municipalidades/${muni}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ nombreMunicipalidad: nombre!.n, estadoMunicipalidad: "INACTIVA" })
+        .expect(409);
+
+      expect(res.body.error).toBe("MUNICIPALIDAD_NOMBRE_DUPLICATE");
+      expect(await snapshot()).toBe(before);
+    });
+
+    it("concurrent DESACTIVAR of municipalidades sharing a línea takes it down exactly once", async () => {
+      const muniA = await insertMunicipalidad("Concurrente A");
+      const muniB = await insertMunicipalidad("Concurrente B");
+      const linea = await insertLinea("Concurrente compartida", "ACTIVA", [muniA, muniB]);
+      const base = { accion: "DESACTIVAR", motivo: "S6 concurrente", fechaInicio: "2026-10-21" };
+
+      const [a, b] = await Promise.all([
+        post({ ...base, idMunicipalidad: muniA }),
+        post({ ...base, idMunicipalidad: muniB }),
+      ]);
+
+      expect([a.status, b.status]).toEqual([201, 201]);
+      expect(await estado("municipalidad", muniA)).toBe("INACTIVA");
+      expect(await estado("municipalidad", muniB)).toBe("INACTIVA");
+      expect(await estado("linea", linea)).toBe("INACTIVA");
+      const ids = [String(a.body.idAfectacion), String(b.body.idAfectacion)];
+      expect(await cambiosDeEntidad("linea", linea, ids)).toEqual([{ estadoAnterior: "ACTIVA", estadoNuevo: "INACTIVA" }]);
+    });
+
+    it("concurrent DELETE of the same municipalidad: both 200, one afectación", async () => {
+      const muni = await insertMunicipalidad("Borrado doble");
+      const linea = await insertLinea("Borrado doble 1", "ACTIVA", [muni]);
+      const mark = await auditMark();
+      const del = () =>
+        request(app.getHttpServer())
+          .delete(`/infrastructure/municipalidades/${muni}`)
+          .set("Authorization", `Bearer ${token}`);
+
+      const [a, b] = await Promise.all([del(), del()]);
+
+      expect([a.status, b.status]).toEqual([200, 200]);
+      expect(await estado("municipalidad", muni)).toBe("INACTIVA");
+      expect(await estado("linea", linea)).toBe("INACTIVA");
+      const [count] = await rows<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM tbl_afectacion WHERE id_municipalidad = $1`,
+        [muni],
+      );
+      expect(count!.n).toBe(1);
+      const audit = await auditSince(mark);
+      expect(audit.map((r) => `${r.accion} ${r.entidad_tipo}`)).toEqual([
+        "deactivate municipalidad",
+        "remove municipalidad",
+        "remove municipalidad",
+      ]);
+    });
+
+    it("PATCH fechaFin null clears the stored fecha fin", async () => {
+      const linea = await insertLinea("Fecha fin nula");
+      const creada = await post({
+        accion: "DESACTIVAR",
+        motivo: "Con fin",
+        fechaInicio: "2026-10-21",
+        fechaFin: "2026-10-30",
+        idLinea: linea,
+      }).expect(201);
+      const id = String(creada.body.idAfectacion);
+
+      const res = await patch(id, { fechaFin: null }).expect(200);
+
+      expect(res.body.fechaFin).toBeNull();
+      const [stored] = await rows<{ fin: string | null }>(
+        `SELECT fecha_fin AS fin FROM tbl_afectacion WHERE id_afectacion = $1`,
+        [id],
+      );
+      expect(stored!.fin).toBeNull();
+    });
+  });
+
   describe("línea cascade (S7)", () => {
     it("closes paradas no other ACTIVA línea owns, through tbl_linea_parada or tbl_estacion_linea", async () => {
       const linea = await insertLinea("S7 objetivo");

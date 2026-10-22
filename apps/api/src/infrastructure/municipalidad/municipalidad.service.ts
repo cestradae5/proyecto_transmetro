@@ -109,19 +109,16 @@ export class MunicipalidadService {
     }
 
     const changedFields = Object.keys(dto);
-    const nuevoEstado =
-      dto.estadoMunicipalidad !== undefined &&
-      dto.estadoMunicipalidad !== municipalidad.estadoMunicipalidad
-        ? dto.estadoMunicipalidad
-        : undefined;
     const updated = await this.municipalidadRepository.manager.transaction(
       async (manager) => {
         // An estado change goes through an afectación, so it cascades to the
-        // líneas/paradas like one made from Afectaciones. It runs first: the
-        // save below then sees the new estado and leaves it alone.
-        if (nuevoEstado !== undefined) {
-          const activar = nuevoEstado === EstadoMunicipalidad.ACTIVA;
-          await this.afectaciones.aplicar(
+        // líneas/paradas like one made from Afectaciones. The engine compares
+        // the estado under its row lock (no afectación when it already
+        // matches). It runs first, in the engine's lock order; the row is then
+        // re-read under the lock so the save never writes back a stale estado.
+        if (dto.estadoMunicipalidad !== undefined) {
+          const activar = dto.estadoMunicipalidad === EstadoMunicipalidad.ACTIVA;
+          await this.afectaciones.aplicarSiCambia(
             manager,
             {
               accion: activar ? AccionAfectacion.ACTIVAR : AccionAfectacion.DESACTIVAR,
@@ -133,8 +130,9 @@ export class MunicipalidadService {
           );
         }
         const repo = manager.getRepository(MunicipalidadEntity);
-        Object.assign(municipalidad, dto);
-        const persisted = await this.saveOrConflict(repo, municipalidad);
+        const actual = await this.lockOrFail(repo, id);
+        Object.assign(actual, dto);
+        const persisted = await this.saveOrConflict(repo, actual);
         await this.audit.record(manager, actorEmployeeId, {
           action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
           entityType: INFRASTRUCTURE_ENTITY_TYPES.MUNICIPALIDAD,
@@ -148,25 +146,29 @@ export class MunicipalidadService {
   }
 
   async remove(id: string, actorEmployeeId: string): Promise<void> {
-    const municipalidad = await this.findOrFail(id);
+    await this.findOrFail(id);
 
     // Soft delete like the sibling infrastructure modules: the row (and its
     // línea links) is kept and only marked INACTIVA, through a DESACTIVAR
     // afectación so its exclusive líneas, paradas and estaciones go down too.
-    // An already INACTIVA municipalidad has nothing left to deactivate.
+    // An already INACTIVA municipalidad has nothing left to deactivate; the
+    // engine decides that under the row lock, so of two concurrent deletes
+    // the second one creates no afectación.
     await this.municipalidadRepository.manager.transaction(async (manager) => {
-      if (municipalidad.estadoMunicipalidad !== EstadoMunicipalidad.INACTIVA) {
-        await this.afectaciones.aplicar(
-          manager,
-          {
-            accion: AccionAfectacion.DESACTIVAR,
-            motivo: MOTIVO_DESACTIVADA,
-            fechaInicio: today(),
-            idMunicipalidad: id,
-          },
-          actorEmployeeId
-        );
-      }
+      await this.afectaciones.aplicarSiCambia(
+        manager,
+        {
+          accion: AccionAfectacion.DESACTIVAR,
+          motivo: MOTIVO_DESACTIVADA,
+          fechaInicio: today(),
+          idMunicipalidad: id,
+        },
+        actorEmployeeId
+      );
+      const municipalidad = await this.lockOrFail(
+        manager.getRepository(MunicipalidadEntity),
+        id
+      );
       await this.audit.record(manager, actorEmployeeId, {
         action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
         entityType: INFRASTRUCTURE_ENTITY_TYPES.MUNICIPALIDAD,
@@ -179,6 +181,21 @@ export class MunicipalidadService {
   private async findOrFail(id: string): Promise<MunicipalidadEntity> {
     const municipalidad = await this.municipalidadRepository.findOne({
       where: { idMunicipalidad: id },
+    });
+    if (!municipalidad) {
+      throw new NotFoundException(`Municipalidad con ID ${id} no encontrada`);
+    }
+    return municipalidad;
+  }
+
+  /** Re-reads the row inside the transaction, locked FOR UPDATE. */
+  private async lockOrFail(
+    repo: Repository<MunicipalidadEntity>,
+    id: string
+  ): Promise<MunicipalidadEntity> {
+    const municipalidad = await repo.findOne({
+      where: { idMunicipalidad: id },
+      lock: { mode: "pessimistic_write" },
     });
     if (!municipalidad) {
       throw new NotFoundException(`Municipalidad con ID ${id} no encontrada`);

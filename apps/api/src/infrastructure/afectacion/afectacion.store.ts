@@ -73,6 +73,8 @@ export interface AfectacionStore {
   ): Promise<void>;
   insertarCambios(idAfectacion: string, cambios: CambioEstado[]): Promise<void>;
   marcarRevertidos(idCambios: string[]): Promise<void>;
+  /** Marks revertido every change still in effect on these rows: a newer change supersedes it. */
+  superarCambios(refs: EntidadRef[]): Promise<void>;
   /** Every change of the given afectaciones, oldest first, by idAfectacion. */
   cambiosDe(idAfectaciones: string[]): Promise<Map<string, CambioRegistrado[]>>;
 }
@@ -267,6 +269,16 @@ export class TypeOrmAfectacionStore implements AfectacionStore {
     await this.query(
       `UPDATE tbl_afectacion_cambio SET revertido = true WHERE id_afectacion_cambio = ANY($1::bigint[])`,
       [idCambios]
+    );
+  }
+
+  async superarCambios(refs: EntidadRef[]): Promise<void> {
+    if (refs.length === 0) return;
+    await this.query(
+      `UPDATE tbl_afectacion_cambio SET revertido = true
+        WHERE NOT revertido AND (entidad_tipo, entidad_id) IN
+              (SELECT * FROM unnest($1::text[], $2::bigint[]))`,
+      [refs.map((r) => r.tipo), refs.map((r) => r.id)]
     );
   }
 

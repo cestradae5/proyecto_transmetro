@@ -171,6 +171,15 @@ class FakeStore implements AfectacionStore {
       }
     }
   }
+  async superarCambios(refs: EntidadRef[]) {
+    const keys = refs.map(refKey);
+    for (const c of this.cambios) {
+      if (!c.revertido && keys.includes(refKey({ tipo: c.entidadTipo, id: c.entidadId }))) {
+        this.writes.push(`revertido ${c.idCambio}`);
+        c.revertido = true;
+      }
+    }
+  }
   async cambiosDe(ids: string[]) {
     const out = new Map<string, CambioRegistrado[]>();
     for (const c of this.cambios.filter((c) => ids.includes(c.idAfectacion))) {
@@ -532,6 +541,47 @@ describe("AfectacionService", () => {
       await service.create(baseDto({ accion: AccionAfectacion.ACTIVAR, idMunicipalidad: "1" }), ACTOR);
 
       expect(store.estado("parada", "11")).toBe("MANTENIMIENTO");
+    });
+
+    it("a direct change on a cascaded row supersedes the cascade's change, so the ACTIVAR leaves it alone", async () => {
+      store.lineaParada.push(["1", "10"]);
+
+      await service.create(baseDto({ accion: AccionAfectacion.ACTIVAR, idParada: "10" }), ACTOR);
+      expect(store.cambiosDeAfectacion("50").map((c) => c.revertido)).toEqual([false, false, true, false, false]);
+      await service.create(baseDto({ idParada: "10" }), ACTOR);
+      const result = await service.create(baseDto({ accion: AccionAfectacion.ACTIVAR, idMunicipalidad: "1" }), ACTOR);
+
+      expect(store.estado("municipalidad", "1")).toBe("ACTIVA");
+      expect(store.estado("linea", "1")).toBe("ACTIVA");
+      expect(store.estado("parada", "10")).toBe("CERRADA");
+      expect(result.cambios.map((c) => `${c.entidadTipo}:${c.entidadId}`)).toEqual([
+        "municipalidad:1",
+        "linea:1",
+        "estacion:30",
+      ]);
+      // Only the newest change on each row is still in effect.
+      const vigentes = store.cambios.filter((c) => !c.revertido).map((c) => `${c.idAfectacion} ${refKey({ tipo: c.entidadTipo, id: c.entidadId })}`);
+      expect(vigentes).toEqual(["101 parada:10", "102 municipalidad:1", "102 linea:1", "102 estacion:30"]);
+    });
+
+    it("aplicarSiCambia returns null and writes nothing when the target already has that state", async () => {
+      const result = await service.aplicarSiCambia(
+        {} as EntityManager,
+        baseDto({ idMunicipalidad: "1" }),
+        ACTOR
+      );
+
+      expect(result).toBeNull();
+      expectNothingWritten();
+    });
+
+    it("aplicarSiCambia still rejects a missing target with 404", async () => {
+      const error = await service
+        .aplicarSiCambia({} as EntityManager, baseDto({ idMunicipalidad: "999" }), ACTOR)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expectNothingWritten();
     });
 
     it("activates only the target when it has no DESACTIVAR still in effect", async () => {
