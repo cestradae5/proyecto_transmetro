@@ -26,8 +26,8 @@ applied to the target's real state and recorded in the bitácora. Branch: `feat/
 - T4 [S1-S5] Independent verification (Risk item 1: schema change) — route: gentle-ai-verify — commit: n/a (done; S1-S5 pass, schema upgrade idempotent and equal to fresh install)
 - T5 [S3-S5] Fix verify findings: blank motivo, date-only dates, stale READMEs, rejected-changes-nothing e2e — route: inline — commit: 8d98cc2 (done; unit 981/981, e2e 19/19)
 - T6 [S6-S11] DB + API: tbl_afectacion.id_municipalidad (4-way CHECK), tbl_afectacion_cambio, cascade engine, PATCH edit, municipalidad remove/estado routed through the engine, specs + e2e — route: gentle-ai-worker (context backstop) — commit: 81941de (schema), 15cd14c (API) (done; unit 1015/1015, e2e 38/38 on scratch fresh+upgraded DBs)
-- T7 [S9-S10] admin-web: Municipalidad target, Editar per row (acción/motivo/fechas), refresh municipalidades too — route: gentle-ai-worker — commit: pending
-- T8 [S6-S11] Independent verification (Risk item 1 schema, item 3 removed-then-restored PATCH, item 4 cascade under row locks) — route: gentle-ai-verify — commit: n/a
+- T7 [S9-S10] admin-web: Municipalidad target, Editar per row (acción/motivo/fechas), refresh municipalidades too — route: gentle-ai-worker — commit: 4cd6348 (done; vitest 719/719, tsc 0)
+- T8 [S6-S11] Independent verification (Risk item 1 schema, item 3 removed-then-restored PATCH, item 4 cascade under row locks) — route: gentle-ai-verify — commit: n/a (done; S6, S7, S9-S11 pass; S8 blocker fixed in 14a0460: unit 1019/1019, e2e 44/44, re-run by parent)
 
 ## Log
 
@@ -51,4 +51,4 @@ applied to the target's real state and recorded in the bitácora. Branch: `feat/
   - Errors: 400 "Debe proporcionar exactamente uno: idMunicipalidad, idLinea, idParada o idEstacion"; 400 "La fecha de fin no puede ser anterior a la fecha de inicio"; 404 "<Tipo> con ID x no encontrada" / "Afectación con ID x no encontrada"; 409 AFECTACION_SIN_CAMBIO "La <tipo> ya está activa|inactiva"; 409 AFECTACION_NO_ES_ULTIMA "Solo la afectación más reciente de este objetivo puede cambiar de acción"; 409 AFECTACION_ACCION_NO_EDITABLE "Las afectaciones anteriores a activar/desactivar no pueden cambiar de acción". Text in body.message, code in body.error.
   - Municipalidad DELETE and estado PATCH now also change líneas/paradas/estaciones: the page must refresh municipalidades, líneas, paradas, estaciones and afectaciones after those calls and after any afectación create/edit.
   - Known limit: a línea brought down by a municipalidad cascade and reactivated on its own does not restore its paradas (they come back when the municipalidad is reactivated).
-
+- L11. T8 verify: S8 failed (a direct change after a cascade was undone by the municipalidad ACTIVAR). Fixed in 14a0460 by superseding earlier changes on the same row; municipalidad estado now decided under lock. Open product point: a cascade-closed estación whose parada was later changed directly is still restored by the municipalidad ACTIVAR (per-row rule). Línea/parada own forms still do not cascade (out of scope per L9).
