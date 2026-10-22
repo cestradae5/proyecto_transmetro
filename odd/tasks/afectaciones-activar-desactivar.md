@@ -29,7 +29,7 @@ applied to the target's real state and recorded in the bitácora. Branch: `feat/
 - T6 [S6-S11] DB + API: tbl_afectacion.id_municipalidad (4-way CHECK), tbl_afectacion_cambio, cascade engine, PATCH edit, municipalidad remove/estado routed through the engine, specs + e2e — route: gentle-ai-worker (context backstop) — commit: 81941de (schema), 15cd14c (API) (done; unit 1015/1015, e2e 38/38 on scratch fresh+upgraded DBs)
 - T7 [S9-S10] admin-web: Municipalidad target, Editar per row (acción/motivo/fechas), refresh municipalidades too — route: gentle-ai-worker — commit: 4cd6348 (done; vitest 719/719, tsc 0)
 - T8 [S6-S11] Independent verification (Risk item 1 schema, item 3 removed-then-restored PATCH, item 4 cascade under row locks) — route: gentle-ai-verify — commit: n/a (done; S6, S7, S9-S11 pass; S8 blocker fixed in 14a0460: unit 1019/1019, e2e 44/44, re-run by parent)
-- T9 [S12] API + admin-web refresh: route línea remove/estado update through the engine, specs + e2e; page refreshes the five lists after línea delete/edit — route: gentle-ai-worker — commit: pending
+- T9 [S12] API + admin-web refresh: route línea remove/estado update through the engine, specs + e2e; page refreshes the five lists after línea delete/edit — route: gentle-ai-worker — commit: 39b085f (done; unit 1024/1024, e2e 50/50, web 721/721, re-run by parent)
 
 ## Log
 
