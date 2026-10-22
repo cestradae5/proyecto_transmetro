@@ -29,6 +29,7 @@ import { DataSource } from "typeorm";
 import request from "supertest";
 
 import { AuthenticationModule } from "../src/authentication/authentication.module.js";
+import { trustReverseProxy } from "../src/platform/http/trust-reverse-proxy.js";
 import { GOOGLE_CREDENTIAL_VERIFIER } from "../src/authentication/infrastructure/google-credential-verifier.port.js";
 import { AuthenticationService } from "../src/authentication/authentication.service.js";
 import type { MeResult } from "../src/authentication/authentication.contracts.js";
@@ -234,5 +235,51 @@ describe("Authentication HTTP endpoints", () => {
       .get("/authentication/logout")
       .set("Authorization", `Bearer ${VALID_TOKEN}`)
       .expect(404);
+  });
+});
+// ----------------------------------------------------------------------------
+// Behind a TLS-terminating reverse proxy (Render), the app receives plain http.
+// The Google redirect_uri must keep the public scheme from X-Forwarded-Proto,
+// and stay plain http on localhost where no proxy sends that header.
+// ----------------------------------------------------------------------------
+describe("Google redirect_uri behind a reverse proxy", () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await createMockedAuthenticationModule();
+    app = moduleRef.createNestApplication();
+    trustReverseProxy(app);
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  function redirectUriOf(location: string): string | null {
+    return new URL(location).searchParams.get("redirect_uri");
+  }
+
+  it("uses https when the proxy forwards X-Forwarded-Proto: https", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/authentication/google")
+      .set("Host", "transmetro-api.onrender.com")
+      .set("X-Forwarded-Proto", "https")
+      .expect(302);
+
+    expect(redirectUriOf(response.headers.location as string)).toBe(
+      "https://transmetro-api.onrender.com/authentication/google/callback",
+    );
+  });
+
+  it("keeps http on localhost, where no proxy header is sent", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/authentication/google")
+      .set("Host", "localhost:3000")
+      .expect(302);
+
+    expect(redirectUriOf(response.headers.location as string)).toBe(
+      "http://localhost:3000/authentication/google/callback",
+    );
   });
 });
