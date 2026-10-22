@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, formatMoney, getPayment, NETWORK_ERROR_MESSAGE, type Payment, type PaymentState } from "../api";
-
-// The relay and cancel redirects use it when the referencia is not ours.
-const UNKNOWN_PAYMENT = "desconocido";
+import { UNKNOWN_PAYMENT } from "../pending-payment";
 const NOT_FOUND_MESSAGE = "No encontramos el pago.";
 
 const STATE_MESSAGES: Record<Exclude<PaymentState, "APROBADA">, string> = {

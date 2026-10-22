@@ -7,6 +7,7 @@ import { PaymentForm } from "./components/payment-form";
 import { PaymentResult } from "./components/payment-result";
 import { RechargeForm } from "./components/recharge-form";
 import { TurnstileSimulator } from "./components/turnstile-simulator";
+import { forgetPayment, resolvePaymentReference } from "./pending-payment";
 
 // Read at render time so tests (and a rebuilt bundle) can switch them.
 const simulatorEnabled = () => import.meta.env.VITE_TURNSTILE_SIMULATOR === "true";
@@ -14,8 +15,9 @@ const rechargeSimulatorEnabled = () => import.meta.env.VITE_RECHARGE_SIMULATOR =
 
 const assignLocation = (url: string) => window.location.assign(url);
 
-// The API sends the browser back from QPayPro to /?pago=<referencia>.
-const paymentReference = () => new URLSearchParams(window.location.search).get("pago");
+// The API sends the browser back from QPayPro to /?pago=<referencia>, or to
+// ?pago=desconocido when QPayPro omits order_id (then this tab's payment).
+const paymentReference = () => resolvePaymentReference(new URLSearchParams(window.location.search).get("pago"));
 
 interface AppProps {
   /** Leaves the SPA for the QPayPro checkout; injectable for tests. */
@@ -33,6 +35,7 @@ export function App({ navigate = assignLocation }: AppProps) {
 
   const leaveResult = () => {
     window.history.replaceState(null, "", window.location.pathname);
+    forgetPayment();
     setPago(null);
   };
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 
 import { ApiError, NETWORK_ERROR_MESSAGE, startPayment } from "../api";
+import { rememberPayment } from "../pending-payment";
 
 const AMOUNTS = [10, 25, 50, 100] as const;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,7 +30,8 @@ export function PaymentForm({ numeroTarjeta, navigate }: PaymentFormProps) {
     setError(null);
     setSending(true);
     try {
-      const { checkoutUrl } = await startPayment(numeroTarjeta, monto, trimmedEmail);
+      const { referencia, checkoutUrl } = await startPayment(numeroTarjeta, monto, trimmedEmail);
+      rememberPayment(referencia);
       // Stay disabled: the browser is leaving for the checkout.
       navigate(checkoutUrl);
     } catch (err) {

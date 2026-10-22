@@ -1,6 +1,6 @@
 // odd/tasks/user-web.md S8-S10 and odd/tasks/qpaypro-checkout.md S9-S10. fetch is mocked: each test queues the API
 // answers it expects, in order, and asserts the requests the app sent.
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./app";
@@ -35,6 +35,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   window.history.replaceState(null, "", "/");
+  window.sessionStorage.clear();
 });
 
 const call = (index: number) => {
@@ -446,6 +447,75 @@ describe("QPayPro result (qpaypro-checkout S10)", () => {
     render(<App />);
 
     expect(screen.getByLabelText("Número de tarjeta")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// The QPayPro sandbox credits through a relay call that carries order_id, but
+// sends the payer's browser back to the relay without it, so the API answers
+// ?pago=desconocido. The tab remembers the payment it started instead.
+describe("QPayPro return without a referencia", () => {
+  const CHECKOUT = { referencia: "QPP-1234", checkoutUrl: "https://sandboxpayments.qpaypro.com/checkout/woocommerce?token=abc" };
+  const approved = (referencia: string) => ({
+    referencia,
+    numeroTarjeta: "TEST-0001",
+    monto: 25,
+    estadoPago: "APROBADA",
+    numeroComprobante: "QPP-REC-77",
+    saldo: 37.5,
+  });
+
+  async function startPayment() {
+    const navigate = vi.fn();
+    const view = render(<App navigate={navigate} />);
+    await openCard();
+    answers.push({ status: 201, body: CHECKOUT });
+    fireEvent.click(screen.getByRole("button", { name: "Q25" }));
+    fireEvent.change(screen.getByLabelText("Correo electrónico"), { target: { value: "ana@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pagar con QPayPro" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(CHECKOUT.checkoutUrl));
+    view.unmount();
+    fetchMock.mockClear();
+  }
+
+  function returnFrom(pago: string) {
+    window.history.replaceState(null, "", `/?pago=${pago}`);
+    render(<App />);
+  }
+
+  it("shows the payment this tab started when QPayPro returns ?pago=desconocido", async () => {
+    await startPayment();
+    answers.push({ status: 200, body: approved("QPP-1234") });
+    returnFrom("desconocido");
+
+    expect(await screen.findByText("Recarga exitosa")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(call(0)).toMatchObject({ url: `${API}/citizen/payments/QPP-1234`, method: "GET" });
+    expect(screen.queryByText("No encontramos el pago.")).not.toBeInTheDocument();
+  });
+
+  it("prefers the referencia in the URL over the one the tab remembers", async () => {
+    await startPayment();
+    answers.push({ status: 200, body: approved("QPP-9999") });
+    returnFrom("QPP-9999");
+
+    expect(await screen.findByText("Recarga exitosa")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(call(0)).toMatchObject({ url: `${API}/citizen/payments/QPP-9999`, method: "GET" });
+  });
+
+  it("forgets the payment after 'Volver', so a later ?pago=desconocido is not found", async () => {
+    await startPayment();
+    answers.push({ status: 200, body: approved("QPP-1234") });
+    returnFrom("desconocido");
+    await screen.findByText("Recarga exitosa");
+    fireEvent.click(screen.getByRole("button", { name: "Volver" }));
+    cleanup();
+    fetchMock.mockClear();
+
+    returnFrom("desconocido");
+
+    expect(await screen.findByText("No encontramos el pago.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
