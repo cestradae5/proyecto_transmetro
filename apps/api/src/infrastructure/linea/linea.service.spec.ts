@@ -13,6 +13,7 @@ import { validate } from "class-validator";
 import type { EntityManager, Repository } from "typeorm";
 
 import type { InfrastructureAuditService } from "../shared/infrastructure-audit.service.js";
+import type { AfectacionService } from "../afectacion/afectacion.service.js";
 import {
   INFRASTRUCTURE_AUDIT_ACTIONS,
   INFRASTRUCTURE_ENTITY_TYPES,
@@ -83,6 +84,12 @@ function makeLineaParada(
   };
 }
 
+function today(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 function errorCode(error: unknown): unknown {
   return ((error as HttpException).getResponse() as { error?: string }).error;
 }
@@ -93,6 +100,8 @@ describe("LineaService", () => {
   let lineaParadaRepo: MockRepository;
   let paradaRepo: MockRepository;
   let audit: { record: AnyMock };
+  let afectaciones: { aplicarSiCambia: AnyMock };
+  let calls: string[];
   let service: LineaService;
 
   beforeEach(() => {
@@ -101,12 +110,20 @@ describe("LineaService", () => {
     lineaParadaRepo = makeMockRepository();
     paradaRepo = makeMockRepository();
     audit = { record: jest.fn() };
+    calls = [];
+    afectaciones = {
+      aplicarSiCambia: jest.fn(async () => {
+        calls.push("aplicar");
+        return null;
+      }),
+    };
     service = new LineaService(
       lineaRepo as unknown as Repository<LineaEntity>,
       parqueoRepo as unknown as Repository<ParqueoEntity>,
       lineaParadaRepo as unknown as Repository<LineaParadaEntity>,
       paradaRepo as unknown as Repository<ParadaEntity>,
-      audit as unknown as InfrastructureAuditService
+      audit as unknown as InfrastructureAuditService,
+      afectaciones as unknown as AfectacionService
     );
   });
 
@@ -279,20 +296,101 @@ describe("LineaService", () => {
       await expect(service.update("missing", {}, ACTOR)).rejects.toThrow(
         NotFoundException
       );
+      expect(afectaciones.aplicarSiCambia).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [EstadoLinea.ACTIVA, EstadoLinea.INACTIVA, "DESACTIVAR", "Desactivada desde Líneas"],
+      [EstadoLinea.INACTIVA, EstadoLinea.ACTIVA, "ACTIVAR", "Activada desde Líneas"],
+    ])(
+      "routes an estado change %s→%s through an afectación before saving the other fields",
+      async (from, to, accion, motivo) => {
+        lineaRepo.findOne.mockResolvedValue(makeLinea({ estadoLinea: from }));
+        lineaRepo.save.mockImplementation(async (l: LineaEntity) => {
+          calls.push("save");
+          return l;
+        });
+
+        const result = await service.update(
+          "1",
+          { estadoLinea: to as never, nombreLinea: "Renombrada" },
+          ACTOR
+        );
+
+        expect(afectaciones.aplicarSiCambia).toHaveBeenCalledWith(
+          expect.anything(),
+          { accion, motivo, fechaInicio: today(), idLinea: "1" },
+          ACTOR
+        );
+        expect(calls).toEqual(["aplicar", "save"]);
+        expect(lineaRepo.save).toHaveBeenCalledWith(
+          expect.objectContaining({ nombreLinea: "Renombrada", estadoLinea: to })
+        );
+        expect(result.estadoLinea).toBe(to);
+        expect(audit.record).toHaveBeenCalledTimes(1);
+        expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
+          action: INFRASTRUCTURE_AUDIT_ACTIONS.UPDATE,
+          entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
+          entityId: "1",
+          detalle: { changedFields: ["estadoLinea", "nombreLinea"] },
+        });
+      }
+    );
+
+    it("leaves an unchanged estado to the engine (decided under its row lock) and skips it when absent", async () => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
+      lineaRepo.save.mockImplementation(async (l: LineaEntity) => l);
+
+      await service.update("1", { estadoLinea: EstadoLinea.ACTIVA as never }, ACTOR);
+      await service.update("1", { nombreLinea: "Renombrada" }, ACTOR);
+
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledTimes(1);
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ accion: "ACTIVAR", idLinea: "1" }),
+        ACTOR
+      );
+    });
+
+    it("saves over the row re-read under a FOR UPDATE lock, never the stale estado read before the transaction", async () => {
+      lineaRepo.findOne
+        .mockResolvedValueOnce(makeLinea())
+        .mockResolvedValueOnce(makeLinea({ estadoLinea: EstadoLinea.INACTIVA }));
+      lineaRepo.save.mockImplementation(async (l: LineaEntity) => l);
+
+      const result = await service.update("1", { nombreLinea: "Renombrada" }, ACTOR);
+
+      expect(afectaciones.aplicarSiCambia).not.toHaveBeenCalled();
+      expect(lineaRepo.findOne).toHaveBeenLastCalledWith({
+        where: { idLinea: "1" },
+        lock: { mode: "pessimistic_write" },
+      });
+      expect(lineaRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ nombreLinea: "Renombrada", estadoLinea: EstadoLinea.INACTIVA })
+      );
+      expect(result.estadoLinea).toBe(EstadoLinea.INACTIVA);
     });
   });
 
   describe("remove", () => {
-    it("soft-deletes by changing estadoLinea", async () => {
-      const existing = makeLinea();
-      lineaRepo.findOne.mockResolvedValue(existing);
-      lineaRepo.save.mockResolvedValue(existing);
+    it("soft deletes through a DESACTIVAR afectación (with cascade) and audits the remove", async () => {
+      lineaRepo.findOne.mockResolvedValue(makeLinea());
 
       await service.remove("1", ACTOR);
 
-      expect(lineaRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ idLinea: "1", estadoLinea: EstadoLinea.INACTIVA })
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledWith(
+        expect.anything(),
+        {
+          accion: "DESACTIVAR",
+          motivo: "Desactivada desde Líneas",
+          fechaInicio: today(),
+          idLinea: "1",
+        },
+        ACTOR
       );
+      // The engine writes the estado; the service never saves a stale row.
+      expect(lineaRepo.save).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledTimes(1);
       expect(audit.record).toHaveBeenCalledWith(expect.anything(), ACTOR, {
         action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE,
         entityType: INFRASTRUCTURE_ENTITY_TYPES.LINEA,
@@ -305,6 +403,28 @@ describe("LineaService", () => {
       lineaRepo.findOne.mockResolvedValue(null);
 
       await expect(service.remove("missing", ACTOR)).rejects.toThrow(NotFoundException);
+      expect(afectaciones.aplicarSiCambia).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("keeps an already INACTIVA línea as is: the engine applies nothing, remove still audited", async () => {
+      lineaRepo.findOne
+        .mockResolvedValueOnce(makeLinea())
+        .mockResolvedValueOnce(makeLinea({ estadoLinea: EstadoLinea.INACTIVA }));
+
+      await service.remove("1", ACTOR);
+
+      expect(afectaciones.aplicarSiCambia).toHaveBeenCalledTimes(1);
+      expect(lineaRepo.findOne).toHaveBeenLastCalledWith({
+        where: { idLinea: "1" },
+        lock: { mode: "pessimistic_write" },
+      });
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.anything(),
+        ACTOR,
+        expect.objectContaining({ action: INFRASTRUCTURE_AUDIT_ACTIONS.REMOVE, entityId: "1" })
+      );
     });
   });
 

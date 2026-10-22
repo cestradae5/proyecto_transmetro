@@ -9,6 +9,7 @@ import { ParqueoEntity } from "./parqueo/parqueo.entity.js";
 import { LineaEntity } from "./linea/linea.entity.js";
 import { LineaParadaEntity } from "./linea/linea-parada.entity.js";
 import { AfectacionEntity } from "./afectacion/afectacion.entity.js";
+import { AfectacionCambioEntity } from "./afectacion/afectacion-cambio.entity.js";
 import { EstacionLineaEntity } from "./estacion/estacion-linea.entity.js";
 import { MunicipalidadEntity } from "./municipalidad/municipalidad.entity.js";
 import { LineaMunicipalidadEntity } from "./municipalidad/linea-municipalidad.entity.js";
@@ -31,6 +32,11 @@ import { EstacionService } from "./estacion/estacion.service.js";
 import { ParqueoService } from "./parqueo/parqueo.service.js";
 import { LineaService } from "./linea/linea.service.js";
 import { AfectacionService } from "./afectacion/afectacion.service.js";
+import {
+  AFECTACION_STORE_FACTORY,
+  TypeOrmAfectacionStore,
+  type AfectacionStoreFactory,
+} from "./afectacion/afectacion.store.js";
 import { EstacionLineaService } from "./estacion/estacion-linea.service.js";
 import { MunicipalidadService } from "./municipalidad/municipalidad.service.js";
 import { LineaMunicipalidadService } from "./municipalidad/linea-municipalidad.service.js";
@@ -47,6 +53,7 @@ import { InfrastructureAuditService } from "./shared/infrastructure-audit.servic
       LineaEntity,
       LineaParadaEntity,
       AfectacionEntity,
+      AfectacionCambioEntity,
       EstacionLineaEntity,
       MunicipalidadEntity,
       LineaMunicipalidadEntity,
@@ -70,6 +77,10 @@ import { InfrastructureAuditService } from "./shared/infrastructure-audit.servic
     ParqueoService,
     LineaService,
     AfectacionService,
+    {
+      provide: AFECTACION_STORE_FACTORY,
+      useValue: ((manager) => new TypeOrmAfectacionStore(manager)) satisfies AfectacionStoreFactory,
+    },
     EstacionLineaService,
     MunicipalidadService,
     LineaMunicipalidadService,

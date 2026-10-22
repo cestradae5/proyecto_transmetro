@@ -8,7 +8,7 @@ transit entities: **Municipalidad** (municipality), **Parada** (stop),
 lot), **Línea** (bus line), and **Afectación** (service disruption). It also owns the `tbl_linea_parada`
 junction table that models a línea's ordered sequence of paradas, the
 `tbl_linea_municipalidad` línea ↔ municipalidad links, and the afectación
-"close" workflow.
+activate/deactivate engine (with cascade and edit).
 
 This document covers the backend (NestJS/TypeORM) implementation. For the
 frontend module that consumes these endpoints, see
@@ -67,7 +67,10 @@ infrastructure/
 │       └── acceso-response.dto.ts
 ├── afectacion/
 │   ├── afectacion.entity.ts
-│   ├── afectacion.service.ts (+ .spec.ts)  # includes close()
+│   ├── afectacion-cambio.entity.ts          # tbl_afectacion_cambio: every state change made
+│   ├── afectacion-engine.ts                 # cascade/restore rules, computed under row locks
+│   ├── afectacion.store.ts                  # store port + TypeORM (raw SQL, FOR UPDATE) impl
+│   ├── afectacion.service.ts (+ .spec.ts)  # create/edit orchestration, bitácora
 │   ├── afectacion.controller.ts (+ .spec.ts)
 │   └── dto/
 ├── shared/
@@ -172,8 +175,8 @@ fires at 150% of it; a station uses its parada's capacity
 | POST | `/` | Create |
 | GET | `/` | List all |
 | GET | `/:id` | Get one |
-| PATCH | `/:id` | Update |
-| DELETE | `/:id` | Soft delete → `INACTIVA` (no `force` param) |
+| PATCH | `/:id` | Update; a changed `estadoLinea` goes through an afectación (see Afectaciones) |
+| DELETE | `/:id` | Soft delete → `INACTIVA` through a DESACTIVAR afectación that closes its exclusive paradas/estaciones (no `force` param); an already `INACTIVA` línea → 200, no afectación |
 | GET | `/:id/paradas` | List the línea's parada sequence, ordered by `orden` |
 | POST | `/:id/paradas` | Add a parada to the sequence (PR#3) |
 | PUT | `/:id/paradas/orden` | Bulk reorder, body `{ idsLineaParada: string[] }` (the full sequence; position i → `orden` i + 1; `minutosHastaSiguiente` unchanged); returns the list in the same shape as `GET /:id/paradas`; list with duplicates, missing or foreign ids → 400 `ORDEN_LIST_MISMATCH`; unknown línea → 404. Runs in one transaction with a two-phase update (shift every `orden` above the current max, then write 1..n) because `UNIQUE (id_linea, orden)` is not deferrable and `CHECK (orden > 0)` forbids temporary negatives |
@@ -186,19 +189,80 @@ fires at 150% of it; a station uses its parada's capacity
 ### Afectaciones — `/infrastructure/afectaciones`
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/` | Create |
-| GET | `/` | List all |
+| POST | `/` | Apply: `{ accion: ACTIVAR\|DESACTIVAR, motivo, fechaInicio, fechaFin?, idMunicipalidad\|idLinea\|idParada\|idEstacion }` → 201 |
+| PATCH | `/:id` | Edit: `{ accion?, motivo?, fechaInicio?, fechaFin? \| null }` → 200; target fields are stripped |
+| GET | `/` | List all, newest first |
 | GET | `/:id` | Get one |
-| PATCH | `/:id/close` | Close: sets `estado=CERRADA`, `fechaFin=now()` (PR#3) |
-| PATCH | `/:id` | Update |
-| DELETE | `/:id` | Soft delete → `CERRADA` |
+
+An afectación activates or deactivates exactly one municipalidad, línea,
+parada or estación (`chk_afectacion_objetivo`). Dates are YYYY-MM-DD and
+informative only: nothing reverts automatically. Every response carries
+`idMunicipalidad`, `idLinea`, `idParada`, `idEstacion` (one non-null) and
+`cambios: [{ entidadTipo, entidadId, estadoAnterior, estadoNuevo, revertido }]`,
+oldest first: every state change the afectación made (`tbl_afectacion_cambio`).
+`revertido: true` means the change is no longer in effect (reverted by an edit
+or a later ACTIVAR, or superseded). POST/PATCH return dates as YYYY-MM-DD; GET
+returns the stored timestamps.
+
+Rules (`afectacion-engine.ts`), all applied in one transaction with the target
+state, the afectación, its cambios and the bitácora row:
+
+- **DESACTIVAR** sets municipalidad/línea `INACTIVA`, parada/estación
+  `CERRADA`. A municipalidad cascades to its líneas not linked to another
+  `ACTIVA` municipalidad; every línea going down closes the paradas (and their
+  estación) that no other `ACTIVA` línea owns through `tbl_linea_parada` or
+  `tbl_estacion_linea`. Exclusivity is decided after the whole set of líneas
+  going down is known, so a parada shared only among them closes too. Rows
+  already inactive are left alone. Paradas/estaciones targeted directly do not
+  cascade.
+- **ACTIVAR** sets the target `ACTIVA` and restores what the target's latest
+  DESACTIVAR still in effect changed, each row back to its previous state and
+  only if it is still in the state that cascade set; rows inactive before
+  stay inactive.
+- **PATCH**: `motivo` and fechas are always editable (`fechaFin: null` clears
+  it; the merged dates must satisfy fin ≥ inicio). Changing `accion` applies
+  it and is only allowed on the target's most recent afectación (highest id):
+  DESACTIVAR→ACTIVAR reverts exactly what this afectación changed (per the
+  ACTIVAR rule), ACTIVAR→DESACTIVAR applies a fresh deactivation with cascade;
+  either way its previous cambios are marked `revertido`. A body that changes
+  nothing writes nothing.
+- **Locks**: affected rows are locked `FOR UPDATE` in one deterministic order
+  (municipalidad, línea, parada, estación; then numeric id), discovered first
+  and recomputed under the locks. The latest-afectación check runs with the
+  target locked.
+- **Municipalidades**: `DELETE /municipalidades/:id` on an `ACTIVA` one and a
+  `PATCH` that changes `estadoMunicipalidad` create an afectación internally
+  (motivo `Desactivada desde Municipalidades` / `Activada desde
+  Municipalidades`, `fechaInicio` = today) in the same transaction, then write
+  their usual `remove`/`update` row.
+- **Líneas**: likewise, `DELETE /lineas/:id` on an `ACTIVA` one and a `PATCH`
+  that changes `estadoLinea` create an afectación internally (motivo
+  `Desactivada desde Líneas` / `Activada desde Líneas`, `fechaInicio` =
+  today), so deactivating closes its exclusive paradas/estaciones and
+  reactivating restores what that cascade closed; then they write their usual
+  `remove`/`update` row. A línea already in the requested state gets no
+  afectación (decided under the row lock).
+
+| Status | When |
+| --- | --- |
+| 400 | `Debe proporcionar exactamente uno: idMunicipalidad, idLinea, idParada o idEstacion`, `La fecha de fin no puede ser anterior a la fecha de inicio` (POST or merged PATCH dates), or an invalid field |
+| 404 | `Municipalidad\|Línea\|Parada\|Estación con ID … no encontrada`; PATCH: `Afectación con ID … no encontrada` |
+| 409 | `La municipalidad\|línea\|parada\|estación ya está activa\|inactiva` (`AFECTACION_SIN_CAMBIO`), also when a PATCH's new acción is a no-op on the target |
+| 409 | PATCH changing `accion` on a non-latest afectación: `Solo la afectación más reciente de este objetivo puede cambiar de acción` (`AFECTACION_NO_ES_ULTIMA`) |
+| 409 | PATCH changing `accion` on a legacy row (TEMPORAL etc.): `Las afectaciones anteriores a activar/desactivar no pueden cambiar de acción` (`AFECTACION_ACCION_NO_EDITABLE`) |
+
+There is no DELETE: removing an afectación would lose the record of what it
+changed.
 
 ## Audit (bitácora)
 
-Every mutation writes exactly one `tbl_bitacora` row inside the same
-transaction as the write, so a change and its audit row commit or roll back
-together (fleet/personal precedent). A rejected request (400/404/409) writes
-no row.
+Every mutation writes its `tbl_bitacora` rows inside the same transaction as
+the write, so a change and its audit rows commit or roll back together
+(fleet/personal precedent). That is one row, except when an afectación is
+applied as part of another mutation: an afectación edit that changes `accion`
+writes `activate`/`deactivate` + `update`, and a municipalidad or línea
+delete/estado edit writes the afectación's row + its own `remove`/`update`. A rejected
+request (400/404/409) writes no row.
 
 - Writer: `shared/infrastructure-audit.service.ts` (`InfrastructureAuditService.record`).
 - Actor: `request.user.employeeId` set by `AuthenticationGuard`, passed by each
@@ -209,7 +273,9 @@ no row.
 
 | Entity type (`entidad_tipo`) | Actions (`accion`) | `entidad_id` |
 | --- | --- | --- |
-| `municipalidad`, `acceso`, `parqueo`, `parada`, `estacion`, `linea`, `afectacion` | `create`, `update`, `remove` (afectación `close` is an `update`) | the row's id |
+| `municipalidad`, `acceso`, `parqueo`, `parada`, `estacion`, `linea` | `create`, `update`, `remove` | the row's id |
+| `municipalidad`, `linea`, `parada`, `estacion` (from an afectación: create, or an edit that changes `accion`) | `activate`, `deactivate` | the target's id; `detalle` = `idAfectacion`, `motivo`, `fechaInicio`, `fechaFin`, `estadoAnterior`, `estadoNuevo` of the target, `cascada` = `[{ entidadTipo, entidadId, estadoAnterior, estadoNuevo }]` for the other rows changed (one row per application, not per cascaded row) |
+| `afectacion` | `update` | the afectación id; `detalle` = `{ changedFields }` (written after the activate/deactivate row when `accion` changed) |
 | `linea_municipalidad` | `link`, `unlink` | the línea id |
 | `estacion_linea` | `link`, `update`, `unlink` | the estación id |
 | `linea_parada` | `link`, `update`, `unlink`, `reorder` | the línea id |
@@ -232,7 +298,8 @@ the TypeORM entity enums must match exactly:
 | `ParqueoEntity` | `EstadoParqueo` | `ABIERTO`, `CERRADO`, `MANTENIMIENTO` |
 | `LineaEntity` | `EstadoLinea` | **`ACTIVA`, `INACTIVA` only** |
 | `LineaEntity` | `TipoRecorrido` | **`CIRCULAR`, `LINEAL` only** (not `IDA_VUELTA`/`DIRECTO`) |
-| `AfectacionEntity` | (estado) | `ACTIVA`, `CERRADA`, `PENDIENTE` (spec drift — see below) |
+| `AfectacionEntity` | `AccionAfectacion` (`tipo_afectacion`) | `ACTIVAR`, `DESACTIVAR` (older rows keep their original tipo) |
+| `AfectacionCambioEntity` | `entidad_tipo` | `municipalidad`, `linea`, `parada`, `estacion` |
 
 `EstadoLinea` was originally coded as `ACTIVA`/`CERRADA`/`MANTENIMIENTO` (the
 same shape as `EstadoParada`) and `TipoRecorrido` as
@@ -264,28 +331,15 @@ Deliberately deferred during `infraestructura-hardening` (tracked here so
 future readers aren't surprised — not blocking, just not yet fixed):
 
 1. **Column length drift**: `numeroLinea` is `varchar(10)` in the entity vs
-   `varchar(20)` in the DB; `afectacion` date columns are typed `date` in
-   TypeORM vs `TIMESTAMPTZ` in the DB (`close()`'s time-of-day may be
-   truncated); `tipoAfectacion` is `varchar(20)` vs `varchar(50)` in the DB.
-2. **Afectación estado spec drift**: entity/DB use
-   `ACTIVA`/`CERRADA`/`PENDIENTE`; the original spec called for
-   `ABIERTA`/`EN_REVISION`. No DB `CHECK` constraint exists on this column,
-   so it doesn't crash — it's purely a naming mismatch. The frontend
-   `afectacion-form.tsx` defaults new records to `'ABIERTA'`, which has no
-   matching `<option>` in its own `<select>` — see the frontend test suite's
-   `afectacion-form.spec.tsx` for a test documenting this.
-3. **Afectación FK immutability**: the spec expects a `400
-   CANNOT_CHANGE_LOCATION` error when a `PATCH` tries to change an
-   afectación's `idParada`/`idEstacion`. The current `update()` allows the
-   change silently.
-4. **Junction add validation error shape**: the spec expects `400
+   `varchar(20)` in the DB.
+2. **Junction add validation error shape**: the spec expects `400
    PARADA_NOT_FOUND` when `POST /:id/paradas` references a nonexistent
    parada. The implementation returns `404`, matching the existing FK-error
    convention used elsewhere in this module instead.
-5. **`force` hard-delete asymmetry**: `ParadaService.remove()` and
+3. **`force` hard-delete asymmetry**: `ParadaService.remove()` and
    `EstacionService.remove()` accept a `force` query param for a hard delete;
    `LineaService.remove()` does not expose the same option.
-6. **`validateForeignKey` is triplicated with divergent contracts**:
+4. **`validateForeignKey` is triplicated with divergent contracts**:
    `shared/validators.ts` (Nest `NotFoundException`, `"… no encontrada"`, FK
    name supplied by the caller, 4 args) and the two byte-identical
    `fk-validation.helper.ts` files under `shared/` and

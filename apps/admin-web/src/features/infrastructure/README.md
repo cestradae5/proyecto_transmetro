@@ -35,7 +35,8 @@ following the hierarchy **Municipalidad > Línea > Parada**:
 - **Línea card** (`components/grouped/linea-card.tsx`): color, número - nombre,
   tipo de recorrido, parqueo ("Sin parqueo"), estado badge; "Editar"
   (`LineaDialog`), "Municipalidades" (`LineaMunicipalidadesDialog`),
-  "Desactivar" (soft delete, ACTIVA only). Expanding it loads its paradas
+  "Desactivar" (soft delete, ACTIVA only; the API closes its exclusive
+  paradas/estaciones through an afectación). Expanding it loads its paradas
   lazily (`GET /lineas/:id/paradas`): count, order, "Estación" badge, minutes to
   the next one; per parada "Editar" (`ParadaDialog`, "Es estación" toggle),
   "Accesos" (`AccesosDialog`) and, for estaciones, "Líneas de la estación"
@@ -45,7 +46,8 @@ following the hierarchy **Municipalidad > Línea > Parada**:
 - **"Otros registros"** (`components/grouped/secondary-sections.tsx`): a
   section switcher for Parqueos (edit/delete; created from the wizard), Todas
   las paradas (`ParadasTable`: every parada, including those in no línea, with
-  edit and delete) and Afectaciones ("Nueva afectación", edit, delete).
+  edit and delete) and Afectaciones ("Nueva afectación" and a history with
+  "Editar" per row; never deleted).
 
 All dialogs are rendered by the page (not inside the cards), so background
 refetches never unmount an open dialog.
@@ -90,9 +92,9 @@ the page data (the wizard uses its own hook instances).
 infrastructure/
 ├── components/
 │   ├── afectaciones/
-│   │   ├── afectacion-dialog.tsx    # Create/Edit modal for disruptions
-│   │   ├── afectacion-form.tsx      # Form with XOR validation (parada OR estacion)
-│   │   └── afectaciones-table.tsx   # Table with search/filter
+│   │   ├── afectacion-dialog.tsx    # "Nueva Afectación" / "Editar Afectación" modal
+│   │   ├── afectacion-form.tsx      # Activar/Desactivar one municipalidad, línea, parada or estación
+│   │   └── afectaciones-table.tsx   # History with cascade summary, "Editar" and motivo search
 │   ├── lineas/
 │   │   ├── linea-dialog.tsx         # Create/Edit modal for lines
 │   │   ├── linea-form.tsx           # Form with color picker
@@ -234,18 +236,23 @@ A numbered route with a color identifier.
 
 **Special Feature:** Color picker input for `color_hex`
 
-### 5. Afectación (Disruption)
-Service disruptions affecting stops or stations.
+### 5. Afectación (Activate / deactivate)
+Activates or deactivates one municipalidad, línea, parada or estación, cascading
+to what depends on it, and records it in the bitácora.
 
 **Fields:**
-- `tipo_afectacion` (required): DESVIO | CIERRE_TEMPORAL | MANTENIMIENTO
-- `motivo` (required): Text description of the disruption
-- `fecha_inicio` (required): Start date
-- `fecha_fin` (optional): End date
-- `id_parada` XOR `id_estacion` (required): Exactly ONE must be set
-- `estado` (required): ABIERTA | CERRADA
+- `accion` (required): DESACTIVAR (default) | ACTIVAR
+- target (required): exactly one of `idMunicipalidad`, `idLinea`, `idParada`, `idEstacion`, chosen with the "Afecta a" type select (option text shows the current estado)
+- `motivo` (required): why it is activated or deactivated
+- `fechaInicio` (required) and `fechaFin` (optional, not before inicio): informative only, nothing reverts automatically
 
-**Special Feature:** XOR validation ensures a disruption affects either a stop OR a station, never both.
+**Effect:** the API sets the target state (municipalidad and línea ACTIVA/INACTIVA, parada and estación ACTIVA/CERRADA) and cascades: a deactivated municipalidad deactivates its líneas not linked to another ACTIVA municipalidad; a deactivated línea closes its paradas/estaciones not served by another ACTIVA línea. Activating restores only what the latest deactivation cascaded off. Every change is returned in `cambios` (`entidadTipo`, `entidadId`, `estadoAnterior`, `estadoNuevo`, `revertido`). A target already in that state is rejected (409) and the message stays in the form.
+
+**History table:** "Afecta a" shows the target and, when the afectación changed more than its target, a "+N en cascada" summary that expands to each item with `estadoAnterior → estadoNuevo`; reverted changes are struck through and marked "(revertido)". Afectaciones are never deleted.
+
+**Edit ("Editar" per row):** the same form, pre-filled, with the target shown but disabled. Acción, motivo and fechas are editable and only the changed fields are sent (`PATCH /afectaciones/:id`; clearing fecha fin sends `fechaFin: null`). Changing DESACTIVAR→ACTIVAR reverts what that afectación changed; ACTIVAR→DESACTIVAR applies a new deactivation. Only the most recent afectación of a target may change acción; the API's 409 message stays in the form.
+
+**Refresh:** after any afectación create/edit, and after deactivating or editing a municipalidad or a línea (the API routes those through the same cascade), the page reloads municipalidades, líneas, paradas, estaciones and afectaciones.
 
 ## API Integration
 
@@ -275,7 +282,7 @@ All forms implement client-side validation:
 - **Coordinates:** Latitude (-90 to 90), Longitude (-180 to 180)
 - **Numbers:** Non-negative integers for capacity
 - **Dates:** End date must be after start date (Afectaciones)
-- **XOR Logic:** Afectaciones must have exactly one of `id_parada` or `id_estacion`
+- **Single target:** Afectaciones must have exactly one of `idMunicipalidad`, `idLinea`, `idParada` or `idEstacion`
 - **Color Hex:** Must match pattern `/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/`
 
 ## UI Patterns

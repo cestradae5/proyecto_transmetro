@@ -23,12 +23,14 @@ import { filterGroup, normalizeSearch, resolveLineas, ungroupedLineas, type Line
 import { ErrorAlert } from './components/wizard/wizard-ui';
 import {
   EstadoMunicipalidad,
+  type Afectacion,
   type CreateAfectacionDto,
   type CreateMunicipalidadDto,
   type Linea,
   type Municipalidad,
   type Parada,
   type ParadaFormValues,
+  type UpdateAfectacionDto,
   type UpdateLineaDto,
 } from './types/infrastructure.types';
 
@@ -45,7 +47,7 @@ type DialogState =
   | { kind: 'estacionLineas'; parada: Parada }
   | { kind: 'manage'; linea: Linea; municipalidad: Municipalidad | null }
   | { kind: 'wizard' }
-  | { kind: 'afectacion' };
+  | { kind: 'afectacion'; afectacion?: Afectacion };
 
 /**
  * Infrastructure page: a grouped view Municipalidad > Líneas > Paradas built
@@ -71,7 +73,7 @@ export function InfrastructurePage() {
   const { estaciones, refresh: refreshEstaciones, createEstacion, updateEstacion, deleteEstacion } = useEstaciones();
   const { parqueos, refresh: refreshParqueos, updateParqueo, deleteParqueo } = useParqueos();
   const { lineas, error: lineasError, refresh: refreshLineas, updateLinea, deleteLinea } = useLineas();
-  const { afectaciones, createAfectacion, updateAfectacion, deleteAfectacion } = useAfectaciones();
+  const { afectaciones, refresh: refreshAfectaciones, createAfectacion, updateAfectacion } = useAfectaciones();
 
   const municipalidadIds = municipalidades.map((m) => String(m.idMunicipalidad));
   const memberships = useMunicipalidadLineas(municipalidadIds);
@@ -121,15 +123,33 @@ export function InfrastructurePage() {
     }
   };
 
+  // Activating/deactivating cascades on the API (municipalidad -> líneas ->
+  // paradas/estaciones, also from a línea) and records an afectación: refresh
+  // all of them.
+  const refreshAfterStateChange = () =>
+    void Promise.all([
+      refreshMunicipalidades(),
+      refreshLineas(),
+      refreshParadas(),
+      refreshEstaciones(),
+      refreshAfectaciones(),
+    ]);
+
   // DELETE is a soft delete on the API (estado -> INACTIVA), hence "Desactivar".
   const deactivateMunicipalidad = (municipalidad: Municipalidad) => {
     if (!confirm(`¿Está seguro de desactivar la municipalidad ${municipalidad.nombreMunicipalidad}?`)) return;
-    return runAction(() => deleteMunicipalidad(String(municipalidad.idMunicipalidad)), 'Error al desactivar la municipalidad');
+    return runAction(async () => {
+      await deleteMunicipalidad(String(municipalidad.idMunicipalidad));
+      refreshAfterStateChange();
+    }, 'Error al desactivar la municipalidad');
   };
 
   const deactivateLinea = (linea: Linea) => {
     if (!confirm(`¿Está seguro de desactivar la línea ${linea.numeroLinea} - ${linea.nombreLinea}?`)) return;
-    return runAction(() => deleteLinea(Number(linea.idLinea)), 'Error al desactivar la línea');
+    return runAction(async () => {
+      await deleteLinea(Number(linea.idLinea));
+      refreshAfterStateChange();
+    }, 'Error al desactivar la línea');
   };
 
   const reloadAfterSave = () => {
@@ -337,15 +357,15 @@ export function InfrastructurePage() {
           parqueos={parqueos}
           paradas={paradas}
           estaciones={estaciones}
+          municipalidades={municipalidades}
           lineas={lineas}
           afectaciones={afectaciones}
           onUpdateParqueo={updateParqueo}
           onDeleteParqueo={deleteParqueo}
           onSaveParada={saveParada}
           onDeleteParada={deleteParada}
-          onUpdateAfectacion={updateAfectacion}
-          onDeleteAfectacion={deleteAfectacion}
           onNewAfectacion={() => setDialog({ kind: 'afectacion' })}
+          onEditAfectacion={(afectacion) => setDialog({ kind: 'afectacion', afectacion })}
         />
       </main>
 
@@ -359,6 +379,8 @@ export function InfrastructurePage() {
           onSave={async (data: CreateMunicipalidadDto) => {
             await updateMunicipalidad(String(dialog.municipalidad.idMunicipalidad), data);
             setDialog(null);
+            // An estado change cascades like a deactivation/activation.
+            refreshAfterStateChange();
           }}
           onClose={() => setDialog(null)}
         />
@@ -370,6 +392,8 @@ export function InfrastructurePage() {
           onSave={async (data: UpdateLineaDto) => {
             await updateLinea(dialog.linea.idLinea, data);
             setDialog(null);
+            // An estado change cascades like a deactivation/activation.
+            refreshAfterStateChange();
           }}
           onClose={() => setDialog(null)}
         />
@@ -407,11 +431,20 @@ export function InfrastructurePage() {
       )}
       {dialog?.kind === 'afectacion' && (
         <AfectacionDialog
+          municipalidades={municipalidades}
+          lineas={lineas}
           paradas={paradas}
           estaciones={estaciones}
-          onSave={async (data: CreateAfectacionDto) => {
-            await createAfectacion(data);
+          afectacion={dialog.afectacion}
+          onSave={async (data) => {
+            // A rejection propagates to the form, which shows it and stays open.
+            if (dialog.afectacion) {
+              await updateAfectacion(dialog.afectacion.idAfectacion, data as UpdateAfectacionDto);
+            } else {
+              await createAfectacion(data as CreateAfectacionDto);
+            }
             setDialog(null);
+            refreshAfterStateChange();
           }}
           onClose={() => setDialog(null)}
         />

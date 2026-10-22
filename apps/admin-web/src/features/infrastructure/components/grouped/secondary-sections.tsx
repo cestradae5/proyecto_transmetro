@@ -3,10 +3,10 @@ import type {
   Afectacion,
   Estacion,
   Linea,
+  Municipalidad,
   Parada,
   ParadaFormValues,
   Parqueo,
-  UpdateAfectacionDto,
   UpdateParqueoDto,
 } from '../../types/infrastructure.types';
 import { ParqueosTable } from '../parqueos/parqueos-table';
@@ -20,21 +20,21 @@ interface SecondarySectionsProps {
   parqueos: Parqueo[];
   paradas: Parada[];
   estaciones: Estacion[];
+  municipalidades: Municipalidad[];
   lineas: Linea[];
   afectaciones: Afectacion[];
   onUpdateParqueo: (id: number, data: UpdateParqueoDto) => Promise<unknown>;
   onDeleteParqueo: (id: number) => Promise<unknown>;
   onSaveParada: (paradaId: number | string, values: ParadaFormValues) => Promise<void>;
   onDeleteParada: (id: number | string) => Promise<unknown>;
-  onUpdateAfectacion: (id: number, data: UpdateAfectacionDto) => Promise<unknown>;
-  onDeleteAfectacion: (id: number) => Promise<unknown>;
   onNewAfectacion: () => void;
+  onEditAfectacion: (afectacion: Afectacion) => void;
 }
 
 /**
  * Records that do not hang from a single línea: parqueos (shared by líneas),
  * every parada (including those in no línea, and their delete) and the
- * operational afectaciones.
+ * history of afectaciones (editable, never deleted).
  */
 export function SecondarySections(props: SecondarySectionsProps) {
   const [section, setSection] = useState<Section>('parqueos');
@@ -92,10 +92,11 @@ export function SecondarySections(props: SecondarySectionsProps) {
       {section === 'afectaciones' && (
         <AfectacionesTable
           afectaciones={props.afectaciones}
+          municipalidades={props.municipalidades}
+          lineas={props.lineas}
           paradas={props.paradas}
           estaciones={props.estaciones}
-          onUpdate={props.onUpdateAfectacion}
-          onDelete={props.onDeleteAfectacion}
+          onEdit={props.onEditAfectacion}
         />
       )}
     </section>

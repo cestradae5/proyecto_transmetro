@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../../../lib/api-client';
 import type { Afectacion, CreateAfectacionDto, UpdateAfectacionDto } from '../types/infrastructure.types';
 
+// Afectaciones are never deleted: the API lists, creates and edits them
+// (acción, motivo, fechas; the target is fixed).
+
 export function useAfectaciones() {
   const [afectaciones, setAfectaciones] = useState<Afectacion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,15 +29,10 @@ export function useAfectaciones() {
     return result;
   };
 
-  const updateAfectacion = async (id: number, data: UpdateAfectacionDto) => {
+  const updateAfectacion = async (id: string, data: UpdateAfectacionDto) => {
     const result = await apiClient.patch<Afectacion>(`/infrastructure/afectaciones/${id}`, data);
     await fetchAfectaciones();
     return result;
-  };
-
-  const deleteAfectacion = async (id: number) => {
-    await apiClient.delete(`/infrastructure/afectaciones/${id}`);
-    await fetchAfectaciones();
   };
 
   useEffect(() => {
@@ -48,6 +46,5 @@ export function useAfectaciones() {
     refresh: fetchAfectaciones,
     createAfectacion,
     updateAfectacion,
-    deleteAfectacion,
   };
 }
